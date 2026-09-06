@@ -1,0 +1,19 @@
+# Open the Flutter project
+cd "D:\Projects\Mobile App"
+
+# Configure Java and Android SDK
+$env:JAVA_HOME = "D:\Android Studio\jbr"
+$env:ANDROID_SDK_ROOT = "$env:LOCALAPPDATA\Android\Sdk"
+$env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:ANDROID_SDK_ROOT\emulator;$env:Path"
+
+# Get project dependencies
+flutter pub get
+
+# RUN WEB APP IN CHROME — use this line for the web application
+flutter run -d chrome
+
+# RUN ANDROID APP — use these instead of the Chrome command
+flutter emulators --launch Pixel_5
+
+# Wait for the emulator to finish opening, then run the Android app
+flutter run -d emulator-5554

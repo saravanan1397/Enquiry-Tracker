@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "874882828086",
+    "project_id": "sshtrackingapp",
+    "storage_bucket": "sshtrackingapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:874882828086:android:c778eb3a1af5216b69d597",
+        "android_client_info": {
+          "package_name": "com.example.leadloop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsF1ITKp8Ikm6Vjs5iB2Ml0YolEAil4x0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

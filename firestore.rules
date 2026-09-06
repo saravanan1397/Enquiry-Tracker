@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+    }
+
+    function isPromoter() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/promoters/$(request.auth.uid))
+        && get(/databases/$(database)/documents/promoters/$(request.auth.uid)).data.role == 'promoter'
+        && get(/databases/$(database)/documents/promoters/$(request.auth.uid)).data.active == true;
+    }
+
+    // Owners can view and manage every lead. Promoters can only create or
+    // update leads that are tied to their Firebase Auth UID.
+    match /leads/{leadId} {
+      allow read: if isAdmin()
+        || (isPromoter() && resource.data.promoterId == request.auth.uid);
+      allow create: if isAdmin()
+        || (isPromoter()
+          && request.resource.data.promoterId == request.auth.uid
+          && request.resource.data.shopId == get(/databases/$(database)/documents/promoters/$(request.auth.uid)).data.shopId);
+      allow update: if isAdmin()
+        || (isPromoter()
+          && resource.data.promoterId == request.auth.uid
+          && request.resource.data.promoterId == request.auth.uid
+          && request.resource.data.shopId == get(/databases/$(database)/documents/promoters/$(request.auth.uid)).data.shopId);
+      allow delete: if isAdmin();
+    }
+
+    // The app may create only its own pending registration. Only an admin can
+    // approve, assign, disable, or otherwise modify a promoter profile.
+    match /promoters/{promoterId} {
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == promoterId);
+      allow create: if signedIn()
+        && request.auth.uid == promoterId
+        && request.resource.data.role == 'promoter'
+        && request.resource.data.active == false
+        && request.resource.data.status == 'pending';
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
+      allow write: if false;
+    }
+
+    match /shops/{shopId} {
+      allow read: if isAdmin()
+        || (isPromoter()
+          && request.auth.token.shopIds is list
+          && shopId in request.auth.token.shopIds);
+      allow write: if false;
+    }
+
+    // Deny every collection not explicitly listed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

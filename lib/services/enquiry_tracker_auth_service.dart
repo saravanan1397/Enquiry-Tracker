@@ -1,0 +1,206 @@
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class EnquiryTrackerAuthSession {
+  const EnquiryTrackerAuthSession({
+    required this.uid,
+    required this.role,
+    required this.displayName,
+    this.shopId = '',
+    this.shopName = '',
+  });
+
+  final String uid;
+  final String role;
+  final String displayName;
+  final String shopId;
+  final String shopName;
+}
+
+class EnquiryTrackerAuthService {
+  EnquiryTrackerAuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
+      : _auth = auth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseAuth _auth;
+  final FirebaseFirestore _firestore;
+  static const _sessionKey = 'leadloop_auth_session';
+  static const _activityKey = 'leadloop_auth_last_activity';
+  static const _sessionDuration = Duration(days: 30);
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<EnquiryTrackerAuthSession> registerPromoter({
+    required String name,
+    required String mobile,
+    required String pin,
+    required String shopName,
+  }) async {
+    final normalizedMobile = _normalizeMobile(mobile);
+    final credential = await _auth.createUserWithEmailAndPassword(
+      email: _authEmail(normalizedMobile),
+      password: pin,
+    );
+    final user = credential.user!;
+    await user.updateDisplayName(name.trim());
+    await _firestore.collection('promoters').doc(user.uid).set({
+      'name': name.trim(),
+      'mobile': normalizedMobile,
+      'shopName': shopName.trim(),
+      'shopId': _shopIdFromName(shopName),
+      'role': 'promoter',
+      'active': false,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return EnquiryTrackerAuthSession(
+      uid: user.uid,
+      role: 'promoter',
+      displayName: name.trim(),
+      shopId: _shopIdFromName(shopName),
+      shopName: shopName.trim(),
+    );
+  }
+
+  Future<EnquiryTrackerAuthSession> signInPromoter({
+    required String mobile,
+    required String pin,
+  }) async {
+    final normalizedMobile = _normalizeMobile(mobile);
+    final credential = await _auth.signInWithEmailAndPassword(
+      email: _authEmail(normalizedMobile),
+      password: pin,
+    );
+    final user = credential.user!;
+    final snapshot =
+        await _firestore.collection('promoters').doc(user.uid).get();
+    final data = snapshot.data();
+    if (data == null) {
+      await _auth.signOut();
+      throw const EnquiryTrackerAuthException('Promoter profile was not found.');
+    }
+    if (data['active'] != true) {
+      await _auth.signOut();
+      throw EnquiryTrackerAuthException(data['status'] == 'pending'
+          ? 'Registration is waiting for owner approval.'
+          : 'This promoter account is disabled.');
+    }
+    final session = EnquiryTrackerAuthSession(
+      uid: user.uid,
+      role: 'promoter',
+      displayName: data['name'] as String? ?? user.displayName ?? 'Promoter',
+      shopId: data['shopId'] as String? ?? '',
+      shopName: data['shopName'] as String? ?? '',
+    );
+    await _rememberSession(session);
+    return session;
+  }
+
+  Future<EnquiryTrackerAuthSession> signInAdmin({
+    required String email,
+    required String password,
+  }) async {
+    final credential = await _auth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = credential.user!;
+    final snapshot = await _firestore.collection('users').doc(user.uid).get();
+    final data = snapshot.data();
+    if (data == null || data['role'] != 'admin' || data['active'] != true) {
+      await _auth.signOut();
+      throw const EnquiryTrackerAuthException(
+          'This account is not an active owner account.');
+    }
+    final session = EnquiryTrackerAuthSession(
+      uid: user.uid,
+      role: 'admin',
+      displayName: data['name'] as String? ?? user.displayName ?? 'Owner',
+    );
+    await _rememberSession(session);
+    return session;
+  }
+
+  Future<EnquiryTrackerAuthSession?> restoreSession() async {
+    if (Firebase.apps.isEmpty || _auth.currentUser == null) return null;
+
+    final encoded = await _storage.read(key: _sessionKey);
+    if (encoded == null) return null;
+    final map = jsonDecode(encoded) as Map<String, dynamic>;
+    final user = _auth.currentUser!;
+    if (map['uid'] != user.uid) return null;
+
+    final lastActivityValue = await _storage.read(key: _activityKey);
+    final lastActivity =
+        lastActivityValue == null ? null : DateTime.tryParse(lastActivityValue);
+    if (lastActivity != null &&
+        DateTime.now().difference(lastActivity) > _sessionDuration) {
+      await signOut();
+      return null;
+    }
+
+    final session = EnquiryTrackerAuthSession(
+      uid: user.uid,
+      role: map['role'] as String? ?? '',
+      displayName: map['displayName'] as String? ?? 'User',
+      shopId: map['shopId'] as String? ?? '',
+      shopName: map['shopName'] as String? ?? '',
+    );
+    await touchActivity();
+    return session;
+  }
+
+  Future<void> touchActivity() async {
+    if (_auth.currentUser != null) {
+      await _storage.write(
+          key: _activityKey, value: DateTime.now().toIso8601String());
+    }
+  }
+
+  Future<void> signOut() async {
+    await _auth.signOut();
+    await _storage.delete(key: _sessionKey);
+    await _storage.delete(key: _activityKey);
+  }
+
+  Future<void> _rememberSession(EnquiryTrackerAuthSession session) async {
+    await _storage.write(
+        key: _sessionKey,
+        value: jsonEncode({
+          'uid': session.uid,
+          'role': session.role,
+          'displayName': session.displayName,
+          'shopId': session.shopId,
+          'shopName': session.shopName,
+        }));
+    await touchActivity();
+  }
+
+  String _normalizeMobile(String mobile) {
+    final normalized = mobile.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (normalized.length < 8) {
+      throw const EnquiryTrackerAuthException('Enter a valid mobile number.');
+    }
+    return normalized;
+  }
+
+  String _authEmail(String mobile) => '$mobile@auth.leadloop.app';
+
+  String _shopIdFromName(String shopName) => shopName
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '');
+}
+
+class EnquiryTrackerAuthException implements Exception {
+  const EnquiryTrackerAuthException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
