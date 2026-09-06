@@ -1,4 +1,4 @@
-name: enquiry_tracker
+name: leadloop
 description: Offline-first customer enquiry capture for shop promoters.
 publish_to: "none"
 version: 0.1.0+1
@@ -26,3 +26,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+

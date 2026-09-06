@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 
-enum EnquiryTrackerSyncStatus { checking, offline, syncing, synced, error }
+enum LeadloopSyncStatus { checking, offline, syncing, synced, error }
 
 class SyncService {
   SyncService({Connectivity? connectivity})
@@ -13,7 +13,7 @@ class SyncService {
 
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   Future<void> Function()? _syncPending;
-  final status = ValueNotifier(EnquiryTrackerSyncStatus.checking);
+  final status = ValueNotifier(LeadloopSyncStatus.checking);
 
   Future<void> start({required Future<void> Function() syncPending}) async {
     _syncPending = syncPending;
@@ -21,7 +21,7 @@ class SyncService {
       if (_isOnline(results)) {
         syncNow();
       } else {
-        status.value = EnquiryTrackerSyncStatus.offline;
+        status.value = LeadloopSyncStatus.offline;
       }
     });
     await syncNow();
@@ -30,15 +30,15 @@ class SyncService {
   Future<void> syncNow() async {
     final results = await _connectivity.checkConnectivity();
     if (!_isOnline(results)) {
-      status.value = EnquiryTrackerSyncStatus.offline;
+      status.value = LeadloopSyncStatus.offline;
       return;
     }
-    status.value = EnquiryTrackerSyncStatus.syncing;
+    status.value = LeadloopSyncStatus.syncing;
     try {
       await _syncPending?.call();
-      status.value = EnquiryTrackerSyncStatus.synced;
+      status.value = LeadloopSyncStatus.synced;
     } catch (_) {
-      status.value = EnquiryTrackerSyncStatus.error;
+      status.value = LeadloopSyncStatus.error;
     }
   }
 

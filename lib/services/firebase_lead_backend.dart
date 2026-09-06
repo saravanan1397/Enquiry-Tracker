@@ -6,8 +6,8 @@ import 'package:firebase_core/firebase_core.dart';
 import '../models/customer_lead.dart';
 import 'local_lead_store.dart';
 
-class EnquiryTrackerPromoterProfile {
-  const EnquiryTrackerPromoterProfile({
+class LeadloopPromoterProfile {
+  const LeadloopPromoterProfile({
     required this.uid,
     required this.name,
     required this.mobile,
@@ -79,14 +79,14 @@ class FirebaseLeadBackend {
     await localStore.reconcileAdminLeads(snapshot.docs.map(_fromDocument));
   }
 
-  Future<List<EnquiryTrackerPromoterProfile>> listPromoters() async {
+  Future<List<LeadloopPromoterProfile>> listPromoters() async {
     if (!isConfigured) return const [];
     final snapshot = await (_firestore ?? FirebaseFirestore.instance)
         .collection('promoters')
         .get();
     final profiles = snapshot.docs.map((document) {
       final data = document.data();
-      return EnquiryTrackerPromoterProfile(
+      return LeadloopPromoterProfile(
         uid: document.id,
         name: data['name'] as String? ?? 'Unnamed promoter',
         mobile: data['mobile'] as String? ?? '',
@@ -123,7 +123,7 @@ class FirebaseLeadBackend {
 
   Future<void> transferLead({
     required CustomerLead lead,
-    required EnquiryTrackerPromoterProfile promoter,
+    required LeadloopPromoterProfile promoter,
   }) async {
     if (!isConfigured) return;
     await _leads.doc(lead.id).update({

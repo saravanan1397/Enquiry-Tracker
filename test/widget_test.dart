@@ -8,16 +8,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:enquiry_tracker/enquiry_tracker_app.dart';
-import 'package:enquiry_tracker/services/local_lead_store.dart';
+import 'package:leadloop/leadloop_app.dart';
+import 'package:leadloop/services/local_lead_store.dart';
 
 void main() {
   testWidgets('Enquiry Tracker app launches', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     final store = LocalLeadStore();
-    await tester.pumpWidget(EnquiryTrackerV2(store: store));
+    await tester.pumpWidget(LeadloopV2(store: store));
     await tester.pumpAndSettle();
 
     // Verify that the app launches without crashing
     expect(find.byType(MaterialApp), findsOneWidget);
-  })
+  });
+}

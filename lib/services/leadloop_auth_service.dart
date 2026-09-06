@@ -5,8 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class EnquiryTrackerAuthSession {
-  const EnquiryTrackerAuthSession({
+class LeadloopAuthSession {
+  const LeadloopAuthSession({
     required this.uid,
     required this.role,
     required this.displayName,
@@ -21,8 +21,8 @@ class EnquiryTrackerAuthSession {
   final String shopName;
 }
 
-class EnquiryTrackerAuthService {
-  EnquiryTrackerAuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
+class LeadloopAuthService {
+  LeadloopAuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
       : _auth = auth ?? FirebaseAuth.instance,
         _firestore = firestore ?? FirebaseFirestore.instance;
 
@@ -33,7 +33,7 @@ class EnquiryTrackerAuthService {
   static const _sessionDuration = Duration(days: 30);
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  Future<EnquiryTrackerAuthSession> registerPromoter({
+  Future<LeadloopAuthSession> registerPromoter({
     required String name,
     required String mobile,
     required String pin,
@@ -56,7 +56,7 @@ class EnquiryTrackerAuthService {
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
     });
-    return EnquiryTrackerAuthSession(
+    return LeadloopAuthSession(
       uid: user.uid,
       role: 'promoter',
       displayName: name.trim(),
@@ -65,7 +65,7 @@ class EnquiryTrackerAuthService {
     );
   }
 
-  Future<EnquiryTrackerAuthSession> signInPromoter({
+  Future<LeadloopAuthSession> signInPromoter({
     required String mobile,
     required String pin,
   }) async {
@@ -80,15 +80,15 @@ class EnquiryTrackerAuthService {
     final data = snapshot.data();
     if (data == null) {
       await _auth.signOut();
-      throw const EnquiryTrackerAuthException('Promoter profile was not found.');
+      throw const LeadloopAuthException('Promoter profile was not found.');
     }
     if (data['active'] != true) {
       await _auth.signOut();
-      throw EnquiryTrackerAuthException(data['status'] == 'pending'
+      throw LeadloopAuthException(data['status'] == 'pending'
           ? 'Registration is waiting for owner approval.'
           : 'This promoter account is disabled.');
     }
-    final session = EnquiryTrackerAuthSession(
+    final session = LeadloopAuthSession(
       uid: user.uid,
       role: 'promoter',
       displayName: data['name'] as String? ?? user.displayName ?? 'Promoter',
@@ -99,7 +99,7 @@ class EnquiryTrackerAuthService {
     return session;
   }
 
-  Future<EnquiryTrackerAuthSession> signInAdmin({
+  Future<LeadloopAuthSession> signInAdmin({
     required String email,
     required String password,
   }) async {
@@ -112,10 +112,10 @@ class EnquiryTrackerAuthService {
     final data = snapshot.data();
     if (data == null || data['role'] != 'admin' || data['active'] != true) {
       await _auth.signOut();
-      throw const EnquiryTrackerAuthException(
+      throw const LeadloopAuthException(
           'This account is not an active owner account.');
     }
-    final session = EnquiryTrackerAuthSession(
+    final session = LeadloopAuthSession(
       uid: user.uid,
       role: 'admin',
       displayName: data['name'] as String? ?? user.displayName ?? 'Owner',
@@ -124,7 +124,7 @@ class EnquiryTrackerAuthService {
     return session;
   }
 
-  Future<EnquiryTrackerAuthSession?> restoreSession() async {
+  Future<LeadloopAuthSession?> restoreSession() async {
     if (Firebase.apps.isEmpty || _auth.currentUser == null) return null;
 
     final encoded = await _storage.read(key: _sessionKey);
@@ -142,7 +142,7 @@ class EnquiryTrackerAuthService {
       return null;
     }
 
-    final session = EnquiryTrackerAuthSession(
+    final session = LeadloopAuthSession(
       uid: user.uid,
       role: map['role'] as String? ?? '',
       displayName: map['displayName'] as String? ?? 'User',
@@ -166,7 +166,7 @@ class EnquiryTrackerAuthService {
     await _storage.delete(key: _activityKey);
   }
 
-  Future<void> _rememberSession(EnquiryTrackerAuthSession session) async {
+  Future<void> _rememberSession(LeadloopAuthSession session) async {
     await _storage.write(
         key: _sessionKey,
         value: jsonEncode({
@@ -182,7 +182,7 @@ class EnquiryTrackerAuthService {
   String _normalizeMobile(String mobile) {
     final normalized = mobile.replaceAll(RegExp(r'[^0-9+]'), '');
     if (normalized.length < 8) {
-      throw const EnquiryTrackerAuthException('Enter a valid mobile number.');
+      throw const LeadloopAuthException('Enter a valid mobile number.');
     }
     return normalized;
   }
@@ -196,8 +196,8 @@ class EnquiryTrackerAuthService {
       .replaceAll(RegExp(r'^-|-$'), '');
 }
 
-class EnquiryTrackerAuthException implements Exception {
-  const EnquiryTrackerAuthException(this.message);
+class LeadloopAuthException implements Exception {
+  const LeadloopAuthException(this.message);
 
   final String message;
 

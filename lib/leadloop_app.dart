@@ -9,16 +9,16 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
 import 'services/firebase_lead_backend.dart';
-import 'services/enquiry_tracker_auth_service.dart';
+import 'services/leadloop_auth_service.dart';
 import 'services/lead_export_service.dart';
 import 'services/local_lead_store.dart';
 import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 
-enum EnquiryTrackerRole { promoter, admin }
+enum LeadloopRole { promoter, admin }
 
-class EnquiryTrackerV2 extends StatelessWidget {
-  const EnquiryTrackerV2({super.key, required this.store});
+class LeadloopV2 extends StatelessWidget {
+  const LeadloopV2({super.key, required this.store});
 
   final LocalLeadStore store;
 
@@ -27,20 +27,20 @@ class EnquiryTrackerV2 extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         title: 'Enquiry Tracker',
         theme: AppTheme.light(),
-        home: EnquiryTrackerAccessGate(store: store),
+        home: LeadloopAccessGate(store: store),
       );
 }
 
-class EnquiryTrackerAccessGate extends StatefulWidget {
-  const EnquiryTrackerAccessGate({super.key, required this.store});
+class LeadloopAccessGate extends StatefulWidget {
+  const LeadloopAccessGate({super.key, required this.store});
 
   final LocalLeadStore store;
 
   @override
-  State<EnquiryTrackerAccessGate> createState() => _EnquiryTrackerAccessGateState();
+  State<LeadloopAccessGate> createState() => _LeadloopAccessGateState();
 }
 
-class _EnquiryTrackerAccessGateState extends State<EnquiryTrackerAccessGate>
+class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     with WidgetsBindingObserver {
   final _nameController = TextEditingController();
   final _mobileController = TextEditingController();
@@ -49,15 +49,15 @@ class _EnquiryTrackerAccessGateState extends State<EnquiryTrackerAccessGate>
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _shopController = TextEditingController(text: 'Bengaluru Central');
-  EnquiryTrackerAuthSession? _session;
+  LeadloopAuthSession? _session;
   bool _ownerMode = false;
   bool _registering = false;
   bool _busy = false;
   bool _restoring = true;
   String? _error;
 
-  EnquiryTrackerAuthService? _authService;
-  EnquiryTrackerAuthService get _auth => _authService ??= EnquiryTrackerAuthService();
+  LeadloopAuthService? _authService;
+  LeadloopAuthService get _auth => _authService ??= LeadloopAuthService();
 
   @override
   void initState() {
@@ -124,7 +124,7 @@ class _EnquiryTrackerAccessGateState extends State<EnquiryTrackerAccessGate>
       setState(() => _session = session);
     } on FirebaseAuthException catch (error) {
       if (mounted) setState(() => _error = _friendlyAuthError(error));
-    } on EnquiryTrackerAuthException catch (error) {
+    } on LeadloopAuthException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (error) {
       if (mounted) setState(() => _error = 'Authentication failed: $error');
@@ -162,7 +162,7 @@ class _EnquiryTrackerAccessGateState extends State<EnquiryTrackerAccessGate>
       });
     } on FirebaseAuthException catch (error) {
       if (mounted) setState(() => _error = _friendlyAuthError(error));
-    } on EnquiryTrackerAuthException catch (error) {
+    } on LeadloopAuthException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (error) {
       if (mounted) setState(() => _error = 'Registration failed: $error');
@@ -202,10 +202,10 @@ class _EnquiryTrackerAccessGateState extends State<EnquiryTrackerAccessGate>
     }
     final session = _session;
     if (session != null) {
-      return EnquiryTrackerShell(
+      return LeadloopShell(
         role: session.role == 'admin'
-            ? EnquiryTrackerRole.admin
-            : EnquiryTrackerRole.promoter,
+            ? LeadloopRole.admin
+            : LeadloopRole.promoter,
         store: widget.store,
         session: session,
         onLogout: _logout,
@@ -360,24 +360,24 @@ class _EnquiryTrackerAccessGateState extends State<EnquiryTrackerAccessGate>
   }
 }
 
-class EnquiryTrackerShell extends StatefulWidget {
-  const EnquiryTrackerShell(
+class LeadloopShell extends StatefulWidget {
+  const LeadloopShell(
       {super.key,
       required this.role,
       required this.store,
       required this.session,
       required this.onLogout});
 
-  final EnquiryTrackerRole role;
+  final LeadloopRole role;
   final LocalLeadStore store;
-  final EnquiryTrackerAuthSession session;
+  final LeadloopAuthSession session;
   final VoidCallback onLogout;
 
   @override
-  State<EnquiryTrackerShell> createState() => _EnquiryTrackerShellState();
+  State<LeadloopShell> createState() => _LeadloopShellState();
 }
 
-class _EnquiryTrackerShellState extends State<EnquiryTrackerShell> {
+class _LeadloopShellState extends State<LeadloopShell> {
   int _tab = 0;
   late final SyncService _syncService;
   late final FirebaseLeadBackend _firebaseBackend;
@@ -393,7 +393,7 @@ class _EnquiryTrackerShellState extends State<EnquiryTrackerShell> {
       _leadSubscription = _firebaseBackend.watchLeads(
           localStore: widget.store,
           promoterId:
-              widget.role == EnquiryTrackerRole.promoter ? widget.session.uid : null,
+              widget.role == LeadloopRole.promoter ? widget.session.uid : null,
           onChanged: () {
             if (mounted) setState(() {});
           });
@@ -403,7 +403,7 @@ class _EnquiryTrackerShellState extends State<EnquiryTrackerShell> {
   Future<void> _syncNow() async {
     if (!_firebaseBackend.isConfigured) return;
     try {
-      if (widget.role == EnquiryTrackerRole.admin) {
+      if (widget.role == LeadloopRole.admin) {
         await _firebaseBackend.syncAdmin(widget.store);
       } else {
         await _firebaseBackend.syncPromoter(widget.store, widget.session.uid);
@@ -491,23 +491,23 @@ class _EnquiryTrackerShellState extends State<EnquiryTrackerShell> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = widget.role == EnquiryTrackerRole.admin;
+    final isAdmin = widget.role == LeadloopRole.admin;
     final pages = isAdmin
         ? <Widget>[
-            EnquiryTrackerAdminScreen(
+            LeadloopAdminScreen(
                 store: widget.store,
                 backend: _firebaseBackend,
                 onChanged: _syncService.syncNow),
-            EnquiryTrackerPromoterAdminScreen(backend: _firebaseBackend),
-            EnquiryTrackerRecycleBinScreen(
+            LeadloopPromoterAdminScreen(backend: _firebaseBackend),
+            LeadloopRecycleBinScreen(
                 store: widget.store,
                 backend: _firebaseBackend,
                 onChanged: _syncService.syncNow)
           ]
         : <Widget>[
-            ValueListenableBuilder<EnquiryTrackerSyncStatus>(
+            ValueListenableBuilder<LeadloopSyncStatus>(
                 valueListenable: _syncService.status,
-                builder: (context, syncStatus, _) => EnquiryTrackerPromoterScreen(
+                builder: (context, syncStatus, _) => LeadloopPromoterScreen(
                     store: widget.store,
                     onChanged: _syncService.syncNow,
                     syncStatus: syncStatus,
@@ -530,7 +530,7 @@ class _EnquiryTrackerShellState extends State<EnquiryTrackerShell> {
                 icon: Icon(Icons.person_outline), label: 'Promoter')
           ];
     return Scaffold(
-        appBar: AppBar(title: const Text('Enquiry Tracker'), actions: [
+      appBar: AppBar(title: const Text('Enquiry Tracker'), actions: [
         if (isAdmin) ...[
           IconButton(
               tooltip: 'Export to Excel',
@@ -565,8 +565,8 @@ class _EnquiryTrackerShellState extends State<EnquiryTrackerShell> {
   }
 }
 
-class EnquiryTrackerPromoterScreen extends StatefulWidget {
-  const EnquiryTrackerPromoterScreen(
+class LeadloopPromoterScreen extends StatefulWidget {
+  const LeadloopPromoterScreen(
       {super.key,
       required this.store,
       required this.promoterId,
@@ -581,14 +581,14 @@ class EnquiryTrackerPromoterScreen extends StatefulWidget {
   final String promoterName;
   final String shopId;
   final String shopName;
-  final EnquiryTrackerSyncStatus syncStatus;
+  final LeadloopSyncStatus syncStatus;
   final Future<void> Function()? onChanged;
 
   @override
-  State<EnquiryTrackerPromoterScreen> createState() => _EnquiryTrackerPromoterScreenState();
+  State<LeadloopPromoterScreen> createState() => _LeadloopPromoterScreenState();
 }
 
-class _EnquiryTrackerPromoterScreenState extends State<EnquiryTrackerPromoterScreen> {
+class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _comment = TextEditingController();
@@ -637,42 +637,42 @@ class _EnquiryTrackerPromoterScreenState extends State<EnquiryTrackerPromoterScr
     await Navigator.push(
         context,
         MaterialPageRoute(
-            builder: (_) => EnquiryTrackerFollowUpScreen(
+            builder: (_) => LeadloopFollowUpScreen(
                 store: widget.store, lead: lead, onChanged: widget.onChanged)));
     if (mounted) setState(() {});
   }
 
   Widget _syncBanner(BuildContext context) {
     final (message, color, icon) = switch (widget.syncStatus) {
-      EnquiryTrackerSyncStatus.checking => (
+      LeadloopSyncStatus.checking => (
           'Checking internet connection...',
           const Color(0xFFECEBFF),
           Icons.sync
         ),
-      EnquiryTrackerSyncStatus.offline => (
+      LeadloopSyncStatus.offline => (
           'Offline · Saved on this device',
           const Color(0xFFFFF5DB),
           Icons.cloud_off_outlined
         ),
-      EnquiryTrackerSyncStatus.syncing => (
+      LeadloopSyncStatus.syncing => (
           'Syncing with Firebase...',
           const Color(0xFFECEBFF),
           Icons.sync
         ),
-      EnquiryTrackerSyncStatus.synced => (
+      LeadloopSyncStatus.synced => (
           'Online · Synced to Firebase',
           const Color(0xFFE4F7F1),
           Icons.cloud_done_outlined
         ),
-      EnquiryTrackerSyncStatus.error => (
+      LeadloopSyncStatus.error => (
           'Sync failed · Saved locally; will retry',
           const Color(0xFFFFE8E6),
           Icons.cloud_off_outlined
         ),
     };
-    final foreground = widget.syncStatus == EnquiryTrackerSyncStatus.offline
+    final foreground = widget.syncStatus == LeadloopSyncStatus.offline
         ? const Color(0xFF9A6800)
-        : widget.syncStatus == EnquiryTrackerSyncStatus.error
+        : widget.syncStatus == LeadloopSyncStatus.error
             ? const Color(0xFFB3261E)
             : const Color(0xFF176B58);
     return Container(
@@ -769,8 +769,8 @@ class _EnquiryTrackerPromoterScreenState extends State<EnquiryTrackerPromoterScr
   }
 }
 
-class EnquiryTrackerFollowUpScreen extends StatefulWidget {
-  const EnquiryTrackerFollowUpScreen(
+class LeadloopFollowUpScreen extends StatefulWidget {
+  const LeadloopFollowUpScreen(
       {super.key, required this.store, required this.lead, this.onChanged});
 
   final LocalLeadStore store;
@@ -778,10 +778,10 @@ class EnquiryTrackerFollowUpScreen extends StatefulWidget {
   final Future<void> Function()? onChanged;
 
   @override
-  State<EnquiryTrackerFollowUpScreen> createState() => _EnquiryTrackerFollowUpScreenState();
+  State<LeadloopFollowUpScreen> createState() => _LeadloopFollowUpScreenState();
 }
 
-class _EnquiryTrackerFollowUpScreenState extends State<EnquiryTrackerFollowUpScreen> {
+class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   late final TextEditingController _first;
   late final TextEditingController _second;
   late final TextEditingController _third;
@@ -825,11 +825,11 @@ class _EnquiryTrackerFollowUpScreenState extends State<EnquiryTrackerFollowUpScr
             Text(widget.lead.phone,
                 style: TextStyle(color: Colors.grey.shade600)),
             const SizedBox(height: 22),
-            _EnquiryTrackerFollowUpField(label: 'Follow-up 1', controller: _first),
+            _LeadloopFollowUpField(label: 'Follow-up 1', controller: _first),
             const SizedBox(height: 14),
-            _EnquiryTrackerFollowUpField(label: 'Follow-up 2', controller: _second),
+            _LeadloopFollowUpField(label: 'Follow-up 2', controller: _second),
             const SizedBox(height: 14),
-            _EnquiryTrackerFollowUpField(label: 'Follow-up 3', controller: _third),
+            _LeadloopFollowUpField(label: 'Follow-up 3', controller: _third),
             const SizedBox(height: 20),
             FilledButton.icon(
                 onPressed: _save,
@@ -842,8 +842,8 @@ class _EnquiryTrackerFollowUpScreenState extends State<EnquiryTrackerFollowUpScr
       );
 }
 
-class EnquiryTrackerAdminScreen extends StatefulWidget {
-  const EnquiryTrackerAdminScreen(
+class LeadloopAdminScreen extends StatefulWidget {
+  const LeadloopAdminScreen(
       {super.key, required this.store, required this.backend, this.onChanged});
 
   final LocalLeadStore store;
@@ -851,10 +851,10 @@ class EnquiryTrackerAdminScreen extends StatefulWidget {
   final Future<void> Function()? onChanged;
 
   @override
-  State<EnquiryTrackerAdminScreen> createState() => _EnquiryTrackerAdminScreenState();
+  State<LeadloopAdminScreen> createState() => _LeadloopAdminScreenState();
 }
 
-class _EnquiryTrackerAdminScreenState extends State<EnquiryTrackerAdminScreen> {
+class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   String? _shop;
   String? _promoter;
   FollowUpStage? _stage;
@@ -902,7 +902,7 @@ class _EnquiryTrackerAdminScreenState extends State<EnquiryTrackerAdminScreen> {
       return;
     }
 
-    final selected = await showDialog<EnquiryTrackerPromoterProfile>(
+    final selected = await showDialog<LeadloopPromoterProfile>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Pass lead to promoter'),
@@ -964,35 +964,35 @@ class _EnquiryTrackerAdminScreenState extends State<EnquiryTrackerAdminScreen> {
                 letterSpacing: -0.6)),
         const SizedBox(height: 18),
         Row(children: [
-          _EnquiryTrackerMetric(label: 'Customers today', value: '${all.length}'),
+          _LeadloopMetric(label: 'Customers today', value: '${all.length}'),
           const SizedBox(width: 10),
-          _EnquiryTrackerMetric(
+          _LeadloopMetric(
               label: 'Follow-up 3',
               value:
                   '${all.where((lead) => lead.currentStage == FollowUpStage.third).length}'),
           const SizedBox(width: 10),
-          _EnquiryTrackerMetric(
+          _LeadloopMetric(
               label: 'Pending sync',
               value: '${all.where((lead) => !lead.isSynced).length}'),
         ]),
         const SizedBox(height: 20),
         Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
           Expanded(
-              child: _EnquiryTrackerFilter<String>(
+              child: _LeadloopFilter<String>(
                   label: 'Shop',
                   value: _shop,
                   values: shops,
                   onChanged: (value) => setState(() => _shop = value))),
           const SizedBox(width: 6),
           Expanded(
-              child: _EnquiryTrackerFilter<String>(
+              child: _LeadloopFilter<String>(
                   label: 'Promoter',
                   value: _promoter,
                   values: promoters,
                   onChanged: (value) => setState(() => _promoter = value))),
           const SizedBox(width: 6),
           Expanded(
-              child: _EnquiryTrackerFilter<FollowUpStage>(
+              child: _LeadloopFilter<FollowUpStage>(
                   label: 'Follow-up',
                   value: _stage,
                   values: FollowUpStage.values,
@@ -1114,19 +1114,19 @@ class _EnquiryTrackerAdminScreenState extends State<EnquiryTrackerAdminScreen> {
   }
 }
 
-class EnquiryTrackerPromoterAdminScreen extends StatefulWidget {
-  const EnquiryTrackerPromoterAdminScreen({super.key, required this.backend});
+class LeadloopPromoterAdminScreen extends StatefulWidget {
+  const LeadloopPromoterAdminScreen({super.key, required this.backend});
 
   final FirebaseLeadBackend backend;
 
   @override
-  State<EnquiryTrackerPromoterAdminScreen> createState() =>
-      _EnquiryTrackerPromoterAdminScreenState();
+  State<LeadloopPromoterAdminScreen> createState() =>
+      _LeadloopPromoterAdminScreenState();
 }
 
-class _EnquiryTrackerPromoterAdminScreenState
-    extends State<EnquiryTrackerPromoterAdminScreen> {
-  List<EnquiryTrackerPromoterProfile> _promoters = const [];
+class _LeadloopPromoterAdminScreenState
+    extends State<LeadloopPromoterAdminScreen> {
+  List<LeadloopPromoterProfile> _promoters = const [];
   bool _loading = true;
   String? _error;
 
@@ -1151,7 +1151,7 @@ class _EnquiryTrackerPromoterAdminScreenState
     }
   }
 
-  Future<void> _approve(EnquiryTrackerPromoterProfile promoter) async {
+  Future<void> _approve(LeadloopPromoterProfile promoter) async {
     final controller = TextEditingController(text: promoter.shopName);
     final shopName = await showDialog<String>(
       context: context,
@@ -1182,7 +1182,7 @@ class _EnquiryTrackerPromoterAdminScreenState
     await _load();
   }
 
-  Future<void> _disable(EnquiryTrackerPromoterProfile promoter) async {
+  Future<void> _disable(LeadloopPromoterProfile promoter) async {
     await widget.backend.updatePromoter(
       uid: promoter.uid,
       shopId: promoter.shopId,
@@ -1266,8 +1266,8 @@ class _EnquiryTrackerPromoterAdminScreenState
   }
 }
 
-class EnquiryTrackerRecycleBinScreen extends StatefulWidget {
-  const EnquiryTrackerRecycleBinScreen(
+class LeadloopRecycleBinScreen extends StatefulWidget {
+  const LeadloopRecycleBinScreen(
       {super.key, required this.store, required this.backend, this.onChanged});
 
   final LocalLeadStore store;
@@ -1275,11 +1275,11 @@ class EnquiryTrackerRecycleBinScreen extends StatefulWidget {
   final Future<void> Function()? onChanged;
 
   @override
-  State<EnquiryTrackerRecycleBinScreen> createState() =>
-      _EnquiryTrackerRecycleBinScreenState();
+  State<LeadloopRecycleBinScreen> createState() =>
+      _LeadloopRecycleBinScreenState();
 }
 
-class _EnquiryTrackerRecycleBinScreenState extends State<EnquiryTrackerRecycleBinScreen> {
+class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
   Future<void> _restore(CustomerLead lead) async {
     await widget.store.restore(lead.id);
     await widget.onChanged?.call();
@@ -1374,8 +1374,8 @@ class _EnquiryTrackerRecycleBinScreenState extends State<EnquiryTrackerRecycleBi
   }
 }
 
-class _EnquiryTrackerFollowUpField extends StatelessWidget {
-  const _EnquiryTrackerFollowUpField({required this.label, required this.controller});
+class _LeadloopFollowUpField extends StatelessWidget {
+  const _LeadloopFollowUpField({required this.label, required this.controller});
 
   final String label;
   final TextEditingController controller;
@@ -1388,8 +1388,8 @@ class _EnquiryTrackerFollowUpField extends StatelessWidget {
           labelText: label, hintText: 'Add customer response or outcome'));
 }
 
-class _EnquiryTrackerMetric extends StatelessWidget {
-  const _EnquiryTrackerMetric({required this.label, required this.value});
+class _LeadloopMetric extends StatelessWidget {
+  const _LeadloopMetric({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -1412,8 +1412,8 @@ class _EnquiryTrackerMetric extends StatelessWidget {
                   ]))));
 }
 
-class _EnquiryTrackerFilter<T> extends StatelessWidget {
-  const _EnquiryTrackerFilter(
+class _LeadloopFilter<T> extends StatelessWidget {
+  const _LeadloopFilter(
       {required this.label,
       required this.value,
       required this.values,
@@ -1459,4 +1459,5 @@ class _EnquiryTrackerFilter<T> extends StatelessWidget {
 String _stageLabel(FollowUpStage stage) => switch (stage) {
       FollowUpStage.first => 'Follow-up 1',
       FollowUpStage.second => 'Follow-up 2',
-      FollowUpStage.third => 'Follow
+      FollowUpStage.third => 'Follow-up 3',
+    };
