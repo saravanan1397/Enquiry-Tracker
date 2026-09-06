@@ -646,35 +646,37 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
     final (message, color, icon) = switch (widget.syncStatus) {
       LeadloopSyncStatus.checking => (
           'Checking internet connection...',
-          const Color(0xFFECEBFF),
+          AppColors.primaryContainer,
           Icons.sync
         ),
       LeadloopSyncStatus.offline => (
           'Offline · Saved on this device',
-          const Color(0xFFFFF5DB),
+          AppColors.warningSurface,
           Icons.cloud_off_outlined
         ),
       LeadloopSyncStatus.syncing => (
           'Syncing with Firebase...',
-          const Color(0xFFECEBFF),
+          AppColors.primaryContainer,
           Icons.sync
         ),
       LeadloopSyncStatus.synced => (
           'Online · Synced to Firebase',
-          const Color(0xFFE4F7F1),
+          AppColors.successSurface,
           Icons.cloud_done_outlined
         ),
       LeadloopSyncStatus.error => (
           'Sync failed · Saved locally; will retry',
-          const Color(0xFFFFE8E6),
+          AppColors.errorSurface,
           Icons.cloud_off_outlined
         ),
     };
     final foreground = widget.syncStatus == LeadloopSyncStatus.offline
-        ? const Color(0xFF9A6800)
+        ? AppColors.warning
         : widget.syncStatus == LeadloopSyncStatus.error
-            ? const Color(0xFFB3261E)
-            : const Color(0xFF176B58);
+            ? AppColors.error
+            : widget.syncStatus == LeadloopSyncStatus.synced
+                ? AppColors.success
+                : AppColors.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration:
@@ -752,7 +754,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                 contentPadding: EdgeInsets.zero,
                 onTap: () => _openLead(lead),
                 leading: CircleAvatar(
-                    backgroundColor: const Color(0xFFEEECFF),
+                    backgroundColor: AppColors.primaryContainer,
                     child: Text(lead.name.substring(0, 1).toUpperCase(),
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.primary))),
@@ -761,7 +763,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                     '${lead.phone} · Follow-up ${lead.currentStage.index + 1}'),
                 trailing: IconButton(
                     icon: const Icon(Icons.phone_outlined),
-                    color: Colors.teal,
+                    color: AppColors.success,
                     onPressed: () => _call(lead.phone)),
               )),
       ],
@@ -1042,8 +1044,9 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                                 lead.isSynced
                                     ? Icons.check_circle
                                     : Icons.cloud_upload_outlined,
-                                color:
-                                    lead.isSynced ? Colors.teal : Colors.orange,
+                                color: lead.isSynced
+                                    ? AppColors.success
+                                    : AppColors.warning,
                                 size: 18)),
                             DataCell(Wrap(children: [
                               IconButton(
