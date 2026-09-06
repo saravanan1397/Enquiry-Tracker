@@ -182,12 +182,15 @@ class FirebaseLeadBackend {
         'promoterName': lead.promoterName,
         'shopId': lead.shopId,
         'promoterId': lead.promoterId,
-        'createdAt': lead.createdAt.toIso8601String(),
+        'createdAt': Timestamp.fromDate(lead.createdAt.toUtc()),
         'followUp1': lead.followUp1,
+        'followUp1At': _toTimestamp(lead.followUp1At),
         'followUp2': lead.followUp2,
+        'followUp2At': _toTimestamp(lead.followUp2At),
         'followUp3': lead.followUp3,
+        'followUp3At': _toTimestamp(lead.followUp3At),
         'isSynced': true,
-        'deletedAt': lead.deletedAt?.toIso8601String(),
+        'deletedAt': _toTimestamp(lead.deletedAt),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
@@ -199,15 +202,25 @@ class FirebaseLeadBackend {
         promoterName: map['promoterName'] as String,
         shopId: map['shopId'] as String? ?? '',
         promoterId: map['promoterId'] as String? ?? '',
-        createdAt: DateTime.parse(map['createdAt'] as String),
+        createdAt: _dateTime(map['createdAt']) ?? DateTime.now(),
         followUp1: map['followUp1'] as String?,
+        followUp1At: _dateTime(map['followUp1At']),
         followUp2: map['followUp2'] as String?,
+        followUp2At: _dateTime(map['followUp2At']),
         followUp3: map['followUp3'] as String?,
+        followUp3At: _dateTime(map['followUp3At']),
         isSynced: true,
-        deletedAt: map['deletedAt'] == null
-            ? null
-            : DateTime.parse(map['deletedAt'] as String),
+        deletedAt: _dateTime(map['deletedAt']),
       );
+
+  Timestamp? _toTimestamp(DateTime? value) =>
+      value == null ? null : Timestamp.fromDate(value.toUtc());
+
+  DateTime? _dateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
 
   CustomerLead _fromDocument(
           QueryDocumentSnapshot<Map<String, dynamic>> document) =>

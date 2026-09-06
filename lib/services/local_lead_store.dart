@@ -131,8 +131,11 @@ class LocalLeadStore {
         'promoterId': lead.promoterId,
         'createdAt': lead.createdAt.toIso8601String(),
         'followUp1': lead.followUp1,
+        'followUp1At': lead.followUp1At?.toIso8601String(),
         'followUp2': lead.followUp2,
+        'followUp2At': lead.followUp2At?.toIso8601String(),
         'followUp3': lead.followUp3,
+        'followUp3At': lead.followUp3At?.toIso8601String(),
         'isSynced': lead.isSynced,
         'deletedAt': lead.deletedAt?.toIso8601String(),
       };
@@ -147,11 +150,19 @@ class LocalLeadStore {
         promoterId: map['promoterId'] as String? ?? '',
         createdAt: DateTime.parse(map['createdAt'] as String),
         followUp1: map['followUp1'] as String?,
+        followUp1At: _optionalDateTime(map['followUp1At']),
         followUp2: map['followUp2'] as String?,
+        followUp2At: _optionalDateTime(map['followUp2At']),
         followUp3: map['followUp3'] as String?,
+        followUp3At: _optionalDateTime(map['followUp3At']),
         isSynced: map['isSynced'] as bool? ?? false,
         deletedAt: map['deletedAt'] == null
             ? null
             : DateTime.parse(map['deletedAt'] as String),
       );
+
+  DateTime? _optionalDateTime(dynamic value) {
+    if (value is! String || value.isEmpty) return null;
+    return DateTime.tryParse(value);
+  }
 }

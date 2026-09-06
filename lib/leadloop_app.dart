@@ -609,6 +609,8 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
           content: Text('Name and mobile number are required.')));
       return;
     }
+    final savedAt = DateTime.now();
+    final firstComment = _comment.text.trim();
     await widget.store.save(CustomerLead(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: name,
@@ -617,8 +619,9 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
       promoterName: widget.promoterName,
       shopId: widget.shopId,
       promoterId: widget.promoterId,
-      createdAt: DateTime.now(),
-      followUp1: _comment.text.trim().isEmpty ? null : _comment.text.trim(),
+      createdAt: savedAt,
+      followUp1: firstComment.isEmpty ? null : firstComment,
+      followUp1At: firstComment.isEmpty ? null : savedAt,
     ));
     await widget.onChanged?.call();
     _name.clear();
@@ -760,7 +763,8 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                             color: Theme.of(context).colorScheme.primary))),
                 title: Text(lead.name),
                 subtitle: Text(
-                    '${lead.phone} · Follow-up ${lead.currentStage.index + 1}'),
+                    '${lead.phone} · Follow-up ${lead.currentStage.index + 1}\nEntered ${_formatDateTime(lead.createdAt)}'),
+                isThreeLine: true,
                 trailing: IconButton(
                     icon: const Icon(Icons.phone_outlined),
                     color: AppColors.success,
@@ -805,11 +809,22 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   }
 
   Future<void> _save() async {
+    final savedAt = DateTime.now();
+    final first = _first.text.trim();
+    final second = _second.text.trim();
+    final third = _third.text.trim();
     await widget.store.save(widget.lead.copyWith(
-        followUp1: _first.text.trim(),
-        followUp2: _second.text.trim(),
-        followUp3: _third.text.trim(),
-        isSynced: false));
+      followUp1: first,
+      followUp1At: _commentTime(
+          widget.lead.followUp1, first, widget.lead.followUp1At, savedAt),
+      followUp2: second,
+      followUp2At: _commentTime(
+          widget.lead.followUp2, second, widget.lead.followUp2At, savedAt),
+      followUp3: third,
+      followUp3At: _commentTime(
+          widget.lead.followUp3, third, widget.lead.followUp3At, savedAt),
+      isSynced: false,
+    ));
     await widget.onChanged?.call();
     if (mounted) Navigator.pop(context);
   }
@@ -826,12 +841,27 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
             const SizedBox(height: 4),
             Text(widget.lead.phone,
                 style: TextStyle(color: Colors.grey.shade600)),
+            const SizedBox(height: 4),
+            Text('Entered ${_formatDateTime(widget.lead.createdAt)}',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
             const SizedBox(height: 22),
-            _LeadloopFollowUpField(label: 'Follow-up 1', controller: _first),
+            _LeadloopFollowUpField(
+              label: 'Follow-up 1',
+              controller: _first,
+              enteredAt: widget.lead.followUp1At,
+            ),
             const SizedBox(height: 14),
-            _LeadloopFollowUpField(label: 'Follow-up 2', controller: _second),
+            _LeadloopFollowUpField(
+              label: 'Follow-up 2',
+              controller: _second,
+              enteredAt: widget.lead.followUp2At,
+            ),
             const SizedBox(height: 14),
-            _LeadloopFollowUpField(label: 'Follow-up 3', controller: _third),
+            _LeadloopFollowUpField(
+              label: 'Follow-up 3',
+              controller: _third,
+              enteredAt: widget.lead.followUp3At,
+            ),
             const SizedBox(height: 20),
             FilledButton.icon(
                 onPressed: _save,
@@ -842,6 +872,18 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
           ],
         ),
       );
+
+  DateTime? _commentTime(
+    String? previousText,
+    String currentText,
+    DateTime? previousTime,
+    DateTime savedAt,
+  ) {
+    if (currentText.isEmpty) return previousTime;
+    return previousText?.trim() == currentText && previousTime != null
+        ? previousTime
+        : savedAt;
+  }
 }
 
 class LeadloopAdminScreen extends StatefulWidget {
@@ -1016,6 +1058,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                   dataRowMaxHeight: 180,
                   columns: const [
                     DataColumn(label: Text('Customer')),
+                    DataColumn(label: Text('Entered at')),
                     DataColumn(label: Text('Comments')),
                     DataColumn(label: Text('Shop / promoter')),
                     DataColumn(label: Text('Follow-up')),
@@ -1025,6 +1068,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                   rows: leads
                       .map((lead) => DataRow(cells: [
                             DataCell(Text('${lead.name}\n${lead.phone}')),
+                            DataCell(Text(_formatDateTime(lead.createdAt))),
                             DataCell(SizedBox(
                               width: _commentWidth(lead),
                               height: _commentHeight(lead),
@@ -1105,13 +1149,16 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   List<String> _commentLines(CustomerLead lead) {
     final comments = <String>[];
     if (lead.followUp1?.trim().isNotEmpty == true) {
-      comments.add('F1: ${lead.followUp1!.trim()}');
+      comments.add(
+          'F1: ${lead.followUp1!.trim()}  ·  ${_formatDateTime(lead.followUp1At)}');
     }
     if (lead.followUp2?.trim().isNotEmpty == true) {
-      comments.add('F2: ${lead.followUp2!.trim()}');
+      comments.add(
+          'F2: ${lead.followUp2!.trim()}  ·  ${_formatDateTime(lead.followUp2At)}');
     }
     if (lead.followUp3?.trim().isNotEmpty == true) {
-      comments.add('F3: ${lead.followUp3!.trim()}');
+      comments.add(
+          'F3: ${lead.followUp3!.trim()}  ·  ${_formatDateTime(lead.followUp3At)}');
     }
     return comments;
   }
@@ -1355,7 +1402,7 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
               child: ListTile(
                 title: Text(lead.name),
                 subtitle: Text(
-                    '${lead.phone}\n${lead.shopName} · ${lead.promoterName}'),
+                    '${lead.phone}\n${lead.shopName} · ${lead.promoterName}\nEntered ${_formatDateTime(lead.createdAt)}'),
                 isThreeLine: true,
                 trailing: Wrap(
                   children: [
@@ -1378,17 +1425,27 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
 }
 
 class _LeadloopFollowUpField extends StatelessWidget {
-  const _LeadloopFollowUpField({required this.label, required this.controller});
+  const _LeadloopFollowUpField({
+    required this.label,
+    required this.controller,
+    required this.enteredAt,
+  });
 
   final String label;
   final TextEditingController controller;
+  final DateTime? enteredAt;
 
   @override
   Widget build(BuildContext context) => TextField(
       controller: controller,
       maxLines: 3,
       decoration: InputDecoration(
-          labelText: label, hintText: 'Add customer response or outcome'));
+        labelText: label,
+        hintText: 'Add customer response or outcome',
+        helperText: enteredAt == null
+            ? 'Date and time will be saved with this comment'
+            : 'Last entered ${_formatDateTime(enteredAt)}',
+      ));
 }
 
 class _LeadloopMetric extends StatelessWidget {
@@ -1464,3 +1521,27 @@ String _stageLabel(FollowUpStage stage) => switch (stage) {
       FollowUpStage.second => 'Follow-up 2',
       FollowUpStage.third => 'Follow-up 3',
     };
+
+String _formatDateTime(DateTime? value) {
+  if (value == null) return 'Time not recorded';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  final local = value.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour < 12 ? 'AM' : 'PM';
+  return '${local.day.toString().padLeft(2, '0')} '
+      '${months[local.month - 1]} ${local.year}, $hour:$minute $period';
+}

@@ -38,8 +38,11 @@ class LeadExportService {
       TextCellValue('Promoter'),
       TextCellValue('Created at'),
       TextCellValue('Follow-up 1'),
+      TextCellValue('Follow-up 1 at'),
       TextCellValue('Follow-up 2'),
+      TextCellValue('Follow-up 2 at'),
       TextCellValue('Follow-up 3'),
+      TextCellValue('Follow-up 3 at'),
       TextCellValue('Current stage'),
       TextCellValue('Deleted at'),
     ]);
@@ -53,15 +56,18 @@ class LeadExportService {
       TextCellValue(lead.promoterName),
       TextCellValue(lead.createdAt.toIso8601String()),
       TextCellValue(lead.followUp1 ?? ''),
+      TextCellValue(lead.followUp1At?.toIso8601String() ?? ''),
       TextCellValue(lead.followUp2 ?? ''),
+      TextCellValue(lead.followUp2At?.toIso8601String() ?? ''),
       TextCellValue(lead.followUp3 ?? ''),
+      TextCellValue(lead.followUp3At?.toIso8601String() ?? ''),
       TextCellValue('Follow-up ${lead.currentStage.index + 1}'),
       TextCellValue(lead.deletedAt?.toIso8601String() ?? ''),
     ]);
   }
 
   void _setWidths(Sheet sheet) {
-    for (var index = 0; index < 10; index++) {
+    for (var index = 0; index < 13; index++) {
       sheet.setColumnWidth(index, index == 0 || index == 3 ? 24 : 20);
     }
   }
