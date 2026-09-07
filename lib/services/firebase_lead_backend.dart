@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/customer_lead.dart';
 import 'local_lead_store.dart';
@@ -34,11 +35,15 @@ class FirebaseLeadBackend {
   FirebaseLeadBackend({FirebaseFirestore? firestore}) : _firestore = firestore;
 
   final FirebaseFirestore? _firestore;
+  static const _writeBatchSize = 400;
+  Future<void> _snapshotQueue = Future.value();
 
   bool get isConfigured => Firebase.apps.isNotEmpty;
 
   CollectionReference<Map<String, dynamic>> get _leads =>
-      (_firestore ?? FirebaseFirestore.instance).collection('leads');
+      _database.collection('leads');
+
+  FirebaseFirestore get _database => _firestore ?? FirebaseFirestore.instance;
 
   Future<void> syncPromoter(
       LocalLeadStore localStore, String promoterId) async {
@@ -48,13 +53,8 @@ class FirebaseLeadBackend {
         .pendingLeads()
         .where((lead) => lead.promoterId == promoterId)
         .toList();
-    for (final lead in pending) {
-      await _leads.doc(lead.id).set(_toMap(lead));
-    }
-    await (_firestore ?? FirebaseFirestore.instance).waitForPendingWrites();
-    for (final lead in pending) {
-      await localStore.markSynced(lead.id);
-    }
+    await _uploadLeads(pending);
+    await localStore.markManySynced(pending.map((lead) => lead.id));
 
     final snapshot =
         await _leads.where('promoterId', isEqualTo: promoterId).get();
@@ -67,13 +67,8 @@ class FirebaseLeadBackend {
 
     // Upload owner-side changes first, including recycle-bin tombstones.
     final pending = localStore.pendingLeads();
-    for (final lead in pending) {
-      await _leads.doc(lead.id).set(_toMap(lead));
-    }
-    await (_firestore ?? FirebaseFirestore.instance).waitForPendingWrites();
-    for (final lead in pending) {
-      await localStore.markSynced(lead.id);
-    }
+    await _uploadLeads(pending);
+    await localStore.markManySynced(pending.map((lead) => lead.id));
 
     final snapshot = await _leads.get();
     await localStore.reconcileAdminLeads(snapshot.docs.map(_fromDocument));
@@ -142,6 +137,20 @@ class FirebaseLeadBackend {
     await (_firestore ?? FirebaseFirestore.instance).waitForPendingWrites();
   }
 
+  Future<void> _uploadLeads(List<CustomerLead> leads) async {
+    if (leads.isEmpty) return;
+    for (var offset = 0; offset < leads.length; offset += _writeBatchSize) {
+      final candidateEnd = offset + _writeBatchSize;
+      final end = candidateEnd < leads.length ? candidateEnd : leads.length;
+      final batch = _database.batch();
+      for (final lead in leads.sublist(offset, end)) {
+        batch.set(_leads.doc(lead.id), _toMap(lead));
+      }
+      await batch.commit();
+    }
+    await _database.waitForPendingWrites();
+  }
+
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>> watchLeads({
     required LocalLeadStore localStore,
     required void Function() onChanged,
@@ -151,8 +160,12 @@ class FirebaseLeadBackend {
         ? _leads
         : _leads.where('promoterId', isEqualTo: promoterId);
     return query.snapshots(includeMetadataChanges: true).listen((snapshot) {
-      unawaited(
-          _applyLeadSnapshot(snapshot, localStore, onChanged, promoterId));
+      _snapshotQueue = _snapshotQueue
+          .then((_) =>
+              _applyLeadSnapshot(snapshot, localStore, onChanged, promoterId))
+          .catchError((Object error, StackTrace stackTrace) {
+        debugPrint('Lead snapshot processing failed: $error');
+      });
     });
   }
 

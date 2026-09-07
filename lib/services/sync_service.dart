@@ -13,6 +13,8 @@ class SyncService {
 
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   Future<void> Function()? _syncPending;
+  Future<void>? _syncInFlight;
+  bool _syncRequested = false;
   final status = ValueNotifier(LeadloopSyncStatus.checking);
 
   Future<void> start({required Future<void> Function() syncPending}) async {
@@ -27,7 +29,23 @@ class SyncService {
     await syncNow();
   }
 
-  Future<void> syncNow() async {
+  Future<void> syncNow() {
+    _syncRequested = true;
+    final activeSync = _syncInFlight;
+    if (activeSync != null) return activeSync;
+    final operation = _drainSyncRequests();
+    _syncInFlight = operation;
+    return operation.whenComplete(() => _syncInFlight = null);
+  }
+
+  Future<void> _drainSyncRequests() async {
+    while (_syncRequested) {
+      _syncRequested = false;
+      await _syncOnce();
+    }
+  }
+
+  Future<void> _syncOnce() async {
     final results = await _connectivity.checkConnectivity();
     if (!_isOnline(results)) {
       status.value = LeadloopSyncStatus.offline;

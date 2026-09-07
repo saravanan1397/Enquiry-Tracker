@@ -10,6 +10,7 @@ class LocalLeadStore {
   static const _keyName = 'leadloop_hive_key';
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final Map<String, CustomerLead> _cache = {};
   late Box<String> _box;
 
   Future<void> open() async {
@@ -23,24 +24,35 @@ class LocalLeadStore {
       _boxName,
       encryptionCipher: HiveAesCipher(base64Url.decode(key)),
     );
+    _cache
+      ..clear()
+      ..addEntries(
+          _box.values.map(_decode).map((lead) => MapEntry(lead.id, lead)));
   }
 
   Future<void> save(CustomerLead lead) async {
     await _box.put(lead.id, jsonEncode(_toMap(lead)));
+    _cache[lead.id] = lead;
   }
 
   /// Returns local changes that still need to be sent to Firebase.
   List<CustomerLead> pendingLeads() {
-    return _box.values
-        .map((value) => _fromMap(jsonDecode(value) as Map<String, dynamic>))
-        .where((lead) => !lead.isSynced)
-        .toList();
+    return _cache.values.where((lead) => !lead.isSynced).toList();
   }
 
   Future<void> markSynced(String id) async {
     final lead = find(id);
     if (lead == null || lead.isSynced) return;
     await save(lead.copyWith(isSynced: true));
+  }
+
+  Future<void> markManySynced(Iterable<String> ids) async {
+    final updates = ids
+        .map(find)
+        .whereType<CustomerLead>()
+        .where((lead) => !lead.isSynced)
+        .map((lead) => lead.copyWith(isSynced: true));
+    await _saveAll(updates);
   }
 
   /// Stores a record downloaded from the central Firebase database.
@@ -53,46 +65,49 @@ class LocalLeadStore {
   /// else. Unsynced local records are kept until their upload completes.
   Future<void> reconcilePromoterLeads(
       String promoterId, Iterable<CustomerLead> serverLeads) async {
-    final serverIds = serverLeads.map((lead) => lead.id).toSet();
-    final localLeads = _box.values
-        .map((value) => _fromMap(jsonDecode(value) as Map<String, dynamic>))
+    final syncedServerLeads = serverLeads
+        .map((lead) => lead.copyWith(isSynced: true))
+        .toList(growable: false);
+    final serverIds = syncedServerLeads.map((lead) => lead.id).toSet();
+    final localIdsToDelete = _cache.values
         .where((lead) =>
             lead.promoterId == promoterId &&
             lead.isSynced &&
             !serverIds.contains(lead.id))
+        .map((lead) => lead.id)
         .toList();
-    for (final lead in localLeads) {
-      await _box.delete(lead.id);
-    }
-    for (final lead in serverLeads) {
-      await saveFromServer(lead);
-    }
+    await _deleteAll(localIdsToDelete);
+    await _saveAll(syncedServerLeads);
   }
 
   Future<void> reconcileAdminLeads(Iterable<CustomerLead> serverLeads) async {
-    final serverIds = serverLeads.map((lead) => lead.id).toSet();
-    final localLeads = _box.values
-        .map((value) => _fromMap(jsonDecode(value) as Map<String, dynamic>))
+    final syncedServerLeads = serverLeads
+        .map((lead) => lead.copyWith(isSynced: true))
+        .toList(growable: false);
+    final serverIds = syncedServerLeads.map((lead) => lead.id).toSet();
+    final localIdsToDelete = _cache.values
         .where((lead) => lead.isSynced && !serverIds.contains(lead.id))
+        .map((lead) => lead.id)
         .toList();
-    for (final lead in localLeads) {
-      await _box.delete(lead.id);
-    }
-    for (final lead in serverLeads) {
-      await saveFromServer(lead);
-    }
+    await _deleteAll(localIdsToDelete);
+    await _saveAll(syncedServerLeads);
   }
 
-  CustomerLead? find(String id) {
-    final value = _box.get(id);
-    if (value == null) return null;
-    return _fromMap(jsonDecode(value) as Map<String, dynamic>);
-  }
+  CustomerLead? find(String id) => _cache[id];
 
   Future<void> softDelete(String id) async {
     final lead = find(id);
     if (lead == null) return;
     await save(lead.copyWith(deletedAt: DateTime.now(), isSynced: false));
+  }
+
+  Future<void> softDeleteMany(Iterable<String> ids) async {
+    final deletedAt = DateTime.now();
+    final updates = ids
+        .map(find)
+        .whereType<CustomerLead>()
+        .map((lead) => lead.copyWith(deletedAt: deletedAt, isSynced: false));
+    await _saveAll(updates);
   }
 
   Future<void> restore(String id) async {
@@ -103,23 +118,42 @@ class LocalLeadStore {
 
   Future<void> permanentlyDelete(String id) async {
     await _box.delete(id);
+    _cache.remove(id);
   }
 
   List<CustomerLead> activeLeads() {
-    return _box.values
-        .map((value) => _fromMap(jsonDecode(value) as Map<String, dynamic>))
-        .where((lead) => lead.deletedAt == null)
-        .toList()
+    return _cache.values.where((lead) => lead.deletedAt == null).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   List<CustomerLead> recycleBin() {
-    return _box.values
-        .map((value) => _fromMap(jsonDecode(value) as Map<String, dynamic>))
-        .where((lead) => lead.deletedAt != null)
-        .toList()
+    return _cache.values.where((lead) => lead.deletedAt != null).toList()
       ..sort((a, b) => b.deletedAt!.compareTo(a.deletedAt!));
   }
+
+  Future<void> _saveAll(Iterable<CustomerLead> leads) async {
+    final updates = <String, CustomerLead>{
+      for (final lead in leads) lead.id: lead,
+    };
+    if (updates.isEmpty) return;
+    await _box.putAll({
+      for (final entry in updates.entries)
+        entry.key: jsonEncode(_toMap(entry.value)),
+    });
+    _cache.addAll(updates);
+  }
+
+  Future<void> _deleteAll(Iterable<String> ids) async {
+    final idsToDelete = ids.toList(growable: false);
+    if (idsToDelete.isEmpty) return;
+    await _box.deleteAll(idsToDelete);
+    for (final id in idsToDelete) {
+      _cache.remove(id);
+    }
+  }
+
+  CustomerLead _decode(String value) =>
+      _fromMap(jsonDecode(value) as Map<String, dynamic>);
 
   Map<String, dynamic> _toMap(CustomerLead lead) => {
         'id': lead.id,

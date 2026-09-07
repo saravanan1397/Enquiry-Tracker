@@ -27,4 +27,20 @@ void main() {
 
     expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
   });
+
+  testWidgets('promoter registration offers the four fixed branches',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('New promoter? Create an account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Branch 1'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Branch 1'), findsWidgets);
+    expect(find.text('Branch 2'), findsOneWidget);
+    expect(find.text('Branch 3'), findsOneWidget);
+    expect(find.text('Branch 4'), findsOneWidget);
+  });
 }

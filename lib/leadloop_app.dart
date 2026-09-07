@@ -100,13 +100,14 @@ class LeadloopAccessGate extends StatefulWidget {
 
 class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     with WidgetsBindingObserver {
+  static const _branches = ['Branch 1', 'Branch 2', 'Branch 3', 'Branch 4'];
   final _nameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _pinController = TextEditingController();
   final _confirmPinController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _shopController = TextEditingController(text: 'Bengaluru Central');
+  String _selectedBranch = _branches.first;
   LeadloopAuthSession? _session;
   bool _ownerMode = false;
   bool _registering = false;
@@ -158,7 +159,6 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     _confirmPinController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _shopController.dispose();
     super.dispose();
   }
 
@@ -210,7 +210,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
         name: _nameController.text,
         mobile: _mobileController.text,
         pin: _pinController.text,
-        shopName: _shopController.text,
+        shopName: _selectedBranch,
       );
       await _auth.signOut();
       if (!mounted) return;
@@ -368,10 +368,22 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                               decoration: const InputDecoration(
                                   labelText: 'Mobile number')),
                           const SizedBox(height: 12),
-                          TextField(
-                              controller: _shopController,
-                              decoration: const InputDecoration(
-                                  labelText: 'Shop name')),
+                          DropdownButtonFormField<String>(
+                            initialValue: _selectedBranch,
+                            decoration:
+                                const InputDecoration(labelText: 'Shop name'),
+                            items: _branches
+                                .map((branch) => DropdownMenuItem(
+                                      value: branch,
+                                      child: Text(branch),
+                                    ))
+                                .toList(growable: false),
+                            onChanged: (branch) {
+                              if (branch != null) {
+                                setState(() => _selectedBranch = branch);
+                              }
+                            },
+                          ),
                           const SizedBox(height: 12),
                           TextField(
                               controller: _pinController,
@@ -1060,13 +1072,14 @@ class LeadloopAdminScreen extends StatefulWidget {
 }
 
 class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
+  final Map<String, _LeadCommentLayout> _commentLayouts = {};
   String? _shop;
   String? _promoter;
   FollowUpStage? _stage;
   DateTimeRange? _dateRange;
   LeadStatusFilter? _status;
 
-  List<CustomerLead> get _filtered {
+  List<CustomerLead> _filterLeads(Iterable<CustomerLead> source) {
     final start = _dateRange == null
         ? null
         : DateTime(
@@ -1081,8 +1094,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
             _dateRange!.end.month,
             _dateRange!.end.day + 1,
           );
-    return widget.store
-        .activeLeads()
+    return source
         .where((lead) =>
             (_shop == null || lead.shopName == _shop) &&
             (_promoter == null || lead.promoterName == _promoter) &&
@@ -1154,7 +1166,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   }
 
   Future<void> _deleteFiltered() async {
-    final leads = List<CustomerLead>.of(_filtered);
+    final leads = _filterLeads(widget.store.activeLeads());
     if (leads.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1174,9 +1186,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
       ),
     );
     if (confirmed != true) return;
-    for (final lead in leads) {
-      await widget.store.softDelete(lead.id);
-    }
+    await widget.store.softDeleteMany(leads.map((lead) => lead.id));
     await widget.onChanged?.call();
     if (!mounted) return;
     setState(() {});
@@ -1239,7 +1249,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   @override
   Widget build(BuildContext context) {
     final all = widget.store.activeLeads();
-    final leads = _filtered;
+    final leads = _filterLeads(all);
     final shops = all.map((lead) => lead.shopName).toSet().toList()..sort();
     final promoters = all.map((lead) => lead.promoterName).toSet().toList()
       ..sort();
@@ -1364,73 +1374,72 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                     DataColumn(label: Text('Sync')),
                     DataColumn(label: Text('Action'))
                   ],
-                  rows: leads
-                      .map((lead) => DataRow(cells: [
-                            DataCell(Text('${lead.name}\n${lead.phone}')),
-                            DataCell(Text(_formatDateTime(lead.createdAt))),
-                            DataCell(SizedBox(
-                              width: _commentWidth(lead),
-                              height: _commentHeight(lead),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(_commentsFor(lead),
-                                    softWrap: false,
-                                    maxLines: 3,
-                                    overflow: TextOverflow.visible),
-                              ),
-                            )),
-                            DataCell(
-                                Text('${lead.shopName}\n${lead.promoterName}')),
-                            DataCell(lead.isCompleted
-                                ? Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 9, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.successFor(
-                                              Theme.of(context).brightness)
-                                          .withAlpha(24),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.check_circle_outline,
-                                            size: 15,
-                                            color: AppColors.successFor(
-                                                Theme.of(context).brightness)),
-                                        const SizedBox(width: 5),
-                                        const Text('Completed'),
-                                      ],
-                                    ),
-                                  )
-                                : Text(
-                                    'Follow-up ${lead.currentStage.index + 1}')),
-                            DataCell(Icon(
-                                lead.isSynced
-                                    ? Icons.check_circle
-                                    : Icons.cloud_upload_outlined,
-                                color: lead.isSynced
-                                    ? AppColors.successFor(
+                  rows: leads.map((lead) {
+                    final commentLayout = _commentLayout(lead);
+                    return DataRow(cells: [
+                      DataCell(Text('${lead.name}\n${lead.phone}')),
+                      DataCell(Text(_formatDateTime(lead.createdAt))),
+                      DataCell(SizedBox(
+                        width: commentLayout.width,
+                        height: commentLayout.height,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(commentLayout.text,
+                              softWrap: false,
+                              maxLines: 3,
+                              overflow: TextOverflow.visible),
+                        ),
+                      )),
+                      DataCell(Text('${lead.shopName}\n${lead.promoterName}')),
+                      DataCell(lead.isCompleted
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: AppColors.successFor(
                                         Theme.of(context).brightness)
-                                    : AppColors.warningFor(
-                                        Theme.of(context).brightness),
-                                size: 18)),
-                            DataCell(Wrap(children: [
-                              IconButton(
-                                  tooltip: 'Edit customer',
-                                  onPressed: () => _edit(lead),
-                                  icon: const Icon(Icons.edit_outlined)),
-                              IconButton(
-                                  tooltip: 'Pass to another promoter',
-                                  onPressed: () => _transfer(lead),
-                                  icon: const Icon(Icons.swap_horiz_outlined)),
-                              IconButton(
-                                  tooltip: 'Move to recycle bin',
-                                  onPressed: () => _delete(lead),
-                                  icon: const Icon(Icons.delete_outline)),
-                            ])),
-                          ]))
-                      .toList(),
+                                    .withAlpha(24),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.check_circle_outline,
+                                      size: 15,
+                                      color: AppColors.successFor(
+                                          Theme.of(context).brightness)),
+                                  const SizedBox(width: 5),
+                                  const Text('Completed'),
+                                ],
+                              ),
+                            )
+                          : Text('Follow-up ${lead.currentStage.index + 1}')),
+                      DataCell(Icon(
+                          lead.isSynced
+                              ? Icons.check_circle
+                              : Icons.cloud_upload_outlined,
+                          color: lead.isSynced
+                              ? AppColors.successFor(
+                                  Theme.of(context).brightness)
+                              : AppColors.warningFor(
+                                  Theme.of(context).brightness),
+                          size: 18)),
+                      DataCell(Wrap(children: [
+                        IconButton(
+                            tooltip: 'Edit customer',
+                            onPressed: () => _edit(lead),
+                            icon: const Icon(Icons.edit_outlined)),
+                        IconButton(
+                            tooltip: 'Pass to another promoter',
+                            onPressed: () => _transfer(lead),
+                            icon: const Icon(Icons.swap_horiz_outlined)),
+                        IconButton(
+                            tooltip: 'Move to recycle bin',
+                            onPressed: () => _delete(lead),
+                            icon: const Icon(Icons.delete_outline)),
+                      ])),
+                    ]);
+                  }).toList(),
                 ),
               ),
             ),
@@ -1445,14 +1454,11 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     );
   }
 
-  String _commentsFor(CustomerLead lead) {
-    final comments = _commentLines(lead);
-    return comments.isEmpty ? '—' : comments.join('\n');
-  }
-
-  double _commentWidth(CustomerLead lead) {
+  _LeadCommentLayout _commentLayout(CustomerLead lead) {
     final lines = _commentLines(lead);
-    if (lines.isEmpty) return 72;
+    final text = lines.isEmpty ? '—' : lines.join('\n');
+    final cached = _commentLayouts[lead.id];
+    if (cached != null && cached.text == text) return cached;
 
     var longestLine = 0.0;
     for (final line in lines) {
@@ -1463,12 +1469,13 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
       )..layout();
       if (painter.width > longestLine) longestLine = painter.width;
     }
-    return longestLine + 24;
-  }
-
-  double _commentHeight(CustomerLead lead) {
-    final lineCount = _commentLines(lead).length;
-    return lineCount == 0 ? 24 : (lineCount * 22) + 4;
+    final layout = _LeadCommentLayout(
+      text: text,
+      width: lines.isEmpty ? 72 : longestLine + 24,
+      height: lines.isEmpty ? 24 : (lines.length * 22) + 4,
+    );
+    _commentLayouts[lead.id] = layout;
+    return layout;
   }
 
   List<String> _commentLines(CustomerLead lead) {
@@ -1487,6 +1494,18 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     }
     return comments;
   }
+}
+
+class _LeadCommentLayout {
+  const _LeadCommentLayout({
+    required this.text,
+    required this.width,
+    required this.height,
+  });
+
+  final String text;
+  final double width;
+  final double height;
 }
 
 class LeadloopPromoterAdminScreen extends StatefulWidget {
