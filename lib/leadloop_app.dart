@@ -1254,93 +1254,171 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     final promoters = all.map((lead) => lead.promoterName).toSet().toList()
       ..sort();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+      padding: kIsWeb
+          ? const EdgeInsets.fromLTRB(28, 16, 28, 28)
+          : const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        Text('ALL SHOPS · LIVE SYNC',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                fontSize: 11,
-                letterSpacing: 1.1)),
-        const SizedBox(height: 4),
-        const Text('Customer follow-ups',
-            style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.6)),
-        const SizedBox(height: 18),
-        Row(children: [
-          _LeadloopMetric(
-              label: 'Customers today', value: '${all.length}', tone: 0),
-          const SizedBox(width: 10),
-          _LeadloopMetric(
-              label: 'Completed',
-              value: '${all.where((lead) => lead.isCompleted).length}',
-              tone: 1),
-          const SizedBox(width: 10),
-          _LeadloopMetric(
-              label: 'Pending sync',
-              value: '${all.where((lead) => !lead.isSynced).length}',
-              tone: 2),
-        ]),
-        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border:
+                Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.space_dashboard_outlined,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('OVERVIEW · ALL BRANCHES',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1)),
+                  const SizedBox(height: 3),
+                  const Text('Customer follow-ups',
+                      style: TextStyle(
+                          fontSize: 23,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4)),
+                ],
+              ),
+            ),
+            Text('LIVE SYNC',
+                style: TextStyle(
+                    color: AppColors.successFor(Theme.of(context).brightness),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8)),
+          ]),
+        ),
+        const SizedBox(height: 12),
         LayoutBuilder(builder: (context, constraints) {
-          final itemWidth = constraints.maxWidth >= 900
-              ? (constraints.maxWidth - 24) / 4
-              : (constraints.maxWidth - 8) / 2;
+          final isCompact = constraints.maxWidth < 580;
+          final metricWidth = isCompact
+              ? (constraints.maxWidth - 8) / 2
+              : (constraints.maxWidth - 16) / 3;
           return Wrap(spacing: 8, runSpacing: 8, children: [
             SizedBox(
-              width: itemWidth,
-              child: _LeadloopDateFilter(
-                value: _dateRange,
-                onTap: _selectDateRange,
-                onClear: () => setState(() => _dateRange = null),
-              ),
-            ),
+                width: metricWidth,
+                child: _LeadloopMetric(
+                    label: 'All customers', value: '${all.length}', tone: 0)),
             SizedBox(
-              width: itemWidth,
-              child: _LeadloopFilter<String>(
-                  label: 'Promoter',
-                  value: _promoter,
-                  values: promoters,
-                  onChanged: (value) => setState(() => _promoter = value)),
-            ),
+                width: metricWidth,
+                child: _LeadloopMetric(
+                    label: 'Completed',
+                    value: '${all.where((lead) => lead.isCompleted).length}',
+                    tone: 1)),
             SizedBox(
-              width: itemWidth,
-              child: _LeadloopFilter<String>(
-                  label: 'Shop',
-                  value: _shop,
-                  values: shops,
-                  onChanged: (value) => setState(() => _shop = value)),
-            ),
-            SizedBox(
-              width: itemWidth,
-              child: _LeadloopFilter<LeadStatusFilter>(
-                label: 'Status',
-                value: _status,
-                values: LeadStatusFilter.values,
-                labelFor: (value) => switch (value) {
-                  LeadStatusFilter.active => 'Active',
-                  LeadStatusFilter.completed => 'Completed',
-                },
-                onChanged: (value) => setState(() => _status = value),
-              ),
-            ),
+                width: isCompact ? constraints.maxWidth : metricWidth,
+                child: _LeadloopMetric(
+                    label: 'Pending sync',
+                    value: '${all.where((lead) => !lead.isSynced).length}',
+                    tone: 2)),
           ]);
         }),
-        const SizedBox(height: 10),
-        _FollowUpStageButtons(
-          selected: _stage,
-          onSelected: (stage) => setState(() => _stage = stage),
-        ),
-        if (_hasActiveFilters) ...[
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(
-              child: Text('${leads.length} filtered records',
-                  style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 12)),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border:
+                Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('FILTER CUSTOMER RECORDS',
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1)),
+            const SizedBox(height: 10),
+            LayoutBuilder(builder: (context, constraints) {
+              final itemWidth = constraints.maxWidth >= 900
+                  ? (constraints.maxWidth - 24) / 4
+                  : (constraints.maxWidth - 8) / 2;
+              return Wrap(spacing: 8, runSpacing: 8, children: [
+                SizedBox(
+                  width: itemWidth,
+                  child: _LeadloopDateFilter(
+                    value: _dateRange,
+                    onTap: _selectDateRange,
+                    onClear: () => setState(() => _dateRange = null),
+                  ),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _LeadloopFilter<String>(
+                      label: 'Promoter',
+                      value: _promoter,
+                      values: promoters,
+                      onChanged: (value) => setState(() => _promoter = value)),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _LeadloopFilter<String>(
+                      label: 'Shop',
+                      value: _shop,
+                      values: shops,
+                      onChanged: (value) => setState(() => _shop = value)),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _LeadloopFilter<LeadStatusFilter>(
+                    label: 'Status',
+                    value: _status,
+                    values: LeadStatusFilter.values,
+                    labelFor: (value) => switch (value) {
+                      LeadStatusFilter.active => 'Active',
+                      LeadStatusFilter.completed => 'Completed',
+                    },
+                    onChanged: (value) => setState(() => _status = value),
+                  ),
+                ),
+              ]);
+            }),
+            const SizedBox(height: 10),
+            _FollowUpStageButtons(
+              selected: _stage,
+              onSelected: (stage) => setState(() => _stage = stage),
             ),
+          ]),
+        ),
+        const SizedBox(height: 14),
+        Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('CUSTOMER RECORDS',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1)),
+                const SizedBox(height: 3),
+                Text(_hasActiveFilters
+                    ? '${leads.length} filtered records'
+                    : '${leads.length} active records'),
+              ],
+            ),
+          ),
+          if (_hasActiveFilters)
             IconButton(
               tooltip: 'Move all filtered records to recycle bin',
               onPressed: leads.isEmpty ? null : _deleteFiltered,
@@ -1350,29 +1428,38 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
               ),
               icon: const Icon(Icons.delete_sweep_outlined),
             ),
-          ]),
-        ],
-        const SizedBox(height: 16),
+        ]),
+        const SizedBox(height: 8),
         LayoutBuilder(builder: (context, constraints) {
           final minWidth = kIsWeb && constraints.hasBoundedWidth
               ? constraints.maxWidth
               : 0.0;
-          return Card(
+          return Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant),
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: minWidth),
                 child: DataTable(
-                  dataRowMinHeight: 48,
+                  headingRowHeight: 42,
+                  dataRowMinHeight: 52,
                   dataRowMaxHeight: 180,
+                  horizontalMargin: 16,
+                  columnSpacing: 28,
                   columns: const [
-                    DataColumn(label: Text('Customer')),
-                    DataColumn(label: Text('Entered at')),
-                    DataColumn(label: Text('Comments')),
-                    DataColumn(label: Text('Shop / promoter')),
-                    DataColumn(label: Text('Follow-up')),
-                    DataColumn(label: Text('Sync')),
-                    DataColumn(label: Text('Action'))
+                    DataColumn(label: _OwnerColumnLabel('Customer')),
+                    DataColumn(label: _OwnerColumnLabel('Entered at')),
+                    DataColumn(label: _OwnerColumnLabel('Comments')),
+                    DataColumn(label: _OwnerColumnLabel('Shop / promoter')),
+                    DataColumn(label: _OwnerColumnLabel('Follow-up')),
+                    DataColumn(label: _OwnerColumnLabel('Sync')),
+                    DataColumn(label: _OwnerColumnLabel('Action'))
                   ],
                   rows: leads.map((lead) {
                     final commentLayout = _commentLayout(lead);
@@ -1506,6 +1593,20 @@ class _LeadCommentLayout {
   final String text;
   final double width;
   final double height;
+}
+
+class _OwnerColumnLabel extends StatelessWidget {
+  const _OwnerColumnLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(label.toUpperCase(),
+      style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.7));
 }
 
 class LeadloopPromoterAdminScreen extends StatefulWidget {
@@ -1864,26 +1965,36 @@ class _LeadloopMetric extends StatelessWidget {
           .withAlpha(Theme.of(context).brightness == Brightness.dark ? 34 : 18),
       scheme.surface,
     );
-    return Expanded(
-      child: Card(
-          color: cardColor,
-          child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label,
-                        style: TextStyle(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontSize: 11)),
-                    const SizedBox(height: 4),
-                    Text(value,
-                        style: TextStyle(
-                            color: accent,
-                            fontSize: 23,
-                            fontWeight: FontWeight.w700))
-                  ]))),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+      decoration: BoxDecoration(
+        color: cardColor,
+        border: Border.all(
+            color: accent.withAlpha(
+                Theme.of(context).brightness == Brightness.dark ? 74 : 52)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(children: [
+        Container(
+          width: 3,
+          height: 30,
+          decoration: BoxDecoration(
+              color: accent, borderRadius: BorderRadius.circular(4)),
+        ),
+        const SizedBox(width: 10),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label.toUpperCase(),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.7)),
+          const SizedBox(height: 3),
+          Text(value,
+              style: TextStyle(
+                  color: accent, fontSize: 21, fontWeight: FontWeight.w700)),
+        ]),
+      ]),
     );
   }
 }
