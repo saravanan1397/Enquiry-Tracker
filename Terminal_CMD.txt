@@ -17,3 +17,12 @@ flutter emulators --launch Pixel_5
 
 # Wait for the emulator to finish opening, then run the Android app
 flutter run -d emulator-5554
+
+
+
+git push
+
+cd "D:\Projects\Mobile App"
+git add -A
+git commit -m "Update Enquiry Tracker"
+git push origin main
