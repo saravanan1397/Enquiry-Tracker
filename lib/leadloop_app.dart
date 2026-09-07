@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
+import 'services/export_email_service.dart';
+import 'services/export_file_downloader.dart';
 import 'services/firebase_lead_backend.dart';
 import 'services/follow_up_deadline_service.dart';
 import 'services/leadloop_auth_service.dart';
@@ -485,6 +487,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
   late final SyncService _syncService;
   late final FirebaseLeadBackend _firebaseBackend;
   StreamSubscription? _leadSubscription;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -519,8 +522,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
   }
 
   Future<void> _exportCustomers({required bool email}) async {
-    await _syncService.syncNow();
-    if (!mounted) return;
+    if (_exporting) return;
 
     String? recipient;
     if (email) {
@@ -528,30 +530,99 @@ class _LeadloopShellState extends State<LeadloopShell> {
       if (recipient == null) return;
     }
 
-    final bytes = LeadExportService().buildWorkbook(
-      activeLeads: widget.store.activeLeads(),
-      deletedLeads: widget.store.recycleBin(),
-    );
-    final fileName =
-        'enquiry_tracker_customers_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-    await SharePlus.instance.share(
-      ShareParams(
-        title: email ? 'Email customer export' : 'Export customer data',
-        subject: 'Enquiry Tracker customer follow-ups',
-        text: email
-            ? 'Please send this Enquiry Tracker export to $recipient.'
-            : 'Enquiry Tracker customer follow-up export',
-        files: [
-          XFile.fromData(
-            bytes,
-            mimeType:
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          ),
-        ],
-        fileNameOverrides: [fileName],
-      ),
-    );
+    setState(() => _exporting = true);
+    try {
+      await _syncService.syncNow();
+      if (!mounted) return;
+
+      final bytes = LeadExportService().buildWorkbook(
+        activeLeads: widget.store.activeLeads(),
+        deletedLeads: widget.store.recycleBin(),
+      );
+      final fileName =
+          'enquiry_tracker_customers_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+
+      if (kIsWeb) {
+        await downloadExcelExport(bytes, fileName);
+        if (email) {
+          final opened = await launchUrl(
+            Uri(
+              scheme: 'mailto',
+              path: recipient,
+              queryParameters: {
+                'subject': 'Enquiry Tracker customer follow-ups',
+                'body': 'The Excel export has been downloaded as $fileName. '
+                    'Please attach it to this email before sending.',
+              },
+            ),
+            mode: LaunchMode.externalApplication,
+          );
+          if (!mounted) return;
+          _showExportMessage(opened
+              ? 'Excel downloaded and an email draft was opened for $recipient. Attach the file and send it.'
+              : 'Excel downloaded. Open your email app and attach $fileName for $recipient.');
+        } else if (mounted) {
+          _showExportMessage('Excel export downloaded successfully.');
+        }
+        return;
+      }
+
+      if (email) {
+        final opened = await ExportEmailService.composeAndroidEmail(
+          recipient: recipient!,
+          subject: 'Enquiry Tracker customer follow-ups',
+          body: 'Attached is the latest Enquiry Tracker customer export.',
+          fileName: fileName,
+          bytes: bytes,
+        );
+        if (opened) {
+          if (mounted) {
+            _showExportMessage(
+                'Email draft opened with the Excel export attached.');
+          }
+          return;
+        }
+      }
+
+      final result = await SharePlus.instance.share(
+        ShareParams(
+          title: email ? 'Send customer export' : 'Export customer data',
+          subject: 'Enquiry Tracker customer follow-ups',
+          text: email
+              ? 'Send this Enquiry Tracker export to $recipient.'
+              : 'Enquiry Tracker customer follow-up export',
+          files: [
+            XFile.fromData(
+              bytes,
+              name: fileName,
+              mimeType:
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ),
+          ],
+          fileNameOverrides: [fileName],
+          downloadFallbackEnabled: true,
+          mailToFallbackEnabled: true,
+        ),
+      );
+      if (!mounted) return;
+      _showExportMessage(result.status == ShareResultStatus.dismissed
+          ? 'Export was cancelled.'
+          : email
+              ? 'Choose an email app and send the attached Excel export to $recipient.'
+              : 'Choose where to save or share the Excel export.');
+    } catch (error) {
+      debugPrint('Customer export failed: $error');
+      if (mounted) {
+        _showExportMessage(
+            'Could not create the Excel export. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
+
+  void _showExportMessage(String message) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(message)));
 
   Future<String?> _askForEmail() async {
     final controller = TextEditingController();
@@ -637,11 +708,13 @@ class _LeadloopShellState extends State<LeadloopShell> {
         if (isAdmin) ...[
           IconButton(
               tooltip: 'Export to Excel',
-              onPressed: () => _exportCustomers(email: false),
+              onPressed:
+                  _exporting ? null : () => _exportCustomers(email: false),
               icon: const Icon(Icons.table_view_outlined)),
           IconButton(
               tooltip: 'Send Excel by email',
-              onPressed: () => _exportCustomers(email: true),
+              onPressed:
+                  _exporting ? null : () => _exportCustomers(email: true),
               icon: const Icon(Icons.email_outlined)),
         ],
         if (_firebaseBackend.isConfigured)
