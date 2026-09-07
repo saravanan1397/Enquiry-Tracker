@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
 import 'services/firebase_lead_backend.dart';
+import 'services/follow_up_deadline_service.dart';
 import 'services/leadloop_auth_service.dart';
 import 'services/lead_export_service.dart';
 import 'services/local_lead_store.dart';
@@ -812,6 +813,8 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         .activeLeads()
         .where((lead) => lead.promoterId == widget.promoterId)
         .toList();
+    final overdueFollowUp2 =
+        allLeads.where(FollowUpDeadlineService.isFollowUp2Overdue).toList();
     final leads = allLeads
         .where((lead) => _stage == null || lead.currentStage == _stage)
         .toList();
@@ -831,6 +834,10 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                 letterSpacing: -0.6)),
         const SizedBox(height: 12),
         _syncBanner(context),
+        if (overdueFollowUp2.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _FollowUp2OverdueBanner(leads: overdueFollowUp2),
+        ],
         const SizedBox(height: 17),
         TextField(
             controller: _name,
@@ -892,7 +899,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                             color: Theme.of(context).colorScheme.primary))),
                 title: Text(lead.name),
                 subtitle: Text(
-                    '${lead.phone} · ${lead.isCompleted ? 'Completed' : 'Follow-up ${lead.currentStage.index + 1}'}\nEntered ${_formatDateTime(lead.createdAt)}'),
+                    '${lead.phone} · ${lead.isCompleted ? 'Completed' : 'Follow-up ${lead.currentStage.index + 1}'}\n${FollowUpDeadlineService.isFollowUp2Overdue(lead) ? 'F2 overdue · due ${_formatDateTime(FollowUpDeadlineService.followUp2DueAt(lead)!)}' : 'Entered ${_formatDateTime(lead.createdAt)}'}'),
                 isThreeLine: true,
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   IconButton(
@@ -1015,6 +1022,10 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
                 style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 12)),
+            if (FollowUpDeadlineService.isFollowUp2Overdue(widget.lead)) ...[
+              const SizedBox(height: 12),
+              _FollowUp2OverdueBanner(leads: [widget.lead]),
+            ],
             const SizedBox(height: 22),
             _LeadloopFollowUpField(
               label: 'Follow-up 1',
@@ -1250,6 +1261,8 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   Widget build(BuildContext context) {
     final all = widget.store.activeLeads();
     final leads = _filterLeads(all);
+    final overdueFollowUp2 =
+        all.where(FollowUpDeadlineService.isFollowUp2Overdue).toList();
     final shops = all.map((lead) => lead.shopName).toSet().toList()..sort();
     final promoters = all.map((lead) => lead.promoterName).toSet().toList()
       ..sort();
@@ -1307,10 +1320,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
         ),
         const SizedBox(height: 12),
         LayoutBuilder(builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 580;
-          final metricWidth = isCompact
-              ? (constraints.maxWidth - 8) / 2
-              : (constraints.maxWidth - 16) / 3;
+          final metricColumns = constraints.maxWidth < 580 ? 2 : 4;
+          final metricWidth =
+              (constraints.maxWidth - (8 * (metricColumns - 1))) /
+                  metricColumns;
           return Wrap(spacing: 8, runSpacing: 8, children: [
             SizedBox(
                 width: metricWidth,
@@ -1323,13 +1336,23 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                     value: '${all.where((lead) => lead.isCompleted).length}',
                     tone: 1)),
             SizedBox(
-                width: isCompact ? constraints.maxWidth : metricWidth,
+                width: metricWidth,
                 child: _LeadloopMetric(
                     label: 'Pending sync',
                     value: '${all.where((lead) => !lead.isSynced).length}',
                     tone: 2)),
+            SizedBox(
+                width: metricWidth,
+                child: _LeadloopMetric(
+                    label: 'F2 overdue',
+                    value: '${overdueFollowUp2.length}',
+                    tone: 3)),
           ]);
         }),
+        if (overdueFollowUp2.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _FollowUp2OverdueBanner(leads: overdueFollowUp2),
+        ],
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(12),
@@ -1478,29 +1501,32 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                         ),
                       )),
                       DataCell(Text('${lead.shopName}\n${lead.promoterName}')),
-                      DataCell(lead.isCompleted
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 9, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: AppColors.successFor(
-                                        Theme.of(context).brightness)
-                                    .withAlpha(24),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.check_circle_outline,
-                                      size: 15,
-                                      color: AppColors.successFor(
-                                          Theme.of(context).brightness)),
-                                  const SizedBox(width: 5),
-                                  const Text('Completed'),
-                                ],
-                              ),
-                            )
-                          : Text('Follow-up ${lead.currentStage.index + 1}')),
+                      DataCell(FollowUpDeadlineService.isFollowUp2Overdue(lead)
+                          ? _FollowUp2OverdueCell(lead: lead)
+                          : lead.isCompleted
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 9, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.successFor(
+                                            Theme.of(context).brightness)
+                                        .withAlpha(24),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.check_circle_outline,
+                                          size: 15,
+                                          color: AppColors.successFor(
+                                              Theme.of(context).brightness)),
+                                      const SizedBox(width: 5),
+                                      const Text('Completed'),
+                                    ],
+                                  ),
+                                )
+                              : Text(
+                                  'Follow-up ${lead.currentStage.index + 1}')),
                       DataCell(Icon(
                           lead.isSynced
                               ? Icons.check_circle
@@ -1593,6 +1619,65 @@ class _LeadCommentLayout {
   final String text;
   final double width;
   final double height;
+}
+
+class _FollowUp2OverdueBanner extends StatelessWidget {
+  const _FollowUp2OverdueBanner({required this.leads});
+
+  final List<CustomerLead> leads;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSingleLead = leads.length == 1;
+    final lead = leads.first;
+    final dueAt = FollowUpDeadlineService.followUp2DueAt(lead);
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(children: [
+        Icon(Icons.notification_important_outlined,
+            size: 18, color: scheme.onErrorContainer),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            isSingleLead
+                ? 'Follow-up 2 is overdue for ${lead.name}. It was due ${_formatDateTime(dueAt)}.'
+                : 'Follow-up 2 is overdue for ${leads.length} customers. Review their records now.',
+            style: TextStyle(color: scheme.onErrorContainer, fontSize: 12),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _FollowUp2OverdueCell extends StatelessWidget {
+  const _FollowUp2OverdueCell({required this.lead});
+
+  final CustomerLead lead;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dueAt = FollowUpDeadlineService.followUp2DueAt(lead);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('F2 overdue',
+            style: TextStyle(
+                color: scheme.error,
+                fontWeight: FontWeight.w700,
+                fontSize: 12)),
+        Text('Due ${_formatDateTime(dueAt)}',
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11)),
+      ],
+    );
+  }
 }
 
 class _OwnerColumnLabel extends StatelessWidget {
@@ -1958,6 +2043,7 @@ class _LeadloopMetric extends StatelessWidget {
     final accent = switch (tone) {
       1 => scheme.secondary,
       2 => scheme.tertiary,
+      3 => scheme.error,
       _ => scheme.primary,
     };
     final cardColor = Color.alphaBlend(
