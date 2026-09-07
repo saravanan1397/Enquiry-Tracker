@@ -806,7 +806,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
       children: [
         Text('PROMOTER · ${widget.shopName.toUpperCase()}',
             style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.primary,
                 fontSize: 11,
                 letterSpacing: 1.1)),
         const SizedBox(height: 4),
@@ -1158,7 +1158,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
       children: [
         Text('ALL SHOPS · LIVE SYNC',
             style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.primary,
                 fontSize: 11,
                 letterSpacing: 1.1)),
         const SizedBox(height: 4),
@@ -1169,16 +1169,19 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                 letterSpacing: -0.6)),
         const SizedBox(height: 18),
         Row(children: [
-          _LeadloopMetric(label: 'Customers today', value: '${all.length}'),
+          _LeadloopMetric(
+              label: 'Customers today', value: '${all.length}', tone: 0),
           const SizedBox(width: 10),
           _LeadloopMetric(
               label: 'Follow-up 3',
               value:
-                  '${all.where((lead) => lead.currentStage == FollowUpStage.third).length}'),
+                  '${all.where((lead) => lead.currentStage == FollowUpStage.third).length}',
+              tone: 1),
           const SizedBox(width: 10),
           _LeadloopMetric(
               label: 'Pending sync',
-              value: '${all.where((lead) => !lead.isSynced).length}'),
+              value: '${all.where((lead) => !lead.isSynced).length}',
+              tone: 2),
         ]),
         const SizedBox(height: 20),
         Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
@@ -1423,7 +1426,7 @@ class _LeadloopPromoterAdminScreenState
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('OWNER ACCESS ONLY',
                   style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 11,
                       letterSpacing: 1.1)),
               const SizedBox(height: 4),
@@ -1531,7 +1534,7 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
       children: [
         Text('OWNER ACCESS ONLY',
             style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.primary,
                 fontSize: 11,
                 letterSpacing: 1.1)),
         const SizedBox(height: 4),
@@ -1652,14 +1655,32 @@ class _FollowUpStageButtons extends StatelessWidget {
 }
 
 class _LeadloopMetric extends StatelessWidget {
-  const _LeadloopMetric({required this.label, required this.value});
+  const _LeadloopMetric({
+    required this.label,
+    required this.value,
+    required this.tone,
+  });
 
   final String label;
   final String value;
+  final int tone;
 
   @override
-  Widget build(BuildContext context) => Expanded(
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = switch (tone) {
+      1 => scheme.secondary,
+      2 => scheme.tertiary,
+      _ => scheme.primary,
+    };
+    final cardColor = Color.alphaBlend(
+      accent
+          .withAlpha(Theme.of(context).brightness == Brightness.dark ? 34 : 18),
+      scheme.surface,
+    );
+    return Expanded(
       child: Card(
+          color: cardColor,
           child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -1672,9 +1693,13 @@ class _LeadloopMetric extends StatelessWidget {
                             fontSize: 11)),
                     const SizedBox(height: 4),
                     Text(value,
-                        style: const TextStyle(
-                            fontSize: 23, fontWeight: FontWeight.w600))
-                  ]))));
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 23,
+                            fontWeight: FontWeight.w700))
+                  ]))),
+    );
+  }
 }
 
 class _LeadloopFilter<T> extends StatelessWidget {
@@ -1696,6 +1721,7 @@ class _LeadloopFilter<T> extends StatelessWidget {
         height: 42,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
             border: Border.all(color: Theme.of(context).colorScheme.outline),
             borderRadius: BorderRadius.circular(8)),
         child: DropdownButtonHideUnderline(
