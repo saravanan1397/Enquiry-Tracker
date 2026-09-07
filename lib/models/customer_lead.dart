@@ -37,8 +37,10 @@ class CustomerLead {
   final bool isSynced;
   final DateTime? deletedAt;
 
+  bool get isCompleted => followUp3?.trim().isNotEmpty == true;
+
   FollowUpStage get currentStage {
-    if (followUp3?.trim().isNotEmpty == true) return FollowUpStage.third;
+    if (isCompleted) return FollowUpStage.third;
     if (followUp2?.trim().isNotEmpty == true) return FollowUpStage.second;
     return FollowUpStage.first;
   }

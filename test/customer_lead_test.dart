@@ -41,9 +41,12 @@ void main() {
     expect(lead.currentStage, FollowUpStage.first);
     expect(
         lead.copyWith(followUp1: 'Called').currentStage, FollowUpStage.first);
-    expect(lead.copyWith(followUp2: 'Called again').currentStage,
-        FollowUpStage.second);
-    expect(lead.copyWith(followUp3: 'Completed').currentStage,
-        FollowUpStage.third);
+    final second =
+        lead.copyWith(followUp1: 'Called', followUp2: 'Called again');
+    expect(second.currentStage, FollowUpStage.second);
+    expect(second.isCompleted, isFalse);
+    final completed = second.copyWith(followUp3: 'Completed');
+    expect(completed.currentStage, FollowUpStage.third);
+    expect(completed.isCompleted, isTrue);
   });
 }

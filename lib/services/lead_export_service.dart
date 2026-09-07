@@ -43,6 +43,7 @@ class LeadExportService {
       TextCellValue('Follow-up 2 at'),
       TextCellValue('Follow-up 3'),
       TextCellValue('Follow-up 3 at'),
+      TextCellValue('Status'),
       TextCellValue('Current stage'),
       TextCellValue('Deleted at'),
     ]);
@@ -61,6 +62,7 @@ class LeadExportService {
       TextCellValue(lead.followUp2At?.toIso8601String() ?? ''),
       TextCellValue(lead.followUp3 ?? ''),
       TextCellValue(lead.followUp3At?.toIso8601String() ?? ''),
+      TextCellValue(lead.isCompleted ? 'Completed' : 'Active'),
       TextCellValue('Follow-up ${lead.currentStage.index + 1}'),
       TextCellValue(lead.deletedAt?.toIso8601String() ?? ''),
     ]);

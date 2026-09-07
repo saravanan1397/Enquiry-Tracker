@@ -18,6 +18,8 @@ import 'theme/app_theme.dart';
 
 enum LeadloopRole { promoter, admin }
 
+enum LeadStatusFilter { active, completed }
+
 class LeadloopV2 extends StatefulWidget {
   const LeadloopV2({super.key, required this.store});
 
@@ -878,7 +880,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                             color: Theme.of(context).colorScheme.primary))),
                 title: Text(lead.name),
                 subtitle: Text(
-                    '${lead.phone} · Follow-up ${lead.currentStage.index + 1}\nEntered ${_formatDateTime(lead.createdAt)}'),
+                    '${lead.phone} · ${lead.isCompleted ? 'Completed' : 'Follow-up ${lead.currentStage.index + 1}'}\nEntered ${_formatDateTime(lead.createdAt)}'),
                 isThreeLine: true,
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   IconButton(
@@ -948,6 +950,16 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     final first = _first.text.trim();
     final second = _second.text.trim();
     final third = _third.text.trim();
+    if (second.isNotEmpty && first.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Save Follow-up 1 before entering Follow-up 2.')));
+      return;
+    }
+    if (third.isNotEmpty && second.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Save Follow-up 2 before entering Follow-up 3.')));
+      return;
+    }
     await widget.store.save(widget.lead.copyWith(
       name: name,
       phone: phone,
@@ -1002,12 +1014,16 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
               label: 'Follow-up 2',
               controller: _second,
               enteredAt: widget.lead.followUp2At,
+              enabled: widget.lead.followUp1?.trim().isNotEmpty == true,
+              lockedMessage: 'Save Follow-up 1 to unlock this comment',
             ),
             const SizedBox(height: 14),
             _LeadloopFollowUpField(
               label: 'Follow-up 3',
               controller: _third,
               enteredAt: widget.lead.followUp3At,
+              enabled: widget.lead.followUp2?.trim().isNotEmpty == true,
+              lockedMessage: 'Save Follow-up 2 to unlock this comment',
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
@@ -1047,14 +1063,57 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   String? _shop;
   String? _promoter;
   FollowUpStage? _stage;
+  DateTimeRange? _dateRange;
+  LeadStatusFilter? _status;
 
-  List<CustomerLead> get _filtered => widget.store
-      .activeLeads()
-      .where((lead) =>
-          (_shop == null || lead.shopName == _shop) &&
-          (_promoter == null || lead.promoterName == _promoter) &&
-          (_stage == null || lead.currentStage == _stage))
-      .toList();
+  List<CustomerLead> get _filtered {
+    final start = _dateRange == null
+        ? null
+        : DateTime(
+            _dateRange!.start.year,
+            _dateRange!.start.month,
+            _dateRange!.start.day,
+          );
+    final end = _dateRange == null
+        ? null
+        : DateTime(
+            _dateRange!.end.year,
+            _dateRange!.end.month,
+            _dateRange!.end.day + 1,
+          );
+    return widget.store
+        .activeLeads()
+        .where((lead) =>
+            (_shop == null || lead.shopName == _shop) &&
+            (_promoter == null || lead.promoterName == _promoter) &&
+            (_stage == null || lead.currentStage == _stage) &&
+            (start == null || !lead.createdAt.isBefore(start)) &&
+            (end == null || lead.createdAt.isBefore(end)) &&
+            (_status == null ||
+                (_status == LeadStatusFilter.completed) == lead.isCompleted))
+        .toList();
+  }
+
+  bool get _hasActiveFilters =>
+      _dateRange != null ||
+      _promoter != null ||
+      _shop != null ||
+      _stage != null ||
+      _status != null;
+
+  Future<void> _selectDateRange() async {
+    final now = DateTime.now();
+    final selected = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1, 12, 31),
+      initialDateRange: _dateRange,
+      helpText: 'FILTER BY ENTRY DATE',
+    );
+    if (selected != null && mounted) {
+      setState(() => _dateRange = selected);
+    }
+  }
 
   Future<void> _edit(CustomerLead lead) async {
     await Navigator.push(
@@ -1092,6 +1151,37 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     await widget.onChanged?.call();
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _deleteFiltered() async {
+    final leads = List<CustomerLead>.of(_filtered);
+    if (leads.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Move ${leads.length} filtered records?'),
+        content: const Text(
+            'Every record currently shown below the filters will move to the recycle bin and can be restored later.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.delete_sweep_outlined),
+              label: const Text('Move records')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    for (final lead in leads) {
+      await widget.store.softDelete(lead.id);
+    }
+    await widget.onChanged?.call();
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${leads.length} records moved to the recycle bin.')));
   }
 
   Future<void> _transfer(CustomerLead lead) async {
@@ -1173,9 +1263,8 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
               label: 'Customers today', value: '${all.length}', tone: 0),
           const SizedBox(width: 10),
           _LeadloopMetric(
-              label: 'Follow-up 3',
-              value:
-                  '${all.where((lead) => lead.currentStage == FollowUpStage.third).length}',
+              label: 'Completed',
+              value: '${all.where((lead) => lead.isCompleted).length}',
               tone: 1),
           const SizedBox(width: 10),
           _LeadloopMetric(
@@ -1184,26 +1273,75 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
               tone: 2),
         ]),
         const SizedBox(height: 20),
-        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Expanded(
-              child: _LeadloopFilter<String>(
-                  label: 'Shop',
-                  value: _shop,
-                  values: shops,
-                  onChanged: (value) => setState(() => _shop = value))),
-          const SizedBox(width: 6),
-          Expanded(
+        LayoutBuilder(builder: (context, constraints) {
+          final itemWidth = constraints.maxWidth >= 900
+              ? (constraints.maxWidth - 24) / 4
+              : (constraints.maxWidth - 8) / 2;
+          return Wrap(spacing: 8, runSpacing: 8, children: [
+            SizedBox(
+              width: itemWidth,
+              child: _LeadloopDateFilter(
+                value: _dateRange,
+                onTap: _selectDateRange,
+                onClear: () => setState(() => _dateRange = null),
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
               child: _LeadloopFilter<String>(
                   label: 'Promoter',
                   value: _promoter,
                   values: promoters,
-                  onChanged: (value) => setState(() => _promoter = value))),
-        ]),
+                  onChanged: (value) => setState(() => _promoter = value)),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _LeadloopFilter<String>(
+                  label: 'Shop',
+                  value: _shop,
+                  values: shops,
+                  onChanged: (value) => setState(() => _shop = value)),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _LeadloopFilter<LeadStatusFilter>(
+                label: 'Status',
+                value: _status,
+                values: LeadStatusFilter.values,
+                labelFor: (value) => switch (value) {
+                  LeadStatusFilter.active => 'Active',
+                  LeadStatusFilter.completed => 'Completed',
+                },
+                onChanged: (value) => setState(() => _status = value),
+              ),
+            ),
+          ]);
+        }),
         const SizedBox(height: 10),
         _FollowUpStageButtons(
           selected: _stage,
           onSelected: (stage) => setState(() => _stage = stage),
         ),
+        if (_hasActiveFilters) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: Text('${leads.length} filtered records',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 12)),
+            ),
+            IconButton(
+              tooltip: 'Move all filtered records to recycle bin',
+              onPressed: leads.isEmpty ? null : _deleteFiltered,
+              style: IconButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+              icon: const Icon(Icons.delete_sweep_outlined),
+            ),
+          ]),
+        ],
         const SizedBox(height: 16),
         LayoutBuilder(builder: (context, constraints) {
           final minWidth = kIsWeb && constraints.hasBoundedWidth
@@ -1243,8 +1381,30 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                             )),
                             DataCell(
                                 Text('${lead.shopName}\n${lead.promoterName}')),
-                            DataCell(Text(
-                                'Follow-up ${lead.currentStage.index + 1}')),
+                            DataCell(lead.isCompleted
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 9, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.successFor(
+                                              Theme.of(context).brightness)
+                                          .withAlpha(24),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.check_circle_outline,
+                                            size: 15,
+                                            color: AppColors.successFor(
+                                                Theme.of(context).brightness)),
+                                        const SizedBox(width: 5),
+                                        const Text('Completed'),
+                                      ],
+                                    ),
+                                  )
+                                : Text(
+                                    'Follow-up ${lead.currentStage.index + 1}')),
                             DataCell(Icon(
                                 lead.isSynced
                                     ? Icons.check_circle
@@ -1598,23 +1758,30 @@ class _LeadloopFollowUpField extends StatelessWidget {
     required this.label,
     required this.controller,
     required this.enteredAt,
+    this.enabled = true,
+    this.lockedMessage,
   });
 
   final String label;
   final TextEditingController controller;
   final DateTime? enteredAt;
+  final bool enabled;
+  final String? lockedMessage;
 
   @override
   Widget build(BuildContext context) => TextField(
       controller: controller,
+      enabled: enabled,
       minLines: 1,
       maxLines: 2,
       decoration: InputDecoration(
         labelText: label,
         hintText: 'Add customer response or outcome',
-        helperText: enteredAt == null
-            ? 'Date and time will be saved with this comment'
-            : 'Last entered ${_formatDateTime(enteredAt)}',
+        helperText: !enabled
+            ? lockedMessage
+            : enteredAt == null
+                ? 'Date and time will be saved with this comment'
+                : 'Last entered ${_formatDateTime(enteredAt)}',
       ));
 }
 
@@ -1747,6 +1914,59 @@ class _LeadloopFilter<T> extends StatelessWidget {
       );
 }
 
+class _LeadloopDateFilter extends StatelessWidget {
+  const _LeadloopDateFilter({
+    required this.value,
+    required this.onTap,
+    required this.onClear,
+  });
+
+  final DateTimeRange? value;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: Theme.of(context).colorScheme.outline),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            height: 42,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(children: [
+                const Icon(Icons.date_range_outlined, size: 16),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    value == null
+                        ? 'Any Date'
+                        : '${_formatDateOnly(value!.start)} – ${_formatDateOnly(value!.end)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                if (value != null)
+                  InkWell(
+                    onTap: onClear,
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close, size: 15),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+        ),
+      );
+}
+
 String _formatDateTime(DateTime? value) {
   if (value == null) return 'Time not recorded';
   const months = [
@@ -1769,4 +1989,22 @@ String _formatDateTime(DateTime? value) {
   final period = local.hour < 12 ? 'AM' : 'PM';
   return '${local.day.toString().padLeft(2, '0')} '
       '${months[local.month - 1]} ${local.year}, $hour:$minute $period';
+}
+
+String _formatDateOnly(DateTime value) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  return '${value.day} ${months[value.month - 1]} ${value.year}';
 }
