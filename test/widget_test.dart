@@ -20,5 +20,11 @@ void main() {
 
     // Verify that the app launches without crashing
     expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.dark_mode_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
   });
 }

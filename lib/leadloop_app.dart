@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -17,24 +18,79 @@ import 'theme/app_theme.dart';
 
 enum LeadloopRole { promoter, admin }
 
-class LeadloopV2 extends StatelessWidget {
+class LeadloopV2 extends StatefulWidget {
   const LeadloopV2({super.key, required this.store});
 
   final LocalLeadStore store;
+
+  @override
+  State<LeadloopV2> createState() => _LeadloopV2State();
+}
+
+class _LeadloopV2State extends State<LeadloopV2> {
+  static const _themeKey = 'enquiry_tracker_theme_mode';
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  ThemeMode _themeMode = ThemeMode.light;
+
+  bool get _isDarkMode => _themeMode == ThemeMode.dark;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreTheme();
+  }
+
+  Future<void> _restoreTheme() async {
+    try {
+      final savedTheme = await _storage.read(key: _themeKey);
+      if (!mounted || savedTheme == null) return;
+      setState(() {
+        _themeMode = savedTheme == 'dark' ? ThemeMode.dark : ThemeMode.light;
+      });
+    } catch (_) {
+      // Keep the light default if storage is unavailable.
+    }
+  }
+
+  Future<void> _toggleTheme() async {
+    final nextMode = _isDarkMode ? ThemeMode.light : ThemeMode.dark;
+    setState(() => _themeMode = nextMode);
+    try {
+      await _storage.write(
+        key: _themeKey,
+        value: nextMode == ThemeMode.dark ? 'dark' : 'light',
+      );
+    } catch (_) {
+      // The visual change still works for the current session.
+    }
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Enquiry Tracker',
         theme: AppTheme.light(),
-        home: LeadloopAccessGate(store: store),
+        darkTheme: AppTheme.dark(),
+        themeMode: _themeMode,
+        home: LeadloopAccessGate(
+          store: widget.store,
+          isDarkMode: _isDarkMode,
+          onToggleTheme: _toggleTheme,
+        ),
       );
 }
 
 class LeadloopAccessGate extends StatefulWidget {
-  const LeadloopAccessGate({super.key, required this.store});
+  const LeadloopAccessGate({
+    super.key,
+    required this.store,
+    required this.isDarkMode,
+    required this.onToggleTheme,
+  });
 
   final LocalLeadStore store;
+  final bool isDarkMode;
+  final VoidCallback onToggleTheme;
 
   @override
   State<LeadloopAccessGate> createState() => _LeadloopAccessGateState();
@@ -209,169 +265,201 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
         store: widget.store,
         session: session,
         onLogout: _logout,
+        isDarkMode: widget.isDarkMode,
+        onToggleTheme: widget.onToggleTheme,
       );
     }
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 390),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      child: const Icon(Icons.layers_outlined,
-                          color: Colors.white),
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primary,
+                          child: Icon(Icons.layers_outlined,
+                              color: Theme.of(context).colorScheme.onPrimary),
+                        ),
+                        const SizedBox(height: 20),
+                        const Text('Welcome to Enquiry Tracker',
+                            style: TextStyle(
+                                fontSize: 26, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        Text(
+                            _registering
+                                ? 'Create your promoter account.'
+                                : _ownerMode
+                                    ? 'Sign in with your owner account.'
+                                    : 'Sign in with your mobile number and PIN.',
+                            style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant)),
+                        const SizedBox(height: 24),
+                        if (!_registering)
+                          Wrap(spacing: 8, children: [
+                            ChoiceChip(
+                                label: const Text('Promoter'),
+                                selected: !_ownerMode,
+                                onSelected: (_) => setState(() {
+                                      _ownerMode = false;
+                                      _error = null;
+                                    })),
+                            ChoiceChip(
+                                label: const Text('Owner'),
+                                selected: _ownerMode,
+                                onSelected: (_) => setState(() {
+                                      _ownerMode = true;
+                                      _error = null;
+                                    })),
+                          ]),
+                        if (!_registering && !_ownerMode) ...[
+                          const SizedBox(height: 16),
+                          TextField(
+                              controller: _mobileController,
+                              keyboardType: TextInputType.phone,
+                              decoration: const InputDecoration(
+                                  labelText: 'Mobile number')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: _pinController,
+                              obscureText: true,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                  labelText: 'Personal PIN',
+                                  errorText: _error)),
+                        ],
+                        if (!_registering && _ownerMode) ...[
+                          const SizedBox(height: 16),
+                          TextField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: const InputDecoration(
+                                  labelText: 'Owner email')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: _passwordController,
+                              obscureText: true,
+                              decoration: InputDecoration(
+                                  labelText: 'Owner password',
+                                  errorText: _error)),
+                        ],
+                        if (_registering) ...[
+                          TextField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                  labelText: 'Full name')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: _mobileController,
+                              keyboardType: TextInputType.phone,
+                              decoration: const InputDecoration(
+                                  labelText: 'Mobile number')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: _shopController,
+                              decoration: const InputDecoration(
+                                  labelText: 'Shop name')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: _pinController,
+                              obscureText: true,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'Create PIN (6+ digits)')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: _confirmPinController,
+                              obscureText: true,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                  labelText: 'Confirm PIN', errorText: _error)),
+                        ],
+                        const SizedBox(height: 14),
+                        SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                                onPressed: _busy
+                                    ? null
+                                    : (_registering ? _register : _submit),
+                                child: Text(_busy
+                                    ? 'Please wait...'
+                                    : _registering
+                                        ? 'Create promoter account'
+                                        : 'Sign in'))),
+                        const SizedBox(height: 10),
+                        if (!_ownerMode || _registering)
+                          TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => setState(() {
+                                        _registering = !_registering;
+                                        _error = null;
+                                      }),
+                              child: Text(_registering
+                                  ? 'Already registered? Sign in'
+                                  : 'New promoter? Create an account')),
+                        if (_error != null &&
+                            !_registering &&
+                            (_ownerMode || _mobileController.text.isEmpty))
+                          Text(_error!,
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error)),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    const Text('Welcome to Enquiry Tracker',
-                        style: TextStyle(
-                            fontSize: 26, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
-                    Text(
-                        _registering
-                            ? 'Create your promoter account.'
-                            : _ownerMode
-                                ? 'Sign in with your owner account.'
-                                : 'Sign in with your mobile number and PIN.',
-                        style: TextStyle(color: Colors.grey.shade600)),
-                    const SizedBox(height: 24),
-                    if (!_registering)
-                      Wrap(spacing: 8, children: [
-                        ChoiceChip(
-                            label: const Text('Promoter'),
-                            selected: !_ownerMode,
-                            onSelected: (_) => setState(() {
-                                  _ownerMode = false;
-                                  _error = null;
-                                })),
-                        ChoiceChip(
-                            label: const Text('Owner'),
-                            selected: _ownerMode,
-                            onSelected: (_) => setState(() {
-                                  _ownerMode = true;
-                                  _error = null;
-                                })),
-                      ]),
-                    if (!_registering && !_ownerMode) ...[
-                      const SizedBox(height: 16),
-                      TextField(
-                          controller: _mobileController,
-                          keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
-                              labelText: 'Mobile number')),
-                      const SizedBox(height: 12),
-                      TextField(
-                          controller: _pinController,
-                          obscureText: true,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                              labelText: 'Personal PIN', errorText: _error)),
-                    ],
-                    if (!_registering && _ownerMode) ...[
-                      const SizedBox(height: 16),
-                      TextField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration:
-                              const InputDecoration(labelText: 'Owner email')),
-                      const SizedBox(height: 12),
-                      TextField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          decoration: InputDecoration(
-                              labelText: 'Owner password', errorText: _error)),
-                    ],
-                    if (_registering) ...[
-                      TextField(
-                          controller: _nameController,
-                          decoration:
-                              const InputDecoration(labelText: 'Full name')),
-                      const SizedBox(height: 12),
-                      TextField(
-                          controller: _mobileController,
-                          keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
-                              labelText: 'Mobile number')),
-                      const SizedBox(height: 12),
-                      TextField(
-                          controller: _shopController,
-                          decoration:
-                              const InputDecoration(labelText: 'Shop name')),
-                      const SizedBox(height: 12),
-                      TextField(
-                          controller: _pinController,
-                          obscureText: true,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                              labelText: 'Create PIN (6+ digits)')),
-                      const SizedBox(height: 12),
-                      TextField(
-                          controller: _confirmPinController,
-                          obscureText: true,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                              labelText: 'Confirm PIN', errorText: _error)),
-                    ],
-                    const SizedBox(height: 14),
-                    SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                            onPressed: _busy
-                                ? null
-                                : (_registering ? _register : _submit),
-                            child: Text(_busy
-                                ? 'Please wait...'
-                                : _registering
-                                    ? 'Create promoter account'
-                                    : 'Sign in'))),
-                    const SizedBox(height: 10),
-                    if (!_ownerMode || _registering)
-                      TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => setState(() {
-                                    _registering = !_registering;
-                                    _error = null;
-                                  }),
-                          child: Text(_registering
-                              ? 'Already registered? Sign in'
-                              : 'New promoter? Create an account')),
-                    if (_error != null &&
-                        !_registering &&
-                        (_ownerMode || _mobileController.text.isEmpty))
-                      Text(_error!,
-                          style: TextStyle(
-                              color: Theme.of(context).colorScheme.error)),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+          Positioned(
+            top: 12,
+            right: 12,
+            child: SafeArea(
+              child: IconButton(
+                tooltip: widget.isDarkMode
+                    ? 'Switch to light theme'
+                    : 'Switch to dark theme',
+                onPressed: widget.onToggleTheme,
+                icon: Icon(widget.isDarkMode
+                    ? Icons.light_mode_outlined
+                    : Icons.dark_mode_outlined),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class LeadloopShell extends StatefulWidget {
-  const LeadloopShell(
-      {super.key,
-      required this.role,
-      required this.store,
-      required this.session,
-      required this.onLogout});
+  const LeadloopShell({
+    super.key,
+    required this.role,
+    required this.store,
+    required this.session,
+    required this.onLogout,
+    required this.isDarkMode,
+    required this.onToggleTheme,
+  });
 
   final LeadloopRole role;
   final LocalLeadStore store;
   final LeadloopAuthSession session;
   final VoidCallback onLogout;
+  final bool isDarkMode;
+  final VoidCallback onToggleTheme;
 
   @override
   State<LeadloopShell> createState() => _LeadloopShellState();
@@ -547,6 +635,14 @@ class _LeadloopShellState extends State<LeadloopShell> {
               onPressed: _syncNow,
               icon: const Icon(Icons.sync_outlined)),
         IconButton(
+            tooltip: widget.isDarkMode
+                ? 'Switch to light theme'
+                : 'Switch to dark theme',
+            onPressed: widget.onToggleTheme,
+            icon: Icon(widget.isDarkMode
+                ? Icons.light_mode_outlined
+                : Icons.dark_mode_outlined)),
+        IconButton(
             tooltip: 'Lock app',
             onPressed: widget.onLogout,
             icon: const Icon(Icons.lock_outline))
@@ -647,40 +743,41 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
   }
 
   Widget _syncBanner(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final (message, color, icon) = switch (widget.syncStatus) {
       LeadloopSyncStatus.checking => (
           'Checking internet connection...',
-          AppColors.primaryContainer,
+          isDark ? AppColors.darkPrimarySurface : AppColors.primaryContainer,
           Icons.sync
         ),
       LeadloopSyncStatus.offline => (
           'Offline · Saved on this device',
-          AppColors.warningSurface,
+          isDark ? AppColors.darkWarningSurface : AppColors.warningSurface,
           Icons.cloud_off_outlined
         ),
       LeadloopSyncStatus.syncing => (
           'Syncing with Firebase...',
-          AppColors.primaryContainer,
+          isDark ? AppColors.darkPrimarySurface : AppColors.primaryContainer,
           Icons.sync
         ),
       LeadloopSyncStatus.synced => (
           'Online · Synced to Firebase',
-          AppColors.successSurface,
+          isDark ? AppColors.darkSuccessSurface : AppColors.successSurface,
           Icons.cloud_done_outlined
         ),
       LeadloopSyncStatus.error => (
           'Sync failed · Saved locally; will retry',
-          AppColors.errorSurface,
+          isDark ? AppColors.darkErrorSurface : AppColors.errorSurface,
           Icons.cloud_off_outlined
         ),
     };
     final foreground = widget.syncStatus == LeadloopSyncStatus.offline
-        ? AppColors.warning
+        ? (isDark ? AppColors.darkWarning : AppColors.warning)
         : widget.syncStatus == LeadloopSyncStatus.error
-            ? AppColors.error
+            ? (isDark ? AppColors.darkError : AppColors.error)
             : widget.syncStatus == LeadloopSyncStatus.synced
-                ? AppColors.success
-                : AppColors.primary;
+                ? (isDark ? AppColors.darkSuccess : AppColors.success)
+                : Theme.of(context).colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration:
@@ -709,7 +806,9 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
       children: [
         Text('PROMOTER · ${widget.shopName.toUpperCase()}',
             style: TextStyle(
-                color: Colors.grey.shade600, fontSize: 11, letterSpacing: 1.1)),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 11,
+                letterSpacing: 1.1)),
         const SizedBox(height: 4),
         const Text('Capture a lead',
             style: TextStyle(
@@ -749,7 +848,9 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
               style: TextStyle(fontWeight: FontWeight.w600)),
           const Spacer(),
           Text('${leads.length} shown · ${allLeads.length} total',
-              style: const TextStyle(color: Colors.grey, fontSize: 12))
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 12))
         ]),
         const SizedBox(height: 10),
         _FollowUpStageButtons(
@@ -770,7 +871,8 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                 contentPadding: EdgeInsets.zero,
                 onTap: () => _openLead(lead),
                 leading: CircleAvatar(
-                    backgroundColor: AppColors.primaryContainer,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primaryContainer,
                     child: Text(lead.name.substring(0, 1).toUpperCase(),
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.primary))),
@@ -786,7 +888,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                   IconButton(
                       tooltip: 'Call customer',
                       icon: const Icon(Icons.phone_outlined),
-                      color: AppColors.success,
+                      color: AppColors.successFor(Theme.of(context).brightness),
                       onPressed: () => _call(lead.phone)),
                 ]),
               )),
@@ -886,7 +988,9 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
             ),
             const SizedBox(height: 8),
             Text('Entered ${_formatDateTime(widget.lead.createdAt)}',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12)),
             const SizedBox(height: 22),
             _LeadloopFollowUpField(
               label: 'Follow-up 1',
@@ -1054,7 +1158,9 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
       children: [
         Text('ALL SHOPS · LIVE SYNC',
             style: TextStyle(
-                color: Colors.grey.shade600, fontSize: 11, letterSpacing: 1.1)),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 11,
+                letterSpacing: 1.1)),
         const SizedBox(height: 4),
         const Text('Customer follow-ups',
             style: TextStyle(
@@ -1141,8 +1247,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                                     ? Icons.check_circle
                                     : Icons.cloud_upload_outlined,
                                 color: lead.isSynced
-                                    ? AppColors.success
-                                    : AppColors.warning,
+                                    ? AppColors.successFor(
+                                        Theme.of(context).brightness)
+                                    : AppColors.warningFor(
+                                        Theme.of(context).brightness),
                                 size: 18)),
                             DataCell(Wrap(children: [
                               IconButton(
@@ -1186,9 +1294,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     var longestLine = 0.0;
     for (final line in lines) {
       final painter = TextPainter(
-        text: TextSpan(
-            text: line,
-            style: const TextStyle(fontSize: 14, color: Colors.black87)),
+        text: TextSpan(text: line, style: const TextStyle(fontSize: 14)),
         textDirection: TextDirection.ltr,
         maxLines: 1,
       )..layout();
@@ -1317,7 +1423,7 @@ class _LeadloopPromoterAdminScreenState
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('OWNER ACCESS ONLY',
                   style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 11,
                       letterSpacing: 1.1)),
               const SizedBox(height: 4),
@@ -1332,7 +1438,8 @@ class _LeadloopPromoterAdminScreenState
         ]),
         const SizedBox(height: 8),
         Text('$pending awaiting approval · ${_promoters.length} total',
-            style: TextStyle(color: Colors.grey.shade600)),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 18),
         if (_error != null)
           Text(_error!,
@@ -1424,7 +1531,9 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
       children: [
         Text('OWNER ACCESS ONLY',
             style: TextStyle(
-                color: Colors.grey.shade600, fontSize: 11, letterSpacing: 1.1)),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 11,
+                letterSpacing: 1.1)),
         const SizedBox(height: 4),
         const Text('Recycle bin',
             style: TextStyle(
@@ -1433,7 +1542,8 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
                 letterSpacing: -0.6)),
         const SizedBox(height: 8),
         Text('${deleted.length} records · retained for 30 days',
-            style: TextStyle(color: Colors.grey.shade600)),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 22),
         if (deleted.isEmpty)
           const Card(
@@ -1557,7 +1667,9 @@ class _LeadloopMetric extends StatelessWidget {
                   children: [
                     Text(label,
                         style: TextStyle(
-                            color: Colors.grey.shade600, fontSize: 11)),
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 11)),
                     const SizedBox(height: 4),
                     Text(value,
                         style: const TextStyle(
