@@ -27,4 +27,23 @@ void main() {
     expect(updated.followUp2At, secondFollowUpAt);
     expect(updated.followUp3At, isNull);
   });
+
+  test('current stage follows the latest completed follow-up', () {
+    final lead = CustomerLead(
+      id: 'lead-2',
+      name: 'Customer',
+      phone: '9000000000',
+      shopName: 'Shop',
+      promoterName: 'Promoter',
+      createdAt: DateTime.utc(2026, 9, 7),
+    );
+
+    expect(lead.currentStage, FollowUpStage.first);
+    expect(
+        lead.copyWith(followUp1: 'Called').currentStage, FollowUpStage.first);
+    expect(lead.copyWith(followUp2: 'Called again').currentStage,
+        FollowUpStage.second);
+    expect(lead.copyWith(followUp3: 'Completed').currentStage,
+        FollowUpStage.third);
+  });
 }

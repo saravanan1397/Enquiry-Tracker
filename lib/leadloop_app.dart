@@ -592,6 +592,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _comment = TextEditingController();
+  FollowUpStage? _stage;
 
   @override
   void dispose() {
@@ -696,9 +697,12 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
   Widget build(BuildContext context) {
     // The local Hive box can contain records from previous sessions on a
     // shared device. Promoters must only see records created by their UID.
-    final leads = widget.store
+    final allLeads = widget.store
         .activeLeads()
         .where((lead) => lead.promoterId == widget.promoterId)
+        .toList();
+    final leads = allLeads
+        .where((lead) => _stage == null || lead.currentStage == _stage)
         .toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
@@ -727,7 +731,8 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         const SizedBox(height: 12),
         TextField(
             controller: _comment,
-            maxLines: 3,
+            minLines: 1,
+            maxLines: 2,
             decoration: const InputDecoration(
                 labelText: 'Follow-up 1 comment',
                 hintText: 'Optional for now')),
@@ -743,17 +748,25 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
           const Text('Recent customers',
               style: TextStyle(fontWeight: FontWeight.w600)),
           const Spacer(),
-          Text('${leads.length} saved locally',
+          Text('${leads.length} shown · ${allLeads.length} total',
               style: const TextStyle(color: Colors.grey, fontSize: 12))
         ]),
+        const SizedBox(height: 10),
+        _FollowUpStageButtons(
+          selected: _stage,
+          onSelected: (stage) => setState(() => _stage = stage),
+        ),
         const SizedBox(height: 8),
         if (leads.isEmpty)
-          const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text('Your saved customers will appear here.',
+          Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                  allLeads.isEmpty
+                      ? 'Your saved customers will appear here.'
+                      : 'No customers are currently in this follow-up stage.',
                   textAlign: TextAlign.center))
         else
-          ...leads.take(8).map((lead) => ListTile(
+          ...leads.map((lead) => ListTile(
                 contentPadding: EdgeInsets.zero,
                 onTap: () => _openLead(lead),
                 leading: CircleAvatar(
@@ -765,10 +778,17 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                 subtitle: Text(
                     '${lead.phone} · Follow-up ${lead.currentStage.index + 1}\nEntered ${_formatDateTime(lead.createdAt)}'),
                 isThreeLine: true,
-                trailing: IconButton(
-                    icon: const Icon(Icons.phone_outlined),
-                    color: AppColors.success,
-                    onPressed: () => _call(lead.phone)),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                      tooltip: 'Edit customer',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _openLead(lead)),
+                  IconButton(
+                      tooltip: 'Call customer',
+                      icon: const Icon(Icons.phone_outlined),
+                      color: AppColors.success,
+                      onPressed: () => _call(lead.phone)),
+                ]),
               )),
       ],
     );
@@ -788,6 +808,8 @@ class LeadloopFollowUpScreen extends StatefulWidget {
 }
 
 class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
   late final TextEditingController _first;
   late final TextEditingController _second;
   late final TextEditingController _third;
@@ -795,6 +817,8 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   @override
   void initState() {
     super.initState();
+    _name = TextEditingController(text: widget.lead.name);
+    _phone = TextEditingController(text: widget.lead.phone);
     _first = TextEditingController(text: widget.lead.followUp1 ?? '');
     _second = TextEditingController(text: widget.lead.followUp2 ?? '');
     _third = TextEditingController(text: widget.lead.followUp3 ?? '');
@@ -802,6 +826,8 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
 
   @override
   void dispose() {
+    _name.dispose();
+    _phone.dispose();
     _first.dispose();
     _second.dispose();
     _third.dispose();
@@ -809,11 +835,20 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   }
 
   Future<void> _save() async {
+    final name = _name.text.trim();
+    final phone = _phone.text.trim();
+    if (name.isEmpty || phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Name and mobile number are required.')));
+      return;
+    }
     final savedAt = DateTime.now();
     final first = _first.text.trim();
     final second = _second.text.trim();
     final third = _third.text.trim();
     await widget.store.save(widget.lead.copyWith(
+      name: name,
+      phone: phone,
       followUp1: first,
       followUp1At: _commentTime(
           widget.lead.followUp1, first, widget.lead.followUp1At, savedAt),
@@ -831,17 +866,25 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Follow-up notes')),
+        appBar: AppBar(title: const Text('Edit customer')),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
           children: [
-            Text(widget.lead.name,
-                style:
-                    const TextStyle(fontSize: 26, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(widget.lead.phone,
-                style: TextStyle(color: Colors.grey.shade600)),
-            const SizedBox(height: 4),
+            const Text('Customer details',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _name,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Customer name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'Mobile number'),
+            ),
+            const SizedBox(height: 8),
             Text('Entered ${_formatDateTime(widget.lead.createdAt)}',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
             const SizedBox(height: 22),
@@ -880,9 +923,7 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     DateTime savedAt,
   ) {
     if (currentText.isEmpty) return previousTime;
-    return previousText?.trim() == currentText && previousTime != null
-        ? previousTime
-        : savedAt;
+    return previousText?.trim() == currentText ? previousTime : savedAt;
   }
 }
 
@@ -910,6 +951,20 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
           (_promoter == null || lead.promoterName == _promoter) &&
           (_stage == null || lead.currentStage == _stage))
       .toList();
+
+  Future<void> _edit(CustomerLead lead) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LeadloopFollowUpScreen(
+          store: widget.store,
+          lead: lead,
+          onChanged: widget.onChanged,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
 
   Future<void> _delete(CustomerLead lead) async {
     final confirmed = await showDialog<bool>(
@@ -1034,15 +1089,12 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                   value: _promoter,
                   values: promoters,
                   onChanged: (value) => setState(() => _promoter = value))),
-          const SizedBox(width: 6),
-          Expanded(
-              child: _LeadloopFilter<FollowUpStage>(
-                  label: 'Follow-up',
-                  value: _stage,
-                  values: FollowUpStage.values,
-                  labelFor: _stageLabel,
-                  onChanged: (value) => setState(() => _stage = value))),
         ]),
+        const SizedBox(height: 10),
+        _FollowUpStageButtons(
+          selected: _stage,
+          onSelected: (stage) => setState(() => _stage = stage),
+        ),
         const SizedBox(height: 16),
         LayoutBuilder(builder: (context, constraints) {
           final minWidth = kIsWeb && constraints.hasBoundedWidth
@@ -1093,6 +1145,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                                     : AppColors.warning,
                                 size: 18)),
                             DataCell(Wrap(children: [
+                              IconButton(
+                                  tooltip: 'Edit customer',
+                                  onPressed: () => _edit(lead),
+                                  icon: const Icon(Icons.edit_outlined)),
                               IconButton(
                                   tooltip: 'Pass to another promoter',
                                   onPressed: () => _transfer(lead),
@@ -1438,7 +1494,8 @@ class _LeadloopFollowUpField extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TextField(
       controller: controller,
-      maxLines: 3,
+      minLines: 1,
+      maxLines: 2,
       decoration: InputDecoration(
         labelText: label,
         hintText: 'Add customer response or outcome',
@@ -1446,6 +1503,42 @@ class _LeadloopFollowUpField extends StatelessWidget {
             ? 'Date and time will be saved with this comment'
             : 'Last entered ${_formatDateTime(enteredAt)}',
       ));
+}
+
+class _FollowUpStageButtons extends StatelessWidget {
+  const _FollowUpStageButtons({
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final FollowUpStage? selected;
+  final ValueChanged<FollowUpStage?> onSelected;
+
+  @override
+  Widget build(BuildContext context) => Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
+          child: Row(
+            children: FollowUpStage.values
+                .map((stage) => Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          right: stage == FollowUpStage.third ? 0 : 8,
+                        ),
+                        child: FilterChip(
+                          label: Text('Follow ${stage.index + 1}'),
+                          selected: selected == stage,
+                          showCheckmark: false,
+                          onSelected: (_) =>
+                              onSelected(selected == stage ? null : stage),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ),
+      );
 }
 
 class _LeadloopMetric extends StatelessWidget {
@@ -1515,12 +1608,6 @@ class _LeadloopFilter<T> extends StatelessWidget {
         ),
       );
 }
-
-String _stageLabel(FollowUpStage stage) => switch (stage) {
-      FollowUpStage.first => 'Follow-up 1',
-      FollowUpStage.second => 'Follow-up 2',
-      FollowUpStage.third => 'Follow-up 3',
-    };
 
 String _formatDateTime(DateTime? value) {
   if (value == null) return 'Time not recorded';
