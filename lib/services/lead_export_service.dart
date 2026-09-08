@@ -61,11 +61,19 @@ class LeadExportService {
       ];
 
   String _followUpWithTimestamp(String? comment, DateTime? timestamp) {
-    final parts = [
-      if (comment != null && comment.trim().isNotEmpty) comment.trim(),
-      if (timestamp != null) _formatDateTime(timestamp),
-    ];
-    return parts.join(' ');
+    final trimmedComment = comment?.trim() ?? '';
+    if (trimmedComment.isEmpty) {
+      return timestamp == null ? '' : _formatFollowUpTimestamp(timestamp);
+    }
+    if (timestamp == null) return trimmedComment;
+    return '$trimmedComment || ${_formatFollowUpTimestamp(timestamp)}';
+  }
+
+  String _formatFollowUpTimestamp(DateTime value) {
+    final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+    final period = value.hour >= 12 ? 'PM' : 'AM';
+    return '${value.day.toString().padLeft(2, '0')}-${value.month.toString().padLeft(2, '0')}-${value.year} '
+        '${hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')} $period';
   }
 
   String _formatDateTime(DateTime value) {
