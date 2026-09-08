@@ -69,10 +69,7 @@ class LeadExportService {
   }
 
   String _formatDateTime(DateTime value) {
-    final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
-    final period = value.hour >= 12 ? 'PM' : 'AM';
-    return '${value.day.toString().padLeft(2, '0')}-${value.month.toString().padLeft(2, '0')}-${value.year} '
-        '${hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')} $period';
+    return value.toIso8601String().replaceFirst('T', ' ');
   }
 
   String _worksheetXml(List<List<String>> rows) {

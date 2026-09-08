@@ -43,7 +43,7 @@ void main() {
     final styles = files.singleWhere((file) => file.name == 'xl/styles.xml');
     final customersXml = utf8.decode(customers.content as List<int>);
     expect(customersXml, contains('Active customer'));
-    expect(customersXml, contains('Initial enquiry 08-09-2026 10:00 AM'));
+    expect(customersXml, contains('Initial enquiry 2026-09-08 10:00:00.000'));
     expect(customersXml, contains('Follow-up 1'));
     expect(customersXml, isNot(contains('Follow-up 1 at')));
     expect(customersXml, contains('s="1"'));
