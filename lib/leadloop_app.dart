@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:share_plus/share_plus.dart';
@@ -516,9 +516,10 @@ class _LeadloopShellState extends State<LeadloopShell> {
         await _firebaseBackend.syncPromoter(widget.store, widget.session.uid);
       }
       if (mounted) setState(() {});
-    } catch (error) {
+    } catch (error, stackTrace) {
       // The local store remains usable. The next connectivity event retries.
-      debugPrint('Lead sync failed: $error');
+      debugPrint('Lead sync failed: $error\n$stackTrace');
+      rethrow;
     }
   }
 
@@ -683,7 +684,8 @@ class _LeadloopShellState extends State<LeadloopShell> {
                     promoterId: widget.session.uid,
                     promoterName: widget.session.displayName,
                     shopId: widget.session.shopId,
-                    shopName: widget.session.shopName))
+                    shopName: widget.session.shopName,
+                    syncStatusListenable: _syncService.status))
           ];
     final destinations = isAdmin
         ? const <NavigationDestination>[
@@ -753,6 +755,7 @@ class LeadloopPromoterScreen extends StatefulWidget {
       required this.shopId,
       required this.shopName,
       required this.syncStatus,
+      required this.syncStatusListenable,
       this.onChanged});
 
   final LocalLeadStore store;
@@ -761,6 +764,7 @@ class LeadloopPromoterScreen extends StatefulWidget {
   final String shopId;
   final String shopName;
   final LeadloopSyncStatus syncStatus;
+  final ValueListenable<LeadloopSyncStatus> syncStatusListenable;
   final Future<void> Function()? onChanged;
 
   @override
@@ -809,8 +813,12 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
     _comment.clear();
     if (!mounted) return;
     setState(() {});
+    final message =
+        widget.syncStatusListenable.value == LeadloopSyncStatus.synced
+            ? 'Synced to Database.'
+            : 'Saved locally.';
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Customer saved locally.')));
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _call(String phone) =>
