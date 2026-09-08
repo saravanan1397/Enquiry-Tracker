@@ -10,8 +10,8 @@ class LeadExportService {
     required List<CustomerLead> deletedLeads,
   }) {
     final workbook = Excel.createExcel();
-    final customers = workbook['Sheet1'];
     workbook.rename('Sheet1', 'Customers');
+    final customers = workbook['Customers'];
     _addHeader(customers);
     for (final lead in activeLeads) {
       _addLead(customers, lead);
@@ -69,7 +69,7 @@ class LeadExportService {
   }
 
   void _setWidths(Sheet sheet) {
-    for (var index = 0; index < 13; index++) {
+    for (var index = 0; index < 14; index++) {
       sheet.setColumnWidth(index, index == 0 || index == 3 ? 24 : 20);
     }
   }

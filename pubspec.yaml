@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   cloud_firestore: ^6.0.2
+  cloud_functions: ^6.4.0
   connectivity_plus: ^6.1.4
   excel_plus: ^1.0.3
   firebase_auth: ^6.0.2

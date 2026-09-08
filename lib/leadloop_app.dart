@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'models/customer_lead.dart';
 import 'services/export_email_service.dart';
 import 'services/export_file_downloader.dart';
+import 'services/firebase_export_email_service.dart';
 import 'services/firebase_lead_backend.dart';
 import 'services/follow_up_deadline_service.dart';
 import 'services/leadloop_auth_service.dart';
@@ -542,55 +543,49 @@ class _LeadloopShellState extends State<LeadloopShell> {
       final fileName =
           'enquiry_tracker_customers_${DateTime.now().millisecondsSinceEpoch}.xlsx';
 
+      if (email) {
+        if (!kIsWeb) {
+          final opened = await ExportEmailService.composeAndroidEmail(
+            recipient: recipient!,
+            subject: 'Enquiry Tracker customer follow-ups',
+            body: 'Attached is the latest Enquiry Tracker customer export.',
+            fileName: fileName,
+            bytes: bytes,
+          );
+          if (opened) {
+            if (mounted) {
+              _showExportMessage(
+                  'Email draft opened with the Excel export attached.');
+            }
+            return;
+          }
+        }
+
+        await FirebaseExportEmailService().sendExport(
+          recipient: recipient!,
+          fileName: fileName,
+          bytes: bytes,
+        );
+        if (mounted) {
+          _showExportMessage(
+              'Excel export emailed successfully to $recipient.');
+        }
+        return;
+      }
+
       if (kIsWeb) {
         await downloadExcelExport(bytes, fileName);
-        if (email) {
-          final opened = await launchUrl(
-            Uri(
-              scheme: 'mailto',
-              path: recipient,
-              queryParameters: {
-                'subject': 'Enquiry Tracker customer follow-ups',
-                'body': 'The Excel export has been downloaded as $fileName. '
-                    'Please attach it to this email before sending.',
-              },
-            ),
-            mode: LaunchMode.externalApplication,
-          );
-          if (!mounted) return;
-          _showExportMessage(opened
-              ? 'Excel downloaded and an email draft was opened for $recipient. Attach the file and send it.'
-              : 'Excel downloaded. Open your email app and attach $fileName for $recipient.');
-        } else if (mounted) {
+        if (mounted) {
           _showExportMessage('Excel export downloaded successfully.');
         }
         return;
       }
 
-      if (email) {
-        final opened = await ExportEmailService.composeAndroidEmail(
-          recipient: recipient!,
-          subject: 'Enquiry Tracker customer follow-ups',
-          body: 'Attached is the latest Enquiry Tracker customer export.',
-          fileName: fileName,
-          bytes: bytes,
-        );
-        if (opened) {
-          if (mounted) {
-            _showExportMessage(
-                'Email draft opened with the Excel export attached.');
-          }
-          return;
-        }
-      }
-
       final result = await SharePlus.instance.share(
         ShareParams(
-          title: email ? 'Send customer export' : 'Export customer data',
+          title: 'Export customer data',
           subject: 'Enquiry Tracker customer follow-ups',
-          text: email
-              ? 'Send this Enquiry Tracker export to $recipient.'
-              : 'Enquiry Tracker customer follow-up export',
+          text: 'Enquiry Tracker customer follow-up export',
           files: [
             XFile.fromData(
               bytes,
@@ -607,14 +602,13 @@ class _LeadloopShellState extends State<LeadloopShell> {
       if (!mounted) return;
       _showExportMessage(result.status == ShareResultStatus.dismissed
           ? 'Export was cancelled.'
-          : email
-              ? 'Choose an email app and send the attached Excel export to $recipient.'
-              : 'Choose where to save or share the Excel export.');
+          : 'Choose where to save or share the Excel export.');
     } catch (error) {
-      debugPrint('Customer export failed: $error');
+      debugPrint('Customer export${email ? ' email' : ''} failed: $error');
       if (mounted) {
-        _showExportMessage(
-            'Could not create the Excel export. Please try again.');
+        _showExportMessage(email
+            ? 'Could not send the Excel email. Check the email service setup and try again.'
+            : 'Could not create the Excel export. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
