@@ -536,12 +536,13 @@ class _LeadloopShellState extends State<LeadloopShell> {
       await _syncService.syncNow();
       if (!mounted) return;
 
+      final downloadedAt = DateTime.now();
+      final fileName =
+          'Format_${downloadedAt.day.toString().padLeft(2, '0')}-${downloadedAt.month.toString().padLeft(2, '0')}-${downloadedAt.year}.xlsx';
       final bytes = LeadExportService().buildWorkbook(
         activeLeads: widget.store.activeLeads(),
         deletedLeads: widget.store.recycleBin(),
       );
-      final fileName =
-          'enquiry_tracker_customers_${DateTime.now().millisecondsSinceEpoch}.xlsx';
 
       if (email) {
         if (!kIsWeb) {

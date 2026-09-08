@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:excel_plus/excel_plus.dart';
+import 'dart:convert';
+
+import 'package:archive/archive.dart';
 import 'package:leadloop/models/customer_lead.dart';
 import 'package:leadloop/services/lead_export_service.dart';
 
@@ -33,11 +35,14 @@ void main() {
     expect(bytes, isNotEmpty);
     expect(bytes.take(2).toList(), [0x50, 0x4B]);
 
-    final workbook = Excel.decodeBytes(bytes);
-    expect(workbook.tables.keys, containsAll(['Customers', 'Recycle Bin']));
-    final activeCell = workbook['Customers'].rows[1][0]?.value;
-    final deletedCell = workbook['Recycle Bin'].rows[1][0]?.value;
-    expect((activeCell as TextCellValue).value.text, 'Active customer');
-    expect((deletedCell as TextCellValue).value.text, 'Deleted customer');
+    final files = ZipDecoder().decodeBytes(bytes).files;
+    final customers =
+        files.singleWhere((file) => file.name == 'xl/worksheets/sheet1.xml');
+    final recycleBin =
+        files.singleWhere((file) => file.name == 'xl/worksheets/sheet2.xml');
+    expect(utf8.decode(customers.content as List<int>),
+        contains('Active customer'));
+    expect(utf8.decode(recycleBin.content as List<int>),
+        contains('Deleted customer'));
   });
 }
