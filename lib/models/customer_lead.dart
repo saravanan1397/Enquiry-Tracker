@@ -1,4 +1,20 @@
-enum FollowUpStage { first, second, third }
+enum FollowUpStage { first, second, third, later }
+
+enum EnquiryOutcome { active, purchased, closedWithoutPurchase }
+
+class FollowUpEntry {
+  const FollowUpEntry({required this.comment, required this.enteredAt});
+  final String comment;
+  final DateTime enteredAt;
+  Map<String, dynamic> toMap() => {
+        'comment': comment,
+        'enteredAt': enteredAt.toUtc().toIso8601String(),
+      };
+  factory FollowUpEntry.fromMap(Map<String, dynamic> map) => FollowUpEntry(
+        comment: map['comment'] as String,
+        enteredAt: DateTime.parse(map['enteredAt'] as String).toLocal(),
+      );
+}
 
 class CustomerLead {
   const CustomerLead({
@@ -18,6 +34,9 @@ class CustomerLead {
     this.followUp3At,
     this.isSynced = false,
     this.deletedAt,
+    this.additionalFollowUps = const [],
+    this.outcome = EnquiryOutcome.active,
+    this.completedAt,
   });
 
   final String id;
@@ -36,12 +55,31 @@ class CustomerLead {
   final DateTime? followUp3At;
   final bool isSynced;
   final DateTime? deletedAt;
+  final List<FollowUpEntry> additionalFollowUps;
+  final EnquiryOutcome outcome;
+  final DateTime? completedAt;
 
-  // Completion will be driven by an explicit enquiry outcome in a later update.
-  // Recording a follow-up alone never completes an enquiry.
-  bool get isCompleted => false;
+  bool get isCompleted => outcome != EnquiryOutcome.active;
+  String get outcomeLabel => switch (outcome) {
+        EnquiryOutcome.active => 'Active',
+        EnquiryOutcome.purchased => 'Purchased',
+        EnquiryOutcome.closedWithoutPurchase => 'Closed without purchase',
+      };
+  int get followUpNumber => additionalFollowUps.isNotEmpty
+      ? 3 + additionalFollowUps.length
+      : currentStage.index + 1;
+  DateTime? get lastFollowUpAt => additionalFollowUps.isNotEmpty
+      ? additionalFollowUps.last.enteredAt
+      : followUp3?.trim().isNotEmpty == true
+          ? followUp3At
+          : followUp2?.trim().isNotEmpty == true
+              ? followUp2At
+              : followUp1?.trim().isNotEmpty == true
+                  ? followUp1At
+                  : null;
 
   FollowUpStage get currentStage {
+    if (additionalFollowUps.isNotEmpty) return FollowUpStage.later;
     if (followUp3?.trim().isNotEmpty == true) return FollowUpStage.third;
     if (followUp2?.trim().isNotEmpty == true) return FollowUpStage.second;
     return FollowUpStage.first;
@@ -64,6 +102,9 @@ class CustomerLead {
     bool? isSynced,
     DateTime? deletedAt,
     bool clearDeletedAt = false,
+    List<FollowUpEntry>? additionalFollowUps,
+    EnquiryOutcome? outcome,
+    DateTime? completedAt,
   }) {
     return CustomerLead(
       id: id,
@@ -82,6 +123,11 @@ class CustomerLead {
       followUp3At: followUp3At ?? this.followUp3At,
       isSynced: isSynced ?? this.isSynced,
       deletedAt: clearDeletedAt ? null : deletedAt ?? this.deletedAt,
+      additionalFollowUps: additionalFollowUps ?? this.additionalFollowUps,
+      outcome: outcome ?? this.outcome,
+      completedAt: outcome == EnquiryOutcome.active
+          ? null
+          : completedAt ?? this.completedAt,
     );
   }
 }

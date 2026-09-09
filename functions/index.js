@@ -4,6 +4,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 
 admin.initializeApp();
+Object.assign(exports, require('./reminders'));
 
 const resendApiKey = defineSecret("RESEND_API_KEY");
 const exportFromEmail = defineSecret("EXPORT_FROM_EMAIL");

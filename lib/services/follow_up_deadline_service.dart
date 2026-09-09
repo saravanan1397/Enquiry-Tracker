@@ -8,6 +8,33 @@ class FollowUpDeadlineService {
   static const int businessEndHour = 22;
   static const Duration followUp2Allowance = Duration(hours: 15);
 
+  /// All days, 09:00–22:00 India time, independent of device timezone.
+  static DateTime? nextDueAt(CustomerLead lead) {
+    if (lead.isCompleted || lead.deletedAt != null) return null;
+    final last = lead.lastFollowUpAt;
+    if (last == null) return null;
+    final india = last.toUtc().add(const Duration(minutes: 330));
+    final wallClock = DateTime.utc(
+        india.year,
+        india.month,
+        india.day,
+        india.hour,
+        india.minute,
+        india.second,
+        india.millisecond,
+        india.microsecond);
+    final due = addBusinessTime(wallClock, followUp2Allowance);
+    return DateTime.utc(due.year, due.month, due.day, due.hour, due.minute,
+            due.second, due.millisecond, due.microsecond)
+        .subtract(const Duration(minutes: 330))
+        .toLocal();
+  }
+
+  static bool isOverdue(CustomerLead lead, {DateTime? now}) {
+    final due = nextDueAt(lead);
+    return due != null && !(now ?? DateTime.now()).isBefore(due);
+  }
+
   static DateTime? followUp2DueAt(CustomerLead lead) {
     final firstFollowUpAt = lead.followUp1At;
     if (lead.followUp1?.trim().isEmpty != false || firstFollowUpAt == null) {
@@ -27,13 +54,14 @@ class FollowUpDeadlineService {
     var remaining = duration;
 
     while (remaining > Duration.zero) {
-      final businessStart = DateTime(
+      final createDate = cursor.isUtc ? DateTime.utc : DateTime.new;
+      final businessStart = createDate(
         cursor.year,
         cursor.month,
         cursor.day,
         businessStartHour,
       );
-      final businessEnd = DateTime(
+      final businessEnd = createDate(
         cursor.year,
         cursor.month,
         cursor.day,

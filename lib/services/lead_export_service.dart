@@ -31,34 +31,49 @@ class LeadExportService {
     return ArchiveFile(name, bytes.length, bytes);
   }
 
-  List<List<String>> _rows(List<CustomerLead> leads) => [
-        const [
-          'Customer name',
-          'Mobile number',
-          'Shop',
-          'Promoter',
-          'Created at',
-          'Follow-up 1',
-          'Follow-up 2',
-          'Follow-up 3',
-          'Status',
-          'Current stage',
-          'Deleted at',
-        ],
-        ...leads.map((lead) => [
-              lead.name,
-              lead.phone,
-              lead.shopName,
-              lead.promoterName,
-              _formatDateTime(lead.createdAt),
-              _followUpWithTimestamp(lead.followUp1, lead.followUp1At),
-              _followUpWithTimestamp(lead.followUp2, lead.followUp2At),
-              _followUpWithTimestamp(lead.followUp3, lead.followUp3At),
-              lead.isCompleted ? 'Completed' : 'Active',
-              'Follow-up ${lead.currentStage.index + 1}',
-              lead.deletedAt == null ? '' : _formatDateTime(lead.deletedAt!),
-            ]),
-      ];
+  List<List<String>> _rows(List<CustomerLead> leads) {
+    final extraCount = leads.fold<int>(
+        0,
+        (count, lead) => lead.additionalFollowUps.length > count
+            ? lead.additionalFollowUps.length
+            : count);
+    return [
+      [
+        'Customer name',
+        'Mobile number',
+        'Shop',
+        'Promoter',
+        'Created at',
+        'Follow-up 1',
+        'Follow-up 2',
+        'Follow-up 3',
+        for (var i = 0; i < extraCount; i++) 'Follow-up ${i + 4}',
+        'Status',
+        'Completed at',
+        'Current stage',
+        'Deleted at',
+      ],
+      ...leads.map((lead) => [
+            lead.name,
+            lead.phone,
+            lead.shopName,
+            lead.promoterName,
+            _formatDateTime(lead.createdAt),
+            _followUpWithTimestamp(lead.followUp1, lead.followUp1At),
+            _followUpWithTimestamp(lead.followUp2, lead.followUp2At),
+            _followUpWithTimestamp(lead.followUp3, lead.followUp3At),
+            for (var i = 0; i < extraCount; i++)
+              i < lead.additionalFollowUps.length
+                  ? _followUpWithTimestamp(lead.additionalFollowUps[i].comment,
+                      lead.additionalFollowUps[i].enteredAt)
+                  : '',
+            lead.outcomeLabel,
+            lead.completedAt == null ? '' : _formatDateTime(lead.completedAt!),
+            'Follow-up ${lead.followUpNumber}',
+            lead.deletedAt == null ? '' : _formatDateTime(lead.deletedAt!),
+          ]),
+    ];
+  }
 
   String _followUpWithTimestamp(String? comment, DateTime? timestamp) {
     final trimmedComment = comment?.trim() ?? '';
@@ -96,7 +111,7 @@ class LeadExportService {
     }
     return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <cols>${List.generate(11, (index) => '<col min="${index + 1}" max="${index + 1}" width="${index == 0 || index == 3 ? 24 : 30}" customWidth="1"/>').join()}</cols>
+  <cols>${List.generate(rows.first.length, (index) => '<col min="${index + 1}" max="${index + 1}" width="${index == 0 || index == 3 ? 24 : 30}" customWidth="1"/>').join()}</cols>
   <sheetData>${rowsXml.join()}</sheetData>
 </worksheet>''';
   }

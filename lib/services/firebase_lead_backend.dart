@@ -201,6 +201,10 @@ class FirebaseLeadBackend {
         'followUp2': lead.followUp2,
         'followUp2At': _toTimestamp(lead.followUp2At),
         'followUp3': lead.followUp3,
+        'additionalFollowUps':
+            lead.additionalFollowUps.map((entry) => entry.toMap()).toList(),
+        'outcome': lead.outcome.name,
+        'completedAt': lead.completedAt?.toUtc().toIso8601String(),
         'followUp3At': _toTimestamp(lead.followUp3At),
         'isSynced': true,
         'deletedAt': _toTimestamp(lead.deletedAt),
@@ -222,6 +226,14 @@ class FirebaseLeadBackend {
         followUp2At: _dateTime(map['followUp2At']),
         followUp3: map['followUp3'] as String?,
         followUp3At: _dateTime(map['followUp3At']),
+        additionalFollowUps: (map['additionalFollowUps'] as List? ?? [])
+            .map((entry) =>
+                FollowUpEntry.fromMap(Map<String, dynamic>.from(entry as Map)))
+            .toList(),
+        outcome: EnquiryOutcome.values.firstWhere(
+            (value) => value.name == map['outcome'],
+            orElse: () => EnquiryOutcome.active),
+        completedAt: _dateTime(map['completedAt']),
         isSynced: true,
         deletedAt: _dateTime(map['deletedAt']),
       );

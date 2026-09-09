@@ -169,6 +169,10 @@ class LocalLeadStore {
         'followUp2': lead.followUp2,
         'followUp2At': lead.followUp2At?.toIso8601String(),
         'followUp3': lead.followUp3,
+        'additionalFollowUps':
+            lead.additionalFollowUps.map((entry) => entry.toMap()).toList(),
+        'outcome': lead.outcome.name,
+        'completedAt': lead.completedAt?.toUtc().toIso8601String(),
         'followUp3At': lead.followUp3At?.toIso8601String(),
         'isSynced': lead.isSynced,
         'deletedAt': lead.deletedAt?.toIso8601String(),
@@ -189,6 +193,14 @@ class LocalLeadStore {
         followUp2At: _optionalDateTime(map['followUp2At']),
         followUp3: map['followUp3'] as String?,
         followUp3At: _optionalDateTime(map['followUp3At']),
+        additionalFollowUps: (map['additionalFollowUps'] as List? ?? [])
+            .map((entry) =>
+                FollowUpEntry.fromMap(Map<String, dynamic>.from(entry as Map)))
+            .toList(),
+        outcome: EnquiryOutcome.values.firstWhere(
+            (value) => value.name == map['outcome'],
+            orElse: () => EnquiryOutcome.active),
+        completedAt: DateTime.tryParse(map['completedAt'] as String? ?? ''),
         isSynced: map['isSynced'] as bool? ?? false,
         deletedAt: map['deletedAt'] == null
             ? null

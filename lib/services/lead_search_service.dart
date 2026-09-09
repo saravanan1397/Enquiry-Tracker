@@ -12,6 +12,7 @@ class LeadSearchService {
       lead.followUp1 ?? '',
       lead.followUp2 ?? '',
       lead.followUp3 ?? '',
+      ...lead.additionalFollowUps.map((entry) => entry.comment),
     ].any((value) => value.toLowerCase().contains(normalizedQuery));
   }
 }

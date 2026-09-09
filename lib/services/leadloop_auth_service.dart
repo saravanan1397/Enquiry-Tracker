@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'mobile_number_validator.dart';
+import 'notification_service.dart';
 
 class LeadloopAuthSession {
   const LeadloopAuthSession({
@@ -163,6 +164,7 @@ class LeadloopAuthService {
   }
 
   Future<void> signOut() async {
+    await NotificationService.instance.disable();
     await _auth.signOut();
     await _storage.delete(key: _sessionKey);
     await _storage.delete(key: _activityKey);

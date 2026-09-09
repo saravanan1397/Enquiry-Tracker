@@ -16,6 +16,12 @@ void main() {
       createdAt: DateTime(2026, 9, 8, 10),
       followUp1: 'Initial enquiry',
       followUp1At: DateTime(2026, 9, 8, 10),
+      additionalFollowUps: [
+        FollowUpEntry(
+            comment: 'Fourth response', enteredAt: DateTime(2026, 9, 9, 10))
+      ],
+      outcome: EnquiryOutcome.purchased,
+      completedAt: DateTime(2026, 9, 9, 10),
     );
     final deleted = CustomerLead(
       id: 'deleted-1',
@@ -45,6 +51,9 @@ void main() {
     expect(customersXml, contains('Active customer'));
     expect(customersXml, contains('Initial enquiry || 08-09-2026 10:00 AM'));
     expect(customersXml, contains('Follow-up 1'));
+    expect(customersXml, contains('Follow-up 4'));
+    expect(customersXml, contains('Fourth response || 09-09-2026 10:00 AM'));
+    expect(customersXml, contains('Purchased'));
     expect(customersXml, isNot(contains('Follow-up 1 at')));
     expect(customersXml, contains('s="1"'));
     expect(utf8.decode(styles.content as List<int>), contains('FFFFEB3B'));

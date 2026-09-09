@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +21,7 @@ import 'services/lead_export_service.dart';
 import 'services/lead_search_service.dart';
 import 'services/local_lead_store.dart';
 import 'services/mobile_number_validator.dart';
+import 'services/notification_service.dart';
 import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 
@@ -250,8 +252,18 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     };
   }
 
-  void _logout() {
-    _authService?.signOut();
+  Future<void> _logout() async {
+    try {
+      await _authService?.signOut();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Could not sign out safely. Check your connection and try again.')));
+      }
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       _session = null;
       _error = null;
@@ -500,6 +512,8 @@ class _LeadloopShellState extends State<LeadloopShell> {
   late final FirebaseLeadBackend _firebaseBackend;
   StreamSubscription? _leadSubscription;
   bool _exporting = false;
+  Timer? _deadlineRefresh;
+  StreamSubscription<RemoteMessage>? _messages;
 
   @override
   void initState() {
@@ -507,6 +521,22 @@ class _LeadloopShellState extends State<LeadloopShell> {
     _firebaseBackend = FirebaseLeadBackend();
     _syncService = SyncService();
     _syncService.start(syncPending: _syncNow);
+    NotificationService.instance.start(widget.session.uid);
+    if (NotificationService.instance.supported) {
+      _messages = FirebaseMessaging.onMessage.listen((message) {
+        if (!mounted || message.data['recipientUid'] != widget.session.uid) {
+          return;
+        }
+        final body = message.notification?.body;
+        if (body != null) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(body)));
+        }
+      });
+    }
+    _deadlineRefresh = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
     if (_firebaseBackend.isConfigured) {
       _leadSubscription = _firebaseBackend.watchLeads(
           localStore: widget.store,
@@ -666,6 +696,9 @@ class _LeadloopShellState extends State<LeadloopShell> {
   @override
   void dispose() {
     _leadSubscription?.cancel();
+    _deadlineRefresh?.cancel();
+    _messages?.cancel();
+    NotificationService.instance.stop();
     _syncService.dispose();
     super.dispose();
   }
@@ -876,7 +909,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         .where((lead) => lead.promoterId == widget.promoterId)
         .toList();
     final overdueFollowUp2 =
-        allLeads.where(FollowUpDeadlineService.isFollowUp2Overdue).toList();
+        allLeads.where(FollowUpDeadlineService.isOverdue).toList();
     final query = _search.text.trim().toLowerCase();
     final leads = allLeads
         .where((lead) =>
@@ -985,7 +1018,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                     title: Text(lead.name,
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                        '${lead.phone} · Follow-up ${lead.currentStage.index + 1}\n${FollowUpDeadlineService.isFollowUp2Overdue(lead) ? 'F2 overdue · due ${_formatDateTime(FollowUpDeadlineService.followUp2DueAt(lead)!)}' : 'Entered ${_formatDateTime(lead.createdAt)}'}'),
+                        '${lead.phone} · ${lead.isCompleted ? lead.outcomeLabel : 'Follow-up ${lead.followUpNumber}'}\n${FollowUpDeadlineService.isOverdue(lead) ? 'F${lead.followUpNumber + 1} overdue · due ${_formatDateTime(FollowUpDeadlineService.nextDueAt(lead)!)}' : 'Entered ${_formatDateTime(lead.createdAt)}'}'),
                     isThreeLine: true,
                     trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                       IconButton(
@@ -1026,15 +1059,25 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   late final TextEditingController _second;
   late final TextEditingController _third;
   bool _creatingEnquiry = false;
+  bool _saving = false;
+  late CustomerLead _lead;
+  late EnquiryOutcome _outcome;
+  final _nextComment = TextEditingController();
+  final List<TextEditingController> _extraComments = [];
+  bool _addingFollowUp = false;
 
   @override
   void initState() {
     super.initState();
-    _name = TextEditingController(text: widget.lead.name);
-    _phone = TextEditingController(text: widget.lead.phone);
-    _first = TextEditingController(text: widget.lead.followUp1 ?? '');
-    _second = TextEditingController(text: widget.lead.followUp2 ?? '');
-    _third = TextEditingController(text: widget.lead.followUp3 ?? '');
+    _lead = widget.lead;
+    _outcome = _lead.outcome;
+    _name = TextEditingController(text: _lead.name);
+    _phone = TextEditingController(text: _lead.phone);
+    _first = TextEditingController(text: _lead.followUp1 ?? '');
+    _second = TextEditingController(text: _lead.followUp2 ?? '');
+    _third = TextEditingController(text: _lead.followUp3 ?? '');
+    _extraComments.addAll(_lead.additionalFollowUps
+        .map((entry) => TextEditingController(text: entry.comment)));
   }
 
   @override
@@ -1044,10 +1087,15 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     _first.dispose();
     _second.dispose();
     _third.dispose();
+    _nextComment.dispose();
+    for (final controller in _extraComments) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _save() async {
+    if (_saving || _creatingEnquiry) return;
     final name = _name.text.trim();
     final phone = _phone.text.trim();
     if (name.isEmpty || phone.isEmpty) {
@@ -1074,26 +1122,77 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
           content: Text('Save Follow-up 2 before entering Follow-up 3.')));
       return;
     }
-    await widget.store.save(widget.lead.copyWith(
-      name: name,
-      phone: phone,
-      followUp1: first,
-      followUp1At: _commentTime(
-          widget.lead.followUp1, first, widget.lead.followUp1At, savedAt),
-      followUp2: second,
-      followUp2At: _commentTime(
-          widget.lead.followUp2, second, widget.lead.followUp2At, savedAt),
-      followUp3: third,
-      followUp3At: _commentTime(
-          widget.lead.followUp3, third, widget.lead.followUp3At, savedAt),
-      isSynced: false,
-    ));
-    await widget.onChanged?.call();
-    if (mounted) Navigator.pop(context);
+    if (_lead.additionalFollowUps.isNotEmpty && third.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Follow-up 3 is required before later follow-ups.')));
+      return;
+    }
+    final next = _nextComment.text.trim();
+    if (_extraComments.any((controller) => controller.text.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Saved follow-ups cannot be left blank.')));
+      return;
+    }
+    if (_addingFollowUp && next.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Enter the next follow-up comment before saving.')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final updated = _lead.copyWith(
+        outcome: _outcome,
+        completedAt: _outcome != EnquiryOutcome.active
+            ? (_lead.completedAt ?? savedAt)
+            : null,
+        additionalFollowUps: [
+          for (var i = 0; i < _lead.additionalFollowUps.length; i++)
+            FollowUpEntry(
+                comment: _extraComments[i].text.trim(),
+                enteredAt: _extraComments[i].text.trim() ==
+                        _lead.additionalFollowUps[i].comment
+                    ? _lead.additionalFollowUps[i].enteredAt
+                    : savedAt),
+          if (_addingFollowUp) FollowUpEntry(comment: next, enteredAt: savedAt),
+        ],
+        name: name,
+        phone: phone,
+        followUp1: first,
+        followUp1At:
+            _commentTime(_lead.followUp1, first, _lead.followUp1At, savedAt),
+        followUp2: second,
+        followUp2At:
+            _commentTime(_lead.followUp2, second, _lead.followUp2At, savedAt),
+        followUp3: third,
+        followUp3At:
+            _commentTime(_lead.followUp3, third, _lead.followUp3At, savedAt),
+        isSynced: false,
+      );
+      await widget.store.save(updated);
+      if (_addingFollowUp) {
+        _extraComments.add(TextEditingController(text: next));
+      }
+      _lead = updated;
+      _addingFollowUp = false;
+      _nextComment.clear();
+      await widget.onChanged?.call();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Follow-ups saved.')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Could not finish saving. Check the record and try again.')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _createNewEnquiry() async {
-    if (_creatingEnquiry) return;
+    if (_creatingEnquiry || _saving) return;
     final name = _name.text.trim();
     final phone = _phone.text.trim();
     if (name.isEmpty || phone.isEmpty) {
@@ -1113,10 +1212,10 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         name: name,
         phone: phone,
-        shopName: widget.lead.shopName,
-        promoterName: widget.lead.promoterName,
-        shopId: widget.lead.shopId,
-        promoterId: widget.lead.promoterId,
+        shopName: _lead.shopName,
+        promoterName: _lead.promoterName,
+        shopId: _lead.shopId,
+        promoterId: _lead.promoterId,
         createdAt: DateTime.now(),
       );
       await widget.store.save(newLead);
@@ -1166,39 +1265,86 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
               decoration: const InputDecoration(labelText: 'Mobile number'),
             ),
             const SizedBox(height: 8),
-            Text('Entered ${_formatDateTime(widget.lead.createdAt)}',
+            Text('Entered ${_formatDateTime(_lead.createdAt)}',
                 style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 12)),
-            if (FollowUpDeadlineService.isFollowUp2Overdue(widget.lead)) ...[
+            if (FollowUpDeadlineService.isOverdue(_lead)) ...[
               const SizedBox(height: 12),
-              _FollowUp2OverdueBanner(leads: [widget.lead]),
+              _FollowUp2OverdueBanner(leads: [_lead]),
             ],
             const SizedBox(height: 22),
             _LeadloopFollowUpField(
               label: 'Follow-up 1',
               controller: _first,
-              enteredAt: widget.lead.followUp1At,
+              enteredAt: _lead.followUp1At,
             ),
             const SizedBox(height: 14),
             _LeadloopFollowUpField(
               label: 'Follow-up 2',
               controller: _second,
-              enteredAt: widget.lead.followUp2At,
-              enabled: widget.lead.followUp1?.trim().isNotEmpty == true,
+              enteredAt: _lead.followUp2At,
+              enabled: _lead.followUp1?.trim().isNotEmpty == true,
               lockedMessage: 'Save Follow-up 1 to unlock this comment',
             ),
             const SizedBox(height: 14),
             _LeadloopFollowUpField(
               label: 'Follow-up 3',
               controller: _third,
-              enteredAt: widget.lead.followUp3At,
-              enabled: widget.lead.followUp2?.trim().isNotEmpty == true,
+              enteredAt: _lead.followUp3At,
+              enabled: _lead.followUp2?.trim().isNotEmpty == true,
               lockedMessage: 'Save Follow-up 2 to unlock this comment',
             ),
+            for (var i = 0; i < _lead.additionalFollowUps.length; i++) ...[
+              const SizedBox(height: 14),
+              _LeadloopFollowUpField(
+                  label: 'Follow-up ${i + 4}',
+                  controller: _extraComments[i],
+                  enteredAt: _lead.additionalFollowUps[i].enteredAt),
+            ],
+            if (!_lead.isCompleted &&
+                _lead.followUp3?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 14),
+              if (!_addingFollowUp)
+                TextButton.icon(
+                  onPressed: _saving
+                      ? null
+                      : () => setState(() => _addingFollowUp = true),
+                  icon: const Icon(Icons.add),
+                  label: Text('Add follow-up ${_lead.followUpNumber + 1}'),
+                )
+              else
+                TextField(
+                    controller: _nextComment,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                        labelText: 'Follow-up ${_lead.followUpNumber + 1}')),
+            ],
+            const SizedBox(height: 16),
+            DropdownButtonFormField<EnquiryOutcome>(
+              initialValue: _outcome,
+              decoration: const InputDecoration(labelText: 'Enquiry status'),
+              items: EnquiryOutcome.values
+                  .map((outcome) => DropdownMenuItem(
+                      value: outcome,
+                      child: Text(switch (outcome) {
+                        EnquiryOutcome.active => 'Active',
+                        EnquiryOutcome.purchased => 'Purchased',
+                        EnquiryOutcome.closedWithoutPurchase =>
+                          'Closed without purchase',
+                      })))
+                  .toList(),
+              onChanged: _saving
+                  ? null
+                  : (value) {
+                      if (value != null) setState(() => _outcome = value);
+                    },
+            ),
+            if (_lead.completedAt != null && _lead.isCompleted)
+              Text('Completed ${_formatDateTime(_lead.completedAt)}'),
             const SizedBox(height: 20),
             FilledButton.icon(
-                onPressed: _save,
+                onPressed: _saving || _creatingEnquiry ? null : _save,
                 icon: const Icon(Icons.check),
                 label: const Text('Save follow-ups'),
                 style: FilledButton.styleFrom(
@@ -1420,7 +1566,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     final all = widget.store.activeLeads();
     final leads = _filterLeads(all);
     final overdueFollowUp2 =
-        all.where(FollowUpDeadlineService.isFollowUp2Overdue).toList();
+        all.where(FollowUpDeadlineService.isOverdue).toList();
     final shops = all.map((lead) => lead.shopName).toSet().toList()..sort();
     final promoters = all.map((lead) => lead.promoterName).toSet().toList()
       ..sort();
@@ -1502,7 +1648,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
             SizedBox(
                 width: metricWidth,
                 child: _LeadloopMetric(
-                    label: 'F2 overdue',
+                    label: 'Overdue',
                     value: '${overdueFollowUp2.length}',
                     tone: 3)),
           ]);
@@ -1630,7 +1776,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                 child: DataTable(
                   headingRowHeight: 42,
                   dataRowMinHeight: 52,
-                  dataRowMaxHeight: 180,
+                  dataRowMaxHeight: double.infinity,
                   horizontalMargin: 16,
                   columnSpacing: 28,
                   columns: const [
@@ -1654,12 +1800,12 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                           alignment: Alignment.centerLeft,
                           child: Text(commentLayout.text,
                               softWrap: false,
-                              maxLines: 3,
+                              maxLines: null,
                               overflow: TextOverflow.visible),
                         ),
                       )),
                       DataCell(Text('${lead.shopName}\n${lead.promoterName}')),
-                      DataCell(FollowUpDeadlineService.isFollowUp2Overdue(lead)
+                      DataCell(FollowUpDeadlineService.isOverdue(lead)
                           ? _FollowUp2OverdueCell(lead: lead)
                           : lead.isCompleted
                               ? Container(
@@ -1679,12 +1825,11 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                                           color: AppColors.successFor(
                                               Theme.of(context).brightness)),
                                       const SizedBox(width: 5),
-                                      const Text('Completed'),
+                                      Text(lead.outcomeLabel),
                                     ],
                                   ),
                                 )
-                              : Text(
-                                  'Follow-up ${lead.currentStage.index + 1}')),
+                              : Text('Follow-up ${lead.followUpNumber}')),
                       DataCell(Icon(
                           lead.isSynced
                               ? Icons.check_circle
@@ -1763,6 +1908,11 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
       comments.add(
           'F3: ${lead.followUp3!.trim()}  ·  ${_formatDateTime(lead.followUp3At)}');
     }
+    for (var i = 0; i < lead.additionalFollowUps.length; i++) {
+      final entry = lead.additionalFollowUps[i];
+      comments.add(
+          'F${i + 4}: ${entry.comment}  ·  ${_formatDateTime(entry.enteredAt)}');
+    }
     return comments;
   }
 }
@@ -1788,7 +1938,7 @@ class _FollowUp2OverdueBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final isSingleLead = leads.length == 1;
     final lead = leads.first;
-    final dueAt = FollowUpDeadlineService.followUp2DueAt(lead);
+    final dueAt = FollowUpDeadlineService.nextDueAt(lead);
     final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1803,8 +1953,8 @@ class _FollowUp2OverdueBanner extends StatelessWidget {
         Expanded(
           child: Text(
             isSingleLead
-                ? 'Follow-up 2 is overdue for ${lead.name}. It was due ${_formatDateTime(dueAt)}.'
-                : 'Follow-up 2 is overdue for ${leads.length} customers. Review their records now.',
+                ? 'Follow-up ${lead.followUpNumber + 1} is overdue for ${lead.name}. It was due ${_formatDateTime(dueAt)}.'
+                : 'Follow-ups are overdue for ${leads.length} customers. Review their records now.',
             style: TextStyle(color: scheme.onErrorContainer, fontSize: 12),
           ),
         ),
@@ -1821,12 +1971,12 @@ class _FollowUp2OverdueCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final dueAt = FollowUpDeadlineService.followUp2DueAt(lead);
+    final dueAt = FollowUpDeadlineService.nextDueAt(lead);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('F2 overdue',
+        Text('F${lead.followUpNumber + 1} overdue',
             style: TextStyle(
                 color: scheme.error,
                 fontWeight: FontWeight.w700,
@@ -2170,7 +2320,9 @@ class _FollowUpStageButtons extends StatelessWidget {
                           right: stage == FollowUpStage.third ? 0 : 8,
                         ),
                         child: FilterChip(
-                          label: Text('Follow ${stage.index + 1}'),
+                          label: Text(stage == FollowUpStage.later
+                              ? 'Follow 4+'
+                              : 'Follow ${stage.index + 1}'),
                           selected: selected == stage,
                           showCheckmark: false,
                           onSelected: (_) =>
