@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'mobile_number_validator.dart';
+
 class LeadloopAuthSession {
   const LeadloopAuthSession({
     required this.uid,
@@ -180,9 +182,9 @@ class LeadloopAuthService {
   }
 
   String _normalizeMobile(String mobile) {
-    final normalized = mobile.replaceAll(RegExp(r'[^0-9+]'), '');
-    if (normalized.length < 8) {
-      throw const LeadloopAuthException('Enter a valid mobile number.');
+    final normalized = mobile.trim();
+    if (!MobileNumberValidator.isValid(normalized)) {
+      throw const LeadloopAuthException(MobileNumberValidator.errorMessage);
     }
     return normalized;
   }

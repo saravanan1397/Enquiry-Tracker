@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,7 +17,9 @@ import 'services/firebase_lead_backend.dart';
 import 'services/follow_up_deadline_service.dart';
 import 'services/leadloop_auth_service.dart';
 import 'services/lead_export_service.dart';
+import 'services/lead_search_service.dart';
 import 'services/local_lead_store.dart';
+import 'services/mobile_number_validator.dart';
 import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 
@@ -334,6 +337,10 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                           TextField(
                               controller: _mobileController,
                               keyboardType: TextInputType.phone,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(10),
+                              ],
                               decoration: const InputDecoration(
                                   labelText: 'Mobile number')),
                           const SizedBox(height: 12),
@@ -369,6 +376,10 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                           TextField(
                               controller: _mobileController,
                               keyboardType: TextInputType.phone,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(10),
+                              ],
                               decoration: const InputDecoration(
                                   labelText: 'Mobile number')),
                           const SizedBox(height: 12),
@@ -675,17 +686,14 @@ class _LeadloopShellState extends State<LeadloopShell> {
                 onChanged: _syncService.syncNow)
           ]
         : <Widget>[
-            ValueListenableBuilder<LeadloopSyncStatus>(
-                valueListenable: _syncService.status,
-                builder: (context, syncStatus, _) => LeadloopPromoterScreen(
-                    store: widget.store,
-                    onChanged: _syncService.syncNow,
-                    syncStatus: syncStatus,
-                    promoterId: widget.session.uid,
-                    promoterName: widget.session.displayName,
-                    shopId: widget.session.shopId,
-                    shopName: widget.session.shopName,
-                    syncStatusListenable: _syncService.status))
+            LeadloopPromoterScreen(
+                store: widget.store,
+                onChanged: _syncService.syncNow,
+                promoterId: widget.session.uid,
+                promoterName: widget.session.displayName,
+                shopId: widget.session.shopId,
+                shopName: widget.session.shopName,
+                syncStatusListenable: _syncService.status)
           ];
     final destinations = isAdmin
         ? const <NavigationDestination>[
@@ -714,6 +722,27 @@ class _LeadloopShellState extends State<LeadloopShell> {
                   _exporting ? null : () => _exportCustomers(email: true),
               icon: const Icon(Icons.email_outlined)),
         ],
+        if (!isAdmin)
+          ValueListenableBuilder<LeadloopSyncStatus>(
+            valueListenable: _syncService.status,
+            builder: (context, status, _) {
+              final synced = status == LeadloopSyncStatus.synced;
+              return Tooltip(
+                message: synced ? 'Synced to Firebase' : 'Saved locally',
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(
+                    synced
+                        ? Icons.cloud_done_outlined
+                        : Icons.cloud_off_outlined,
+                    color: synced
+                        ? AppColors.successFor(Theme.of(context).brightness)
+                        : Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              );
+            },
+          ),
         if (_firebaseBackend.isConfigured)
           IconButton(
               tooltip: 'Sync now',
@@ -754,7 +783,6 @@ class LeadloopPromoterScreen extends StatefulWidget {
       required this.promoterName,
       required this.shopId,
       required this.shopName,
-      required this.syncStatus,
       required this.syncStatusListenable,
       this.onChanged});
 
@@ -763,7 +791,6 @@ class LeadloopPromoterScreen extends StatefulWidget {
   final String promoterName;
   final String shopId;
   final String shopName;
-  final LeadloopSyncStatus syncStatus;
   final ValueListenable<LeadloopSyncStatus> syncStatusListenable;
   final Future<void> Function()? onChanged;
 
@@ -775,6 +802,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _comment = TextEditingController();
+  final _search = TextEditingController();
   FollowUpStage? _stage;
 
   @override
@@ -782,6 +810,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
     _name.dispose();
     _phone.dispose();
     _comment.dispose();
+    _search.dispose();
     super.dispose();
   }
 
@@ -791,6 +820,11 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
     if (name.isEmpty || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Name and mobile number are required.')));
+      return;
+    }
+    if (!MobileNumberValidator.isValid(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(MobileNumberValidator.errorMessage)));
       return;
     }
     final savedAt = DateTime.now();
@@ -833,54 +867,6 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
     if (mounted) setState(() {});
   }
 
-  Widget _syncBanner(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final (message, color, icon) = switch (widget.syncStatus) {
-      LeadloopSyncStatus.checking => (
-          'Checking internet connection...',
-          isDark ? AppColors.darkPrimarySurface : AppColors.primaryContainer,
-          Icons.sync
-        ),
-      LeadloopSyncStatus.offline => (
-          'Offline · Saved on this device',
-          isDark ? AppColors.darkWarningSurface : AppColors.warningSurface,
-          Icons.cloud_off_outlined
-        ),
-      LeadloopSyncStatus.syncing => (
-          'Syncing with Firebase...',
-          isDark ? AppColors.darkPrimarySurface : AppColors.primaryContainer,
-          Icons.sync
-        ),
-      LeadloopSyncStatus.synced => (
-          'Online · Synced to Firebase',
-          isDark ? AppColors.darkSuccessSurface : AppColors.successSurface,
-          Icons.cloud_done_outlined
-        ),
-      LeadloopSyncStatus.error => (
-          'Sync failed · Saved locally; will retry',
-          isDark ? AppColors.darkErrorSurface : AppColors.errorSurface,
-          Icons.cloud_off_outlined
-        ),
-    };
-    final foreground = widget.syncStatus == LeadloopSyncStatus.offline
-        ? (isDark ? AppColors.darkWarning : AppColors.warning)
-        : widget.syncStatus == LeadloopSyncStatus.error
-            ? (isDark ? AppColors.darkError : AppColors.error)
-            : widget.syncStatus == LeadloopSyncStatus.synced
-                ? (isDark ? AppColors.darkSuccess : AppColors.success)
-                : Theme.of(context).colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration:
-          BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
-      child: Row(children: [
-        Icon(icon, size: 17, color: foreground),
-        const SizedBox(width: 8),
-        Text(message, style: TextStyle(color: foreground, fontSize: 12))
-      ]),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     // The local Hive box can contain records from previous sessions on a
@@ -891,8 +877,11 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         .toList();
     final overdueFollowUp2 =
         allLeads.where(FollowUpDeadlineService.isFollowUp2Overdue).toList();
+    final query = _search.text.trim().toLowerCase();
     final leads = allLeads
-        .where((lead) => _stage == null || lead.currentStage == _stage)
+        .where((lead) =>
+            query.isNotEmpty || _stage == null || lead.currentStage == _stage)
+        .where((lead) => LeadSearchService.matches(lead, query))
         .toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
@@ -902,14 +891,6 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                 color: Theme.of(context).colorScheme.primary,
                 fontSize: 11,
                 letterSpacing: 1.1)),
-        const SizedBox(height: 4),
-        const Text('Capture a lead',
-            style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.6)),
-        const SizedBox(height: 12),
-        _syncBanner(context),
         if (overdueFollowUp2.isNotEmpty) ...[
           const SizedBox(height: 10),
           _FollowUp2OverdueBanner(leads: overdueFollowUp2),
@@ -923,6 +904,10 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         TextField(
             controller: _phone,
             keyboardType: TextInputType.phone,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(10),
+            ],
             decoration: const InputDecoration(labelText: 'Mobile number')),
         const SizedBox(height: 12),
         TextField(
@@ -939,7 +924,28 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
             label: const Text('Save customer'),
             style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14))),
-        const SizedBox(height: 28),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _search,
+          onChanged: (_) => setState(() {}),
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            labelText: 'Search customers and comments',
+            hintText: 'Name, mobile number or follow-up text',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _search.clear();
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 24),
         Row(children: [
           const Text('Recent customers',
               style: TextStyle(fontWeight: FontWeight.w600)),
@@ -964,30 +970,37 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                       : 'No customers are currently in this follow-up stage.',
                   textAlign: TextAlign.center))
         else
-          ...leads.map((lead) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                onTap: () => _openLead(lead),
-                leading: CircleAvatar(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primaryContainer,
-                    child: Text(lead.name.substring(0, 1).toUpperCase(),
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary))),
-                title: Text(lead.name),
-                subtitle: Text(
-                    '${lead.phone} · ${lead.isCompleted ? 'Completed' : 'Follow-up ${lead.currentStage.index + 1}'}\n${FollowUpDeadlineService.isFollowUp2Overdue(lead) ? 'F2 overdue · due ${_formatDateTime(FollowUpDeadlineService.followUp2DueAt(lead)!)}' : 'Entered ${_formatDateTime(lead.createdAt)}'}'),
-                isThreeLine: true,
-                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                  IconButton(
-                      tooltip: 'Edit customer',
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _openLead(lead)),
-                  IconButton(
-                      tooltip: 'Call customer',
-                      icon: const Icon(Icons.phone_outlined),
-                      color: AppColors.successFor(Theme.of(context).brightness),
-                      onPressed: () => _call(lead.phone)),
-                ]),
+          ...leads.map((lead) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Card(
+                  margin: EdgeInsets.zero,
+                  child: ListTile(
+                    onTap: () => _openLead(lead),
+                    leading: CircleAvatar(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.primaryContainer,
+                        child: Text(lead.name.substring(0, 1).toUpperCase(),
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary))),
+                    title: Text(lead.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                        '${lead.phone} · Follow-up ${lead.currentStage.index + 1}\n${FollowUpDeadlineService.isFollowUp2Overdue(lead) ? 'F2 overdue · due ${_formatDateTime(FollowUpDeadlineService.followUp2DueAt(lead)!)}' : 'Entered ${_formatDateTime(lead.createdAt)}'}'),
+                    isThreeLine: true,
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                          tooltip: 'Edit customer',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _openLead(lead)),
+                      IconButton(
+                          tooltip: 'Call customer',
+                          icon: const Icon(Icons.phone_outlined),
+                          color: AppColors.successFor(
+                              Theme.of(context).brightness),
+                          onPressed: () => _call(lead.phone)),
+                    ]),
+                  ),
+                ),
               )),
       ],
     );
@@ -1012,6 +1025,7 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   late final TextEditingController _first;
   late final TextEditingController _second;
   late final TextEditingController _third;
+  bool _creatingEnquiry = false;
 
   @override
   void initState() {
@@ -1039,6 +1053,11 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     if (name.isEmpty || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Name and mobile number are required.')));
+      return;
+    }
+    if (!MobileNumberValidator.isValid(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(MobileNumberValidator.errorMessage)));
       return;
     }
     final savedAt = DateTime.now();
@@ -1073,6 +1092,55 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     if (mounted) Navigator.pop(context);
   }
 
+  Future<void> _createNewEnquiry() async {
+    if (_creatingEnquiry) return;
+    final name = _name.text.trim();
+    final phone = _phone.text.trim();
+    if (name.isEmpty || phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Name and mobile number are required.')));
+      return;
+    }
+    if (!MobileNumberValidator.isValid(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(MobileNumberValidator.errorMessage)));
+      return;
+    }
+
+    setState(() => _creatingEnquiry = true);
+    try {
+      final newLead = CustomerLead(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: name,
+        phone: phone,
+        shopName: widget.lead.shopName,
+        promoterName: widget.lead.promoterName,
+        shopId: widget.lead.shopId,
+        promoterId: widget.lead.promoterId,
+        createdAt: DateTime.now(),
+      );
+      await widget.store.save(newLead);
+      await widget.onChanged?.call();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LeadloopFollowUpScreen(
+            store: widget.store,
+            lead: newLead,
+            onChanged: widget.onChanged,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _creatingEnquiry = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create the enquiry: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Edit customer')),
@@ -1091,6 +1159,10 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
             TextField(
               controller: _phone,
               keyboardType: TextInputType.phone,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ],
               decoration: const InputDecoration(labelText: 'Mobile number'),
             ),
             const SizedBox(height: 8),
@@ -1131,6 +1203,16 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
                 label: const Text('Save follow-ups'),
                 style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14))),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _creatingEnquiry ? null : _createNewEnquiry,
+              icon: const Icon(Icons.add),
+              label: Text(_creatingEnquiry
+                  ? 'Creating enquiry...'
+                  : 'New enquiry for this customer'),
+              style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+            ),
           ],
         ),
       );
