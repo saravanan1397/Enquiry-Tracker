@@ -37,10 +37,12 @@ class CustomerLead {
   final bool isSynced;
   final DateTime? deletedAt;
 
-  bool get isCompleted => followUp3?.trim().isNotEmpty == true;
+  // Completion will be driven by an explicit enquiry outcome in a later update.
+  // Recording a follow-up alone never completes an enquiry.
+  bool get isCompleted => false;
 
   FollowUpStage get currentStage {
-    if (isCompleted) return FollowUpStage.third;
+    if (followUp3?.trim().isNotEmpty == true) return FollowUpStage.third;
     if (followUp2?.trim().isNotEmpty == true) return FollowUpStage.second;
     return FollowUpStage.first;
   }

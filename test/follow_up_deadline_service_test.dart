@@ -19,6 +19,14 @@ CustomerLead _lead({
     );
 
 void main() {
+  test('F2 allowance includes both Saturday and Sunday business hours', () {
+    // Friday 9 PM: 1 hour Friday + 13 Saturday + 1 Sunday.
+    final dueAt = FollowUpDeadlineService.followUp2DueAt(
+      _lead(firstFollowUpAt: DateTime(2026, 9, 11, 21)),
+    );
+    expect(dueAt, DateTime(2026, 9, 13, 10));
+  });
+
   test('F2 deadline counts only time from 9 AM to 10 PM', () {
     final dueAt = FollowUpDeadlineService.followUp2DueAt(
       _lead(firstFollowUpAt: DateTime(2026, 9, 7, 10)),

@@ -45,8 +45,8 @@ void main() {
         lead.copyWith(followUp1: 'Called', followUp2: 'Called again');
     expect(second.currentStage, FollowUpStage.second);
     expect(second.isCompleted, isFalse);
-    final completed = second.copyWith(followUp3: 'Completed');
-    expect(completed.currentStage, FollowUpStage.third);
-    expect(completed.isCompleted, isTrue);
+    final third = second.copyWith(followUp3: 'Still interested');
+    expect(third.currentStage, FollowUpStage.third);
+    expect(third.isCompleted, isFalse);
   });
 }
