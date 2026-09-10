@@ -410,6 +410,18 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                               decoration: InputDecoration(
                                   labelText: 'Personal PIN',
                                   errorText: _error)),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                          builder: (_) =>
+                                              const ForgotPinScreen())),
+                              child: const Text('Forgot PIN?'),
+                            ),
+                          ),
                         ],
                         if (!_registering && _ownerMode) ...[
                           const SizedBox(height: 16),
@@ -486,16 +498,6 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                         ? 'Create promoter account'
                                         : 'Sign in'))),
                         const SizedBox(height: 10),
-                        if (!_ownerMode && !_registering)
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                        builder: (_) =>
-                                            const ForgotPinScreen())),
-                            child: const Text('Forgot PIN?'),
-                          ),
                         if (!_ownerMode || _registering)
                           TextButton(
                               onPressed: _busy
@@ -1099,10 +1101,15 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
 
 class LeadloopFollowUpScreen extends StatefulWidget {
   const LeadloopFollowUpScreen(
-      {super.key, required this.store, required this.lead, this.onChanged});
+      {super.key,
+      required this.store,
+      required this.lead,
+      this.onChanged,
+      this.isNewEnquiry = false});
 
   final LocalLeadStore store;
   final CustomerLead lead;
+  final bool isNewEnquiry;
   final Future<void> Function()? onChanged;
 
   @override
@@ -1284,6 +1291,7 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
           builder: (_) => LeadloopFollowUpScreen(
             store: widget.store,
             lead: newLead,
+            isNewEnquiry: true,
             onChanged: widget.onChanged,
           ),
         ),
@@ -1299,12 +1307,14 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Edit customer')),
+        appBar: AppBar(
+            title: Text(widget.isNewEnquiry ? 'New enquiry' : 'Edit customer')),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
           children: [
-            const Text('Customer details',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+            Text(widget.isNewEnquiry ? 'New enquiry' : 'Customer details',
+                style:
+                    const TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
             const SizedBox(height: 14),
             TextField(
               controller: _name,

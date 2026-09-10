@@ -30,6 +30,29 @@ CustomerLead sample() => CustomerLead(
     );
 
 void main() {
+  testWidgets('new enquiry opens with new heading and no old comments',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = MemoryStore();
+    final original = sample();
+    await tester.pumpWidget(MaterialApp(
+        home: LeadloopFollowUpScreen(store: store, lead: original)));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('New enquiry for this customer'));
+    await tester.tap(find.text('New enquiry for this customer'));
+    await tester.pumpAndSettle();
+    expect(find.text('New enquiry'), findsNWidgets(2));
+    expect(find.text('Edit customer'), findsNothing);
+    expect(store.saved!.id, isNot(original.id));
+    expect(store.saved!.name, original.name);
+    expect(store.saved!.phone, original.phone);
+    expect(store.saved!.followUp1, isNull);
+    expect(store.saved!.followUp2, isNull);
+    expect(original.followUp1, 'Initial');
+  });
   test('F3 and F4 have deadlines; completion and deletion stop them', () {
     final lead = sample();
     expect(FollowUpDeadlineService.nextDueAt(lead)?.toUtc(),

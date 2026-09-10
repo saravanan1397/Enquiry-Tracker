@@ -20,6 +20,7 @@ void main() {
 
     // Verify that the app launches without crashing
     expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.text('Forgot PIN?'), findsOneWidget);
     expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.dark_mode_outlined));
@@ -44,5 +45,33 @@ void main() {
     expect(find.text('Branch 2'), findsOneWidget);
     expect(find.text('Branch 3'), findsOneWidget);
     expect(find.text('Branch 4'), findsOneWidget);
+  });
+
+  testWidgets(
+      'Forgot PIN is visible before sign-in and after an unsuccessful attempt',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot PIN?').hitTestable(), findsOneWidget);
+    await tester.enterText(
+        find.byWidgetPredicate((w) =>
+            w is TextField && w.decoration?.labelText == 'Mobile number'),
+        '9876543222');
+    await tester.enterText(
+        find.byWidgetPredicate(
+            (w) => w is TextField && w.decoration?.labelText == 'Personal PIN'),
+        '123456');
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    // Firebase is intentionally unconfigured in this test: the attempt fails,
+    // but recovery must remain visible and usable for every sign-in error.
+    expect(find.text('Forgot PIN?').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('Forgot PIN?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset promoter PIN'), findsOneWidget);
   });
 }
