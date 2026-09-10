@@ -33,8 +33,10 @@ void main() {
     await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text('New promoter? Create an account'));
     await tester.tap(find.text('New promoter? Create an account'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Branch 1'));
     await tester.tap(find.text('Branch 1'));
     await tester.pumpAndSettle();
 

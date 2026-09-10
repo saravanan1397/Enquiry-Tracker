@@ -64,6 +64,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Only callable functions write requests. Codes/hashes/limits remain private.
+    match /pinResetRequests/{promoterId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Deny every collection not explicitly listed above.
     match /{document=**} {
       allow read, write: if false;

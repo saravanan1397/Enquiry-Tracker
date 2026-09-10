@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
+import 'pin_reset_ui.dart';
 import 'services/export_email_service.dart';
 import 'services/export_file_downloader.dart';
 import 'services/firebase_export_email_service.dart';
@@ -439,6 +440,16 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                         ? 'Create promoter account'
                                         : 'Sign in'))),
                         const SizedBox(height: 10),
+                        if (!_ownerMode && !_registering)
+                          TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                        builder: (_) =>
+                                            const ForgotPinScreen())),
+                            child: const Text('Forgot PIN?'),
+                          ),
                         if (!_ownerMode || _registering)
                           TextButton(
                               onPressed: _busy
@@ -2116,6 +2127,8 @@ class _LeadloopPromoterAdminScreenState
         Text('$pending awaiting approval · ${_promoters.length} total',
             style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 18),
+        const OwnerPinResetRequests(),
         const SizedBox(height: 18),
         if (_error != null)
           Text(_error!,
