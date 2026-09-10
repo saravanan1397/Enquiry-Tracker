@@ -170,6 +170,19 @@ class LeadloopAuthService {
     await _storage.delete(key: _activityKey);
   }
 
+  Future<void> clearBlockedSession() async {
+    // A remote disable/delete must not leave the UI unlocked just because FCM
+    // token removal fails offline. Server permission checks already deny access.
+    NotificationService.instance.stop();
+    try {
+      await _auth.signOut();
+    } catch (_) {/* Already revoked/deleted. */}
+    try {
+      await _storage.delete(key: _sessionKey);
+      await _storage.delete(key: _activityKey);
+    } catch (_) {/* Profile watcher will block again on the next connection. */}
+  }
+
   Future<void> _rememberSession(LeadloopAuthSession session) async {
     await _storage.write(
         key: _sessionKey,

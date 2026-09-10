@@ -129,3 +129,15 @@ test('request flooding is rate limited', async () => {
   for (let i = 0; i < 20; i++) await f.api.requestPromoterPinReset(f.request);
   await assert.rejects(f.api.requestPromoterPinReset(f.request), { code: 'resource-exhausted' });
 });
+
+test('deleting profiles cannot request, generate or redeem reset codes', async () => {
+  const f = fixture(); const { code } = await f.issue();
+  f.records.set('promoters/promoter', { ...f.records.get('promoters/promoter'), active: false, status: 'deleting' });
+  f.advance(31000);
+  await assert.rejects(f.api.generatePromoterPinResetCode(f.owner), { code: 'not-found' });
+  await assert.rejects(f.redeem(code), { code: 'invalid-argument' });
+  f.records.delete('pinResetRequests/promoter');
+  await f.api.requestPromoterPinReset(f.request);
+  assert.equal(f.records.has('pinResetRequests/promoter'), false);
+  assert.equal(f.updates.length, 0);
+});

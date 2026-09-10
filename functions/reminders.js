@@ -9,20 +9,22 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 exports.registerReminderDevice = onCall({ region: 'asia-south1' }, async request => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
   const uid = request.auth.uid;
-  const [owner, promoter] = await Promise.all([
-    db().doc(`users/${uid}`).get(), db().doc(`promoters/${uid}`).get(),
-  ]);
-  if (!((owner.data()?.role === 'admin' && owner.data()?.active === true) ||
-        (promoter.data()?.role === 'promoter' && promoter.data()?.active === true))) {
-    throw new HttpsError('permission-denied', 'An approved account is required.');
-  }
   const token = request.data?.token;
   if (typeof token !== 'string' || token.length < 20 || token.length > 4096) {
     throw new HttpsError('invalid-argument', 'Invalid notification registration.');
   }
   // A token can belong to only one authenticated UID, even on shared devices.
-  await db().collection('reminderDevices').doc(hash(token)).set({
-    uid, token, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  await db().runTransaction(async tx => {
+    const [owner, promoter] = await Promise.all([
+      tx.get(db().doc(`users/${uid}`)), tx.get(db().doc(`promoters/${uid}`)),
+    ]);
+    if (!((owner.data()?.role === 'admin' && owner.data()?.active === true) ||
+          (promoter.data()?.role === 'promoter' && promoter.data()?.active === true && promoter.data()?.status !== 'deleting'))) {
+      throw new HttpsError('permission-denied', 'An approved account is required.');
+    }
+    tx.set(db().collection('reminderDevices').doc(hash(token)), {
+      uid, token, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
   });
   return { registered: true };
 });

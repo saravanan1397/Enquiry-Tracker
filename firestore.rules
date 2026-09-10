@@ -44,10 +44,13 @@ service cloud.firestore {
         || (signedIn() && request.auth.uid == promoterId);
       allow create: if signedIn()
         && request.auth.uid == promoterId
+        && !exists(/databases/$(database)/documents/promoterDeletions/$(promoterId))
         && request.resource.data.role == 'promoter'
         && request.resource.data.active == false
         && request.resource.data.status == 'pending';
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        && resource.data.status != 'deleting'
+        && request.resource.data.status != 'deleting';
       allow delete: if false;
     }
 

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
@@ -12,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
 import 'pin_reset_ui.dart';
+import 'promoter_deletion_dialog.dart';
 import 'services/export_email_service.dart';
 import 'services/export_file_downloader.dart';
 import 'services/firebase_export_email_service.dart';
@@ -119,6 +122,45 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
   final _passwordController = TextEditingController();
   String _selectedBranch = _branches.first;
   LeadloopAuthSession? _session;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileWatch;
+
+  void _watchPromoter(LeadloopAuthSession? session) {
+    _profileWatch?.cancel();
+    _profileWatch = null;
+    if (session == null || session.role != 'promoter') return;
+    _profileWatch = FirebaseFirestore.instance
+        .collection('promoters')
+        .doc(session.uid)
+        .snapshots(includeMetadataChanges: true)
+        .listen((snapshot) {
+      // Ignore an empty offline cache, but immediately block known disabled data.
+      if (_session?.uid != session.uid) return;
+      if ((!snapshot.exists && !snapshot.metadata.isFromCache) ||
+          (snapshot.exists && snapshot.data()?['active'] != true)) {
+        _blockPromoter();
+      }
+    }, onError: (Object error) {
+      if (error is FirebaseException &&
+          error.code == 'permission-denied' &&
+          _session?.uid == session.uid) {
+        _blockPromoter();
+      }
+    });
+  }
+
+  Future<void> _blockPromoter() async {
+    if (!mounted || _session == null) return;
+    _profileWatch?.cancel();
+    _profileWatch = null;
+    setState(() {
+      _session = null;
+      _pinController.clear();
+      _error =
+          'Your promoter account is disabled or deleted. Contact the owner.';
+    });
+    await _auth.clearBlockedSession();
+  }
+
   bool _ownerMode = false;
   bool _registering = false;
   bool _busy = false;
@@ -144,6 +186,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
         _session = session;
         _restoring = false;
       });
+      _watchPromoter(session);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -163,6 +206,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _profileWatch?.cancel();
     _nameController.dispose();
     _mobileController.dispose();
     _pinController.dispose();
@@ -190,6 +234,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
             );
       if (!mounted) return;
       setState(() => _session = session);
+      _watchPromoter(session);
     } on FirebaseAuthException catch (error) {
       if (mounted) setState(() => _error = _friendlyAuthError(error));
     } on LeadloopAuthException catch (error) {
@@ -265,6 +310,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       return;
     }
     if (!mounted) return;
+    _watchPromoter(null);
     setState(() {
       _session = null;
       _error = null;
@@ -2028,6 +2074,43 @@ class _LeadloopPromoterAdminScreenState
   List<LeadloopPromoterProfile> _promoters = const [];
   bool _loading = true;
   String? _error;
+  bool _changing = false;
+
+  Future<void> _deletePermanently(LeadloopPromoterProfile promoter) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          PromoterDeletionDialog(name: promoter.name, mobile: promoter.mobile),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _changing = true);
+    try {
+      await FirebaseFunctions.instanceFor(region: 'asia-south1')
+          .httpsCallable(
+        'deletePromoterPermanently',
+        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+      )
+          .call({'uid': promoter.uid, 'confirmation': 'DELETE'});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Promoter permanently deleted. Customer enquiries were kept.')));
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is FirebaseFunctionsException &&
+              ['not-found', 'unavailable'].contains(error.code)
+          ? 'Deletion service unavailable. Deploy the Firebase function first; Blaze billing is required.'
+          : error is FirebaseFunctionsException
+              ? error.message ?? 'Deletion failed. Retry to finish cleanup.'
+              : 'Could not confirm deletion. Check your connection and retry.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+      await _load();
+    } finally {
+      if (mounted) setState(() => _changing = false);
+    }
+  }
 
   @override
   void initState() {
@@ -2154,13 +2237,34 @@ class _LeadloopPromoterAdminScreenState
                   subtitle: Text(
                       '${promoter.mobile}\n${promoter.shopName.isEmpty ? 'No shop assigned' : promoter.shopName}'),
                   isThreeLine: true,
-                  trailing: promoter.active
-                      ? OutlinedButton(
-                          onPressed: () => _disable(promoter),
-                          child: const Text('Disable'))
-                      : FilledButton(
-                          onPressed: () => _approve(promoter),
-                          child: const Text('Approve')),
+                  trailing: PopupMenuButton<String>(
+                    enabled: !_changing,
+                    tooltip: 'Manage promoter',
+                    onSelected: (action) {
+                      if (action == 'delete') {
+                        _deletePermanently(promoter);
+                      } else if (action == 'disable') {
+                        _disable(promoter);
+                      } else {
+                        _approve(promoter);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      if (promoter.status != 'deleting')
+                        PopupMenuItem(
+                            value: promoter.active ? 'disable' : 'approve',
+                            child: Text(promoter.active
+                                ? 'Disable'
+                                : promoter.status == 'disabled'
+                                    ? 'Reactivate'
+                                    : 'Approve')),
+                      PopupMenuItem(
+                          value: 'delete',
+                          child: Text(promoter.status == 'deleting'
+                              ? 'Retry permanent deletion'
+                              : 'Delete permanently')),
+                    ],
+                  ),
                 ),
               )),
       ],

@@ -44,6 +44,8 @@ function handlers(db, auth, now = Date.now) {
       const ref = db.doc(`pinResetRequests/${user.uid}`);
       const secretRef = db.doc(`pinResetSecrets/${hash(mobile)}`);
       await db.runTransaction(async tx => {
+        const currentProfile = (await tx.get(db.doc(`promoters/${user.uid}`))).data();
+        if (!currentProfile || currentProfile.status === 'deleting') return;
         const previous = (await tx.get(ref)).data();
         const secret = (await tx.get(secretRef)).data();
         const time = now();
@@ -69,7 +71,7 @@ function handlers(db, auth, now = Date.now) {
       const result = await db.runTransaction(async tx => {
         const pending = (await tx.get(ref)).data();
         const profile = (await tx.get(db.doc(`promoters/${uid}`))).data();
-        if (!pending || profile?.role !== 'promoter' || profile.mobile !== pending.mobile) {
+        if (!pending || profile?.role !== 'promoter' || profile.status === 'deleting' || profile.mobile !== pending.mobile) {
           throw new HttpsError('not-found', 'No matching reset request.');
         }
         const secretRef = db.doc(`pinResetSecrets/${hash(pending.mobile)}`);
@@ -101,6 +103,10 @@ function handlers(db, auth, now = Date.now) {
       const secretRef = db.doc(`pinResetSecrets/${hash(mobile)}`);
       const uid = await db.runTransaction(async tx => {
         const secret = (await tx.get(secretRef)).data();
+        if (secret) {
+          const profile = (await tx.get(db.doc(`promoters/${secret.uid}`))).data();
+          if (!profile || profile.status === 'deleting') return null;
+        }
         if (!checkCode(secret, code, now())) {
           if (secret?.status === 'issued') {
             const attempts = secret.attempts + 1;
