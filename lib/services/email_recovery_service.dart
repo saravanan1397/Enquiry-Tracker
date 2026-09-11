@@ -28,7 +28,9 @@ class EmailRecoveryService {
   EmailRecoveryService({FirebaseAuth? auth})
       : _auth = auth ?? FirebaseAuth.instance;
   final FirebaseAuth _auth;
-  static const site = 'https://saravanan1397.github.io/Enquiry-Tracker/';
+  // Firebase Hosting owns this domain, allowing Android to verify it as an
+  // App Link and return to the installed app after an email action.
+  static const site = 'https://sshtrackingapp.web.app/';
   static ActionCodeSettings get settings => ActionCodeSettings(
       url: '$site?recovery=promoter', handleCodeInApp: false);
 

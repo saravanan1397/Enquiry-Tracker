@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.leadloop",
+      "sha256_cert_fingerprints": [
+        "5E:78:99:1A:4A:7B:B6:29:CE:A9:A3:55:3A:EC:A4:58:D4:93:87:F0:45:2B:33:EC:92:48:21:D2:75:4C:10:62"
+      ]
+    }
+  }
+]
