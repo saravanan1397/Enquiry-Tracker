@@ -35,6 +35,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.text('New promoter? Create an account'));
+    await tester.ensureVisible(find.text('New promoter? Create an account'));
     await tester.tap(find.text('New promoter? Create an account'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Branch 1'));
@@ -45,11 +46,32 @@ void main() {
     expect(find.text('Branch 2'), findsOneWidget);
     expect(find.text('Branch 3'), findsOneWidget);
     expect(find.text('Branch 4'), findsOneWidget);
+    expect(find.text('Recovery email (optional)'), findsOneWidget);
+  });
+
+  testWidgets('registration has a back button to promoter sign-in',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('New promoter? Create an account'));
+    await tester.tap(find.text('New promoter? Create an account'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BackButton), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(
+        find.text('Sign in with your mobile number and PIN.'), findsOneWidget);
+    expect(find.text('Recovery email (optional)'), findsNothing);
   });
 
   testWidgets('owner sign-in requires only email and password',
       (WidgetTester tester) async {
-    await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
+    await tester.pumpWidget(LeadloopV2(
+      store: LocalLeadStore(),
+      ownerAccessEnabled: true,
+    ));
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'Owner'));
@@ -61,6 +83,17 @@ void main() {
     expect(find.text('Personal PIN'), findsNothing);
     expect(find.text('Forgot PIN?'), findsNothing);
     expect(find.text('Set up / verify recovery email'), findsNothing);
+    expect(find.text('Forgot password?'), findsOneWidget);
+  });
+
+  testWidgets('owner access is hidden from the mobile app',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(ChoiceChip, 'Owner'), findsNothing);
+    expect(find.text('Owner email'), findsNothing);
+    expect(find.text('Owner password'), findsNothing);
   });
 
   testWidgets(

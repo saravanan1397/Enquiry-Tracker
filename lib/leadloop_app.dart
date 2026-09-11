@@ -35,9 +35,14 @@ enum LeadloopRole { promoter, admin }
 enum LeadStatusFilter { active, completed }
 
 class LeadloopV2 extends StatefulWidget {
-  const LeadloopV2({super.key, required this.store});
+  const LeadloopV2({
+    super.key,
+    required this.store,
+    this.ownerAccessEnabled,
+  });
 
   final LocalLeadStore store;
+  final bool? ownerAccessEnabled;
 
   @override
   State<LeadloopV2> createState() => _LeadloopV2State();
@@ -93,6 +98,7 @@ class _LeadloopV2State extends State<LeadloopV2> {
       home: emailAction ??
           LeadloopAccessGate(
             store: widget.store,
+            ownerAccessEnabled: widget.ownerAccessEnabled ?? kIsWeb,
             isDarkMode: _isDarkMode,
             onToggleTheme: _toggleTheme,
           ),
@@ -104,11 +110,13 @@ class LeadloopAccessGate extends StatefulWidget {
   const LeadloopAccessGate({
     super.key,
     required this.store,
+    required this.ownerAccessEnabled,
     required this.isDarkMode,
     required this.onToggleTheme,
   });
 
   final LocalLeadStore store;
+  final bool ownerAccessEnabled;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
 
@@ -270,6 +278,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       _error = null;
     });
     try {
+      final hasRecoveryEmail = _recoveryEmailController.text.trim().isNotEmpty;
       await _auth.registerPromoter(
         name: _nameController.text,
         mobile: _mobileController.text,
@@ -281,8 +290,9 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       if (!mounted) return;
       setState(() {
         _registering = false;
-        _error =
-            'Account created. Verify the email link and wait for owner approval before signing in.';
+        _error = hasRecoveryEmail
+            ? 'Account created. Verify the email link and wait for owner approval before signing in.'
+            : 'Account created. Wait for owner approval, then add a recovery email from Set up / verify recovery email.';
       });
     } on FirebaseAuthException catch (error) {
       if (mounted) setState(() => _error = _friendlyAuthError(error));
@@ -374,6 +384,14 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     }
   }
 
+  void _backToPromoterSignIn() {
+    setState(() {
+      _registering = false;
+      _ownerMode = false;
+      _error = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_restoring) {
@@ -392,255 +410,290 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
         onToggleTheme: widget.onToggleTheme,
       );
     }
-    return Scaffold(
-      body: Stack(
-        children: [
-          Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 390),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        CircleAvatar(
-                          radius: 22,
-                          backgroundColor:
-                              Theme.of(context).colorScheme.primary,
-                          child: Icon(Icons.layers_outlined,
-                              color: Theme.of(context).colorScheme.onPrimary),
-                        ),
-                        const SizedBox(height: 20),
-                        const Text('Welcome to Enquiry Tracker',
-                            style: TextStyle(
-                                fontSize: 26, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 6),
-                        Text(
-                            _registering
-                                ? 'Create your promoter account.'
-                                : _ownerMode
-                                    ? 'Sign in with your owner account.'
-                                    : 'Sign in with your mobile number and PIN.',
-                            style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant)),
-                        const SizedBox(height: 24),
-                        if (!_registering)
-                          Wrap(spacing: 8, children: [
-                            ChoiceChip(
-                                label: const Text('Promoter'),
-                                selected: !_ownerMode,
-                                onSelected: (_) => setState(() {
-                                      _ownerMode = false;
-                                      _error = null;
-                                    })),
-                            ChoiceChip(
-                                label: const Text('Owner'),
-                                selected: _ownerMode,
-                                onSelected: (_) => setState(() {
-                                      _ownerMode = true;
-                                      _error = null;
-                                    })),
-                          ]),
-                        if (!_registering && !_ownerMode) ...[
-                          const SizedBox(height: 16),
-                          TextField(
-                              controller: _mobileController,
-                              keyboardType: TextInputType.phone,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(10),
-                              ],
-                              decoration: const InputDecoration(
-                                  labelText: 'Mobile number')),
-                          const SizedBox(height: 12),
-                          TextField(
-                              controller: _pinController,
-                              obscureText: true,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(128),
-                              ],
-                              decoration: InputDecoration(
-                                  labelText: 'Personal PIN',
-                                  errorText: _error)),
-                          if (_enterEmailOnce) ...[
+    return PopScope(
+      canPop: !_registering && !_ownerMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && (_registering || _ownerMode)) {
+          _backToPromoterSignIn();
+        }
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 390),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            child: Icon(Icons.layers_outlined,
+                                color: Theme.of(context).colorScheme.onPrimary),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text('Welcome to Enquiry Tracker',
+                              style: TextStyle(
+                                  fontSize: 26, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
+                          Text(
+                              _registering
+                                  ? 'Create your promoter account.'
+                                  : _ownerMode
+                                      ? 'Sign in with your owner account.'
+                                      : 'Sign in with your mobile number and PIN.',
+                              style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant)),
+                          const SizedBox(height: 24),
+                          if (!_registering && widget.ownerAccessEnabled)
+                            Wrap(spacing: 8, children: [
+                              ChoiceChip(
+                                  label: const Text('Promoter'),
+                                  selected: !_ownerMode,
+                                  onSelected: (_) => setState(() {
+                                        _ownerMode = false;
+                                        _error = null;
+                                      })),
+                              ChoiceChip(
+                                  label: const Text('Owner'),
+                                  selected: _ownerMode,
+                                  onSelected: (_) => setState(() {
+                                        _ownerMode = true;
+                                        _error = null;
+                                      })),
+                            ]),
+                          if (!_registering && !_ownerMode) ...[
+                            const SizedBox(height: 16),
+                            TextField(
+                                controller: _mobileController,
+                                keyboardType: TextInputType.phone,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(10),
+                                ],
+                                decoration: const InputDecoration(
+                                    labelText: 'Mobile number')),
+                            const SizedBox(height: 12),
+                            TextField(
+                                controller: _pinController,
+                                obscureText: true,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(128),
+                                ],
+                                decoration: InputDecoration(
+                                    labelText: 'Personal PIN',
+                                    errorText: _error)),
+                            if (_enterEmailOnce) ...[
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _recoveryEmailController,
+                                keyboardType: TextInputType.emailAddress,
+                                autocorrect: false,
+                                decoration: const InputDecoration(
+                                  labelText:
+                                      'Verified email (once on this device)',
+                                ),
+                              ),
+                            ],
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                const ForgotPinScreen())),
+                                child: const Text('Forgot PIN?'),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => setState(() {
+                                        _enterEmailOnce = !_enterEmailOnce;
+                                        _error = null;
+                                      }),
+                              child: Text(_enterEmailOnce
+                                  ? 'Use remembered email / legacy login'
+                                  : 'New device / email changed?'),
+                            ),
+                            TextButton(
+                              onPressed: _busy ? null : _setupRecoveryEmail,
+                              child:
+                                  const Text('Set up / verify recovery email'),
+                            ),
+                          ],
+                          if (!_registering && _ownerMode) ...[
+                            const SizedBox(height: 16),
+                            TextField(
+                                controller: _emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                decoration: const InputDecoration(
+                                    labelText: 'Owner email')),
+                            const SizedBox(height: 12),
+                            TextField(
+                                controller: _passwordController,
+                                obscureText: true,
+                                decoration: InputDecoration(
+                                    labelText: 'Owner password',
+                                    errorText: _error)),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                const OwnerForgotPasswordScreen(),
+                                          ),
+                                        ),
+                                child: const Text('Forgot password?'),
+                              ),
+                            ),
+                          ],
+                          if (_registering) ...[
+                            TextField(
+                                controller: _nameController,
+                                decoration: const InputDecoration(
+                                    labelText: 'Full name')),
+                            const SizedBox(height: 12),
+                            TextField(
+                                controller: _mobileController,
+                                keyboardType: TextInputType.phone,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(10),
+                                ],
+                                decoration: const InputDecoration(
+                                    labelText: 'Mobile number')),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: _selectedBranch,
+                              decoration:
+                                  const InputDecoration(labelText: 'Shop name'),
+                              items: _branches
+                                  .map((branch) => DropdownMenuItem(
+                                        value: branch,
+                                        child: Text(branch),
+                                      ))
+                                  .toList(growable: false),
+                              onChanged: (branch) {
+                                if (branch != null) {
+                                  setState(() => _selectedBranch = branch);
+                                }
+                              },
+                            ),
                             const SizedBox(height: 12),
                             TextField(
                               controller: _recoveryEmailController,
                               keyboardType: TextInputType.emailAddress,
                               autocorrect: false,
                               decoration: const InputDecoration(
-                                labelText:
-                                    'Verified email (once on this device)',
+                                labelText: 'Recovery email (optional)',
+                                helperText:
+                                    'You can add and verify this later from your profile.',
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            TextField(
+                                controller: _pinController,
+                                obscureText: true,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(128),
+                                ],
+                                decoration: const InputDecoration(
+                                    labelText: 'Create PIN (6+ digits)')),
+                            const SizedBox(height: 12),
+                            TextField(
+                                controller: _confirmPinController,
+                                obscureText: true,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(128),
+                                ],
+                                decoration: InputDecoration(
+                                    labelText: 'Confirm PIN',
+                                    errorText: _error)),
                           ],
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => Navigator.of(context).push(
-                                      MaterialPageRoute<void>(
-                                          builder: (_) =>
-                                              const ForgotPinScreen())),
-                              child: const Text('Forgot PIN?'),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => setState(() {
-                                      _enterEmailOnce = !_enterEmailOnce;
-                                      _error = null;
-                                    }),
-                            child: Text(_enterEmailOnce
-                                ? 'Use remembered email / legacy login'
-                                : 'New device / email changed?'),
-                          ),
-                          TextButton(
-                            onPressed: _busy ? null : _setupRecoveryEmail,
-                            child: const Text('Set up / verify recovery email'),
-                          ),
-                        ],
-                        if (!_registering && _ownerMode) ...[
-                          const SizedBox(height: 16),
-                          TextField(
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              decoration: const InputDecoration(
-                                  labelText: 'Owner email')),
-                          const SizedBox(height: 12),
-                          TextField(
-                              controller: _passwordController,
-                              obscureText: true,
-                              decoration: InputDecoration(
-                                  labelText: 'Owner password',
-                                  errorText: _error)),
-                        ],
-                        if (_registering) ...[
-                          TextField(
-                              controller: _nameController,
-                              decoration: const InputDecoration(
-                                  labelText: 'Full name')),
-                          const SizedBox(height: 12),
-                          TextField(
-                              controller: _mobileController,
-                              keyboardType: TextInputType.phone,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(10),
-                              ],
-                              decoration: const InputDecoration(
-                                  labelText: 'Mobile number')),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            initialValue: _selectedBranch,
-                            decoration:
-                                const InputDecoration(labelText: 'Shop name'),
-                            items: _branches
-                                .map((branch) => DropdownMenuItem(
-                                      value: branch,
-                                      child: Text(branch),
-                                    ))
-                                .toList(growable: false),
-                            onChanged: (branch) {
-                              if (branch != null) {
-                                setState(() => _selectedBranch = branch);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _recoveryEmailController,
-                            keyboardType: TextInputType.emailAddress,
-                            autocorrect: false,
-                            decoration: const InputDecoration(
-                              labelText: 'Recovery email (required)',
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                              controller: _pinController,
-                              obscureText: true,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(128),
-                              ],
-                              decoration: const InputDecoration(
-                                  labelText: 'Create PIN (6+ digits)')),
-                          const SizedBox(height: 12),
-                          TextField(
-                              controller: _confirmPinController,
-                              obscureText: true,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(128),
-                              ],
-                              decoration: InputDecoration(
-                                  labelText: 'Confirm PIN', errorText: _error)),
-                        ],
-                        const SizedBox(height: 14),
-                        SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
+                          const SizedBox(height: 14),
+                          SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                  onPressed: _busy
+                                      ? null
+                                      : (_registering ? _register : _submit),
+                                  child: Text(_busy
+                                      ? 'Please wait...'
+                                      : _registering
+                                          ? 'Create promoter account'
+                                          : 'Sign in'))),
+                          const SizedBox(height: 10),
+                          if (!_ownerMode || _registering)
+                            TextButton(
                                 onPressed: _busy
                                     ? null
-                                    : (_registering ? _register : _submit),
-                                child: Text(_busy
-                                    ? 'Please wait...'
-                                    : _registering
-                                        ? 'Create promoter account'
-                                        : 'Sign in'))),
-                        const SizedBox(height: 10),
-                        if (!_ownerMode || _registering)
-                          TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => setState(() {
-                                        _registering = !_registering;
-                                        _error = null;
-                                      }),
-                              child: Text(_registering
-                                  ? 'Already registered? Sign in'
-                                  : 'New promoter? Create an account')),
-                        if (_error != null &&
-                            !_registering &&
-                            (_ownerMode || _mobileController.text.isEmpty))
-                          Text(_error!,
-                              style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error)),
-                      ],
+                                    : () => setState(() {
+                                          _registering = !_registering;
+                                          _error = null;
+                                        }),
+                                child: Text(_registering
+                                    ? 'Already registered? Sign in'
+                                    : 'New promoter? Create an account')),
+                          if (_error != null &&
+                              !_registering &&
+                              (_ownerMode || _mobileController.text.isEmpty))
+                            Text(_error!,
+                                style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.error)),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            top: 12,
-            right: 12,
-            child: SafeArea(
-              child: IconButton(
-                tooltip: widget.isDarkMode
-                    ? 'Switch to light theme'
-                    : 'Switch to dark theme',
-                onPressed: widget.onToggleTheme,
-                icon: Icon(widget.isDarkMode
-                    ? Icons.light_mode_outlined
-                    : Icons.dark_mode_outlined),
+            if (_registering || _ownerMode)
+              Positioned(
+                top: 12,
+                left: 12,
+                child: SafeArea(
+                  child: BackButton(onPressed: _backToPromoterSignIn),
+                ),
+              ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: SafeArea(
+                child: IconButton(
+                  tooltip: widget.isDarkMode
+                      ? 'Switch to light theme'
+                      : 'Switch to dark theme',
+                  onPressed: widget.onToggleTheme,
+                  icon: Icon(widget.isDarkMode
+                      ? Icons.light_mode_outlined
+                      : Icons.dark_mode_outlined),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -903,79 +956,94 @@ class _LeadloopShellState extends State<LeadloopShell> {
             NavigationDestination(
                 icon: Icon(Icons.person_outline), label: 'Promoter')
           ];
-    return Scaffold(
-      appBar: AppBar(title: const Text('Enquiry Tracker'), actions: [
-        if (isAdmin) ...[
-          IconButton(
-              tooltip: 'Export to Excel',
-              onPressed:
-                  _exporting ? null : () => _exportCustomers(email: false),
-              icon: const Icon(Icons.table_view_outlined)),
-          IconButton(
-              tooltip: 'Send Excel by email',
-              onPressed:
-                  _exporting ? null : () => _exportCustomers(email: true),
-              icon: const Icon(Icons.email_outlined)),
-        ],
-        if (!isAdmin)
-          ValueListenableBuilder<LeadloopSyncStatus>(
-            valueListenable: _syncService.status,
-            builder: (context, status, _) {
-              final synced = status == LeadloopSyncStatus.synced;
-              return Tooltip(
-                message: synced ? 'Synced to Firebase' : 'Saved locally',
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Icon(
-                    synced
-                        ? Icons.cloud_done_outlined
-                        : Icons.cloud_off_outlined,
-                    color: synced
-                        ? AppColors.successFor(Theme.of(context).brightness)
-                        : Theme.of(context).colorScheme.error,
-                  ),
+    return PopScope(
+      canPop: !isAdmin || _tab == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && isAdmin && _tab != 0) {
+          setState(() => _tab = 0);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+            leading: isAdmin && _tab != 0
+                ? BackButton(onPressed: () => setState(() => _tab = 0))
+                : null,
+            title: const Text('Enquiry Tracker'),
+            actions: [
+              if (isAdmin) ...[
+                IconButton(
+                    tooltip: 'Export to Excel',
+                    onPressed: _exporting
+                        ? null
+                        : () => _exportCustomers(email: false),
+                    icon: const Icon(Icons.table_view_outlined)),
+                IconButton(
+                    tooltip: 'Send Excel by email',
+                    onPressed:
+                        _exporting ? null : () => _exportCustomers(email: true),
+                    icon: const Icon(Icons.email_outlined)),
+              ],
+              if (!isAdmin)
+                ValueListenableBuilder<LeadloopSyncStatus>(
+                  valueListenable: _syncService.status,
+                  builder: (context, status, _) {
+                    final synced = status == LeadloopSyncStatus.synced;
+                    return Tooltip(
+                      message: synced ? 'Synced to Firebase' : 'Saved locally',
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Icon(
+                          synced
+                              ? Icons.cloud_done_outlined
+                              : Icons.cloud_off_outlined,
+                          color: synced
+                              ? AppColors.successFor(
+                                  Theme.of(context).brightness)
+                              : Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-        if (!isAdmin)
-          IconButton(
-            tooltip: 'Set up recovery email',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const RecoveryEmailScreen(),
-              ),
-            ),
-            icon: const Icon(Icons.mark_email_read_outlined),
-          ),
-        if (_firebaseBackend.isConfigured)
-          IconButton(
-              tooltip: 'Sync now',
-              onPressed: _syncNow,
-              icon: const Icon(Icons.sync_outlined)),
-        IconButton(
-            tooltip: widget.isDarkMode
-                ? 'Switch to light theme'
-                : 'Switch to dark theme',
-            onPressed: widget.onToggleTheme,
-            icon: Icon(widget.isDarkMode
-                ? Icons.light_mode_outlined
-                : Icons.dark_mode_outlined)),
-        IconButton(
-            tooltip: 'Lock app',
-            onPressed: widget.onLogout,
-            icon: const Icon(Icons.lock_outline))
-      ]),
-      body: SafeArea(child: IndexedStack(index: _tab, children: pages)),
-      // Flutter requires NavigationBar to have at least two destinations.
-      // Promoters have one screen, so the bottom navigation is only needed
-      // for the admin's Dashboard and Recycle bin tabs.
-      bottomNavigationBar: destinations.length < 2
-          ? null
-          : NavigationBar(
-              selectedIndex: _tab,
-              onDestinationSelected: (index) => setState(() => _tab = index),
-              destinations: destinations),
+              if (!isAdmin)
+                IconButton(
+                  tooltip: 'Set up recovery email',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const RecoveryEmailScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.mark_email_read_outlined),
+                ),
+              if (_firebaseBackend.isConfigured)
+                IconButton(
+                    tooltip: 'Sync now',
+                    onPressed: _syncNow,
+                    icon: const Icon(Icons.sync_outlined)),
+              IconButton(
+                  tooltip: widget.isDarkMode
+                      ? 'Switch to light theme'
+                      : 'Switch to dark theme',
+                  onPressed: widget.onToggleTheme,
+                  icon: Icon(widget.isDarkMode
+                      ? Icons.light_mode_outlined
+                      : Icons.dark_mode_outlined)),
+              IconButton(
+                  tooltip: 'Lock app',
+                  onPressed: widget.onLogout,
+                  icon: const Icon(Icons.lock_outline))
+            ]),
+        body: SafeArea(child: IndexedStack(index: _tab, children: pages)),
+        // Flutter requires NavigationBar to have at least two destinations.
+        // Promoters have one screen, so the bottom navigation is only needed
+        // for the admin's Dashboard and Recycle bin tabs.
+        bottomNavigationBar: destinations.length < 2
+            ? null
+            : NavigationBar(
+                selectedIndex: _tab,
+                onDestinationSelected: (index) => setState(() => _tab = index),
+                destinations: destinations),
+      ),
     );
   }
 }

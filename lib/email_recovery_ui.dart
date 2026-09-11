@@ -36,6 +36,98 @@ class ForgotPinScreen extends StatefulWidget {
   State<ForgotPinScreen> createState() => _ForgotPinScreenState();
 }
 
+class OwnerForgotPasswordScreen extends StatefulWidget {
+  const OwnerForgotPasswordScreen({super.key, this.sendReset});
+
+  final Future<void> Function(String email)? sendReset;
+
+  @override
+  State<OwnerForgotPasswordScreen> createState() =>
+      _OwnerForgotPasswordScreenState();
+}
+
+class _OwnerForgotPasswordScreenState extends State<OwnerForgotPasswordScreen> {
+  final _form = GlobalKey<FormState>();
+  final _email = TextEditingController();
+  bool _busy = false;
+  String? _message;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await (widget.sendReset ?? EmailRecoveryService().sendOwnerReset)(
+        _email.text.trim(),
+      );
+      if (mounted) {
+        setState(() => _message =
+            'If this owner email is registered, a password reset link has been sent. Check the inbox and spam folder.');
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = recoveryMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Reset owner password')),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Form(
+                key: _form,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Enter the email address registered to the owner account.',
+                    ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _email,
+                      enabled: !_busy,
+                      keyboardType: TextInputType.emailAddress,
+                      autocorrect: false,
+                      decoration:
+                          const InputDecoration(labelText: 'Owner email'),
+                      validator: (value) =>
+                          RecoveryValidation.email(value ?? '')
+                              ? null
+                              : 'Enter a valid owner email address.',
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _busy ? null : _send,
+                      child: Text(_busy ? 'Sending…' : 'Send reset link'),
+                    ),
+                    if (_message != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(_message!),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
 class _ForgotPinScreenState extends State<ForgotPinScreen> {
   final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
@@ -254,6 +346,7 @@ class EmailActionScreen extends StatefulWidget {
     super.key,
     required this.mode,
     required this.code,
+    this.ownerPassword = false,
     this.verifyResetCode,
     this.confirmReset,
     this.applyCode,
@@ -261,6 +354,7 @@ class EmailActionScreen extends StatefulWidget {
 
   final String mode;
   final String code;
+  final bool ownerPassword;
   final Future<String> Function(String code)? verifyResetCode;
   final Future<void> Function(String code, String pin)? confirmReset;
   final Future<void> Function(String code)? applyCode;
@@ -269,7 +363,14 @@ class EmailActionScreen extends StatefulWidget {
     final mode = uri.queryParameters['mode'];
     final code = uri.queryParameters['oobCode'];
     if (mode == null || code == null || code.isEmpty) return null;
-    return EmailActionScreen(mode: mode, code: code);
+    final continueUrl = Uri.tryParse(uri.queryParameters['continueUrl'] ?? '');
+    final recovery = uri.queryParameters['recovery'] ??
+        continueUrl?.queryParameters['recovery'];
+    return EmailActionScreen(
+      mode: mode,
+      code: code,
+      ownerPassword: recovery == 'owner',
+    );
   }
 
   @override
@@ -286,6 +387,7 @@ class _EmailActionScreenState extends State<EmailActionScreen> {
   String? _message;
 
   bool get _isReset => widget.mode == 'resetPassword';
+  bool get _isOwnerReset => _isReset && widget.ownerPassword;
 
   @override
   void initState() {
@@ -331,12 +433,18 @@ class _EmailActionScreenState extends State<EmailActionScreen> {
   }
 
   Future<void> _savePin() async {
-    if (!RecoveryValidation.pin(_pin.text)) {
-      setState(() => _message = 'PIN must contain at least 6 digits.');
+    final credentialIsValid = _isOwnerReset
+        ? _pin.text.length >= 6 && _pin.text.length <= 128
+        : RecoveryValidation.pin(_pin.text);
+    if (!credentialIsValid) {
+      setState(() => _message = _isOwnerReset
+          ? 'Password must contain at least 6 characters.'
+          : 'PIN must contain at least 6 digits.');
       return;
     }
     if (_pin.text != _confirmPin.text) {
-      setState(() => _message = 'PINs do not match.');
+      setState(() => _message =
+          _isOwnerReset ? 'Passwords do not match.' : 'PINs do not match.');
       return;
     }
     setState(() {
@@ -352,8 +460,9 @@ class _EmailActionScreenState extends State<EmailActionScreen> {
         setState(() {
           _complete = true;
           _ready = false;
-          _message =
-              'PIN changed successfully. Return to Enquiry Tracker and sign in with your mobile number and new PIN.';
+          _message = _isOwnerReset
+              ? 'Password changed successfully. Return to Enquiry Tracker and sign in with your owner email and new password.'
+              : 'PIN changed successfully. Return to Enquiry Tracker and sign in with your mobile number and new PIN.';
         });
       }
     } catch (error) {
@@ -383,7 +492,11 @@ class _EmailActionScreenState extends State<EmailActionScreen> {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    _isReset ? 'Choose a new PIN' : 'Verify recovery email',
+                    _isReset
+                        ? (_isOwnerReset
+                            ? 'Choose a new password'
+                            : 'Choose a new PIN')
+                        : 'Verify recovery email',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
@@ -397,13 +510,19 @@ class _EmailActionScreenState extends State<EmailActionScreen> {
                       controller: _pin,
                       enabled: !_busy,
                       obscureText: true,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(128),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'New PIN (minimum 6 digits)',
+                      keyboardType: _isOwnerReset
+                          ? TextInputType.visiblePassword
+                          : TextInputType.number,
+                      inputFormatters: _isOwnerReset
+                          ? [LengthLimitingTextInputFormatter(128)]
+                          : [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(128),
+                            ],
+                      decoration: InputDecoration(
+                        labelText: _isOwnerReset
+                            ? 'New password (minimum 6 characters)'
+                            : 'New PIN (minimum 6 digits)',
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -411,18 +530,26 @@ class _EmailActionScreenState extends State<EmailActionScreen> {
                       controller: _confirmPin,
                       enabled: !_busy,
                       obscureText: true,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(128),
-                      ],
-                      decoration:
-                          const InputDecoration(labelText: 'Confirm new PIN'),
+                      keyboardType: _isOwnerReset
+                          ? TextInputType.visiblePassword
+                          : TextInputType.number,
+                      inputFormatters: _isOwnerReset
+                          ? [LengthLimitingTextInputFormatter(128)]
+                          : [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(128),
+                            ],
+                      decoration: InputDecoration(
+                        labelText: _isOwnerReset
+                            ? 'Confirm new password'
+                            : 'Confirm new PIN',
+                      ),
                     ),
                     const SizedBox(height: 18),
                     FilledButton(
                       onPressed: _busy ? null : _savePin,
-                      child: const Text('Save new PIN'),
+                      child: Text(
+                          _isOwnerReset ? 'Save new password' : 'Save new PIN'),
                     ),
                   ],
                   if (_busy) ...[

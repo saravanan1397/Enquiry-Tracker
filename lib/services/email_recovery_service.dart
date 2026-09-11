@@ -7,6 +7,8 @@ class RecoveryValidation {
       RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim()) &&
       !value.trim().toLowerCase().endsWith('@auth.leadloop.app');
   static bool pin(String value) => RegExp(r'^\d{6,128}$').hasMatch(value);
+  static bool optionalEmail(String value) =>
+      value.trim().isEmpty || email(value);
   static bool legacy(String? email) =>
       email == null || email.toLowerCase().endsWith('@auth.leadloop.app');
 }
@@ -33,6 +35,8 @@ class EmailRecoveryService {
   static const site = 'https://sshtrackingapp.web.app/';
   static ActionCodeSettings get settings => ActionCodeSettings(
       url: '$site?recovery=promoter', handleCodeInApp: false);
+  static ActionCodeSettings get ownerSettings =>
+      ActionCodeSettings(url: '$site?recovery=owner', handleCodeInApp: false);
 
   Future<void> sendReset(String email) async {
     if (!RecoveryValidation.email(email)) {
@@ -43,6 +47,21 @@ class EmailRecoveryService {
           email: email.trim().toLowerCase(), actionCodeSettings: settings);
     } on FirebaseAuthException catch (error) {
       // Same UI for unknown and registered addresses; do not disclose accounts.
+      if (error.code != 'user-not-found') rethrow;
+    }
+  }
+
+  Future<void> sendOwnerReset(String email) async {
+    if (!RecoveryValidation.email(email)) {
+      throw const FormatException('Enter a valid owner email address.');
+    }
+    try {
+      await _auth.sendPasswordResetEmail(
+        email: email.trim().toLowerCase(),
+        actionCodeSettings: ownerSettings,
+      );
+    } on FirebaseAuthException catch (error) {
+      // Do not disclose whether an owner account exists for this address.
       if (error.code != 'user-not-found') rethrow;
     }
   }

@@ -47,12 +47,16 @@ class LeadloopAuthService {
     required String email,
   }) async {
     final normalizedMobile = _normalizeMobile(mobile);
-    if (!RecoveryValidation.email(email) || !RecoveryValidation.pin(pin)) {
+    final normalizedEmail = email.trim().toLowerCase();
+    if (!RecoveryValidation.optionalEmail(normalizedEmail) ||
+        !RecoveryValidation.pin(pin)) {
       throw const LeadloopAuthException(
-          'Enter a real email address and a PIN of 6–128 digits.');
+          'Enter a valid optional email address and a PIN of 6–128 digits.');
     }
     final credential = await _auth.createUserWithEmailAndPassword(
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail.isEmpty
+          ? _authEmail(normalizedMobile)
+          : normalizedEmail,
       password: pin,
     );
     final user = credential.user!;
@@ -86,12 +90,14 @@ class LeadloopAuthService {
       await user.delete();
       rethrow;
     }
-    await _deviceEmails.remember(_project, normalizedMobile, user.email!);
-    try {
-      await user.sendEmailVerification(EmailRecoveryService.settings);
-    } catch (_) {
-      throw const LeadloopAuthException(
-          'Account created, but verification email could not be sent. Use “Set up / verify recovery email” to resend; do not register again.');
+    if (normalizedEmail.isNotEmpty) {
+      await _deviceEmails.remember(_project, normalizedMobile, user.email!);
+      try {
+        await user.sendEmailVerification(EmailRecoveryService.settings);
+      } catch (_) {
+        throw const LeadloopAuthException(
+            'Account created, but verification email could not be sent. Use “Set up / verify recovery email” to resend; do not register again.');
+      }
     }
     return LeadloopAuthSession(
       uid: user.uid,
