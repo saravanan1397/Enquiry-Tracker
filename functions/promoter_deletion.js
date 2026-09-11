@@ -1,6 +1,5 @@
 const admin = require('firebase-admin');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { hash } = require('./pin_reset_logic');
 
 function deletionHandler(db, auth) {
   return async request => {
@@ -14,7 +13,7 @@ function deletionHandler(db, auth) {
     // Minimal server-only UID marker prevents an old ID token recreating a deleted
     // profile and permits retry after partial failure. No name/mobile/credentials.
     const jobRef = db.doc(`promoterDeletions/${uid}`);
-    const finished = await db.runTransaction(async tx => {
+    const deletion = await db.runTransaction(async tx => {
       const [ownerDoc, targetUser, profileDoc, jobDoc] = await Promise.all([
         tx.get(db.doc(`users/${request.auth.uid}`)), tx.get(db.doc(`users/${uid}`)),
         tx.get(profileRef), tx.get(jobRef),
@@ -25,21 +24,15 @@ function deletionHandler(db, auth) {
       }
       if (targetUser.data()) throw new HttpsError('permission-denied', 'Owner/user accounts cannot be deleted through promoter management.');
       const profile = profileDoc.data();
-      if (jobDoc.data()?.status === 'complete') return true;
+      if (jobDoc.data()?.status === 'complete') return { finished: true };
       if ((!profile || profile.role !== 'promoter') && !jobDoc.data()) {
         throw new HttpsError('not-found', 'Promoter profile not found. No account was deleted.');
       }
-      if (profile?.mobile) {
-        const secret = (await tx.get(db.doc(`pinResetSecrets/${hash(profile.mobile)}`))).data();
-        if (secret?.uid === uid && secret.status === 'processing') {
-          throw new HttpsError('failed-precondition', 'A PIN reset is processing. Wait until it finishes before deleting.');
-        }
-      }
       if (profile) tx.update(profileRef, { active: false, status: 'deleting' });
       tx.set(jobRef, { status: 'pending' });
-      return false;
+      return { finished: false, mobile: profile?.mobile };
     });
-    if (finished) return { deleted: true };
+    if (deletion.finished) return { deleted: true };
 
     try {
       try { await auth.deleteUser(uid); }
@@ -47,7 +40,7 @@ function deletionHandler(db, auth) {
 
       // Paginate cleanup. Recheck ownership transactionally because a device token
       // may be reassigned to a different account between query and deletion.
-      for (const collection of ['reminderDevices', 'pinResetSecrets']) {
+      for (const collection of ['reminderDevices']) {
         while (true) {
           const page = await db.collection(collection).where('uid', '==', uid).limit(300).get();
           if (page.docs.length === 0) break;
@@ -59,11 +52,15 @@ function deletionHandler(db, auth) {
           });
         }
       }
-      await db.recursiveDelete(db.doc(`pinResetRequests/${uid}`));
       for (const child of await profileRef.listCollections()) {
         await db.recursiveDelete(child);
       }
       const finalBatch = db.batch();
+      if (deletion.mobile) {
+        const reservation = db.doc(`promoterMobiles/${deletion.mobile}`);
+        const current = await reservation.get();
+        if (current.data()?.uid === uid) finalBatch.delete(reservation);
+      }
       finalBatch.delete(profileRef);
       finalBatch.set(jobRef, { status: 'complete' });
       await finalBatch.commit();

@@ -6,10 +6,6 @@ const { HttpsError, onCall } = require("firebase-functions/v2/https");
 admin.initializeApp();
 Object.assign(exports, require('./reminders'));
 exports.deletePromoterPermanently = require('./promoter_deletion').deletePromoterPermanently;
-const pinReset = require('./pin_reset');
-for (const name of ['requestPromoterPinReset', 'generatePromoterPinResetCode', 'completePromoterPinReset']) {
-  exports[name] = pinReset[name];
-}
 
 const resendApiKey = defineSecret("RESEND_API_KEY");
 const exportFromEmail = defineSecret("EXPORT_FROM_EMAIL");

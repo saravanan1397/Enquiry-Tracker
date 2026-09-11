@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'email_recovery_service.dart';
 import 'mobile_number_validator.dart';
 import 'notification_service.dart';
 
@@ -35,30 +36,63 @@ class LeadloopAuthService {
   static const _activityKey = 'leadloop_auth_last_activity';
   static const _sessionDuration = Duration(days: 30);
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final DeviceLoginEmails _deviceEmails = DeviceLoginEmails();
+  String get _project => _auth.app.options.projectId;
 
   Future<LeadloopAuthSession> registerPromoter({
     required String name,
     required String mobile,
     required String pin,
     required String shopName,
+    required String email,
   }) async {
     final normalizedMobile = _normalizeMobile(mobile);
+    if (!RecoveryValidation.email(email) || !RecoveryValidation.pin(pin)) {
+      throw const LeadloopAuthException(
+          'Enter a real email address and a PIN of 6–128 digits.');
+    }
     final credential = await _auth.createUserWithEmailAndPassword(
-      email: _authEmail(normalizedMobile),
+      email: email.trim().toLowerCase(),
       password: pin,
     );
     final user = credential.user!;
     await user.updateDisplayName(name.trim());
-    await _firestore.collection('promoters').doc(user.uid).set({
-      'name': name.trim(),
-      'mobile': normalizedMobile,
-      'shopName': shopName.trim(),
-      'shopId': _shopIdFromName(shopName),
-      'role': 'promoter',
-      'active': false,
-      'status': 'pending',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      final batch = _firestore.batch();
+      batch.set(
+        _firestore.collection('promoterMobiles').doc(normalizedMobile),
+        {'uid': user.uid},
+      );
+      batch.set(_firestore.collection('promoters').doc(user.uid), {
+        'name': name.trim(),
+        'mobile': normalizedMobile,
+        'shopName': shopName.trim(),
+        'shopId': _shopIdFromName(shopName),
+        'role': 'promoter',
+        'active': false,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
+    } on FirebaseException catch (error) {
+      // Roll back only the Auth account just created by this registration attempt.
+      await user.delete();
+      if (error.code == 'permission-denied') {
+        throw const LeadloopAuthException(
+            'This mobile number is already registered.');
+      }
+      rethrow;
+    } catch (_) {
+      await user.delete();
+      rethrow;
+    }
+    await _deviceEmails.remember(_project, normalizedMobile, user.email!);
+    try {
+      await user.sendEmailVerification(EmailRecoveryService.settings);
+    } catch (_) {
+      throw const LeadloopAuthException(
+          'Account created, but verification email could not be sent. Use “Set up / verify recovery email” to resend; do not register again.');
+    }
     return LeadloopAuthSession(
       uid: user.uid,
       role: 'promoter',
@@ -71,23 +105,51 @@ class LeadloopAuthService {
   Future<LeadloopAuthSession> signInPromoter({
     required String mobile,
     required String pin,
+    String? email,
+    bool emailSetupOnly = false,
   }) async {
     final normalizedMobile = _normalizeMobile(mobile);
+    final suppliedEmail = email?.trim() ?? '';
+    if (suppliedEmail.isNotEmpty && !RecoveryValidation.email(suppliedEmail)) {
+      throw const LeadloopAuthException('Enter a real email address.');
+    }
+    final loginEmail = suppliedEmail.isNotEmpty
+        ? suppliedEmail.toLowerCase()
+        : await _deviceEmails.read(_project, normalizedMobile) ??
+            _authEmail(normalizedMobile);
     final credential = await _auth.signInWithEmailAndPassword(
-      email: _authEmail(normalizedMobile),
+      email: loginEmail,
       password: pin,
     );
     final user = credential.user!;
     final snapshot =
         await _firestore.collection('promoters').doc(user.uid).get();
     final data = snapshot.data();
-    if (data == null) {
+    if (data == null ||
+        data['role'] != 'promoter' ||
+        data['mobile'] != normalizedMobile) {
       await _auth.signOut();
-      throw const LeadloopAuthException('Promoter profile was not found.');
+      throw const LeadloopAuthException(
+          'The email and mobile number do not match this promoter account.');
     }
-    if (data['active'] != true) {
+    if (!RecoveryValidation.legacy(user.email)) {
+      await _deviceEmails.remember(_project, normalizedMobile, user.email!);
+    }
+    if (!emailSetupOnly &&
+        !RecoveryValidation.legacy(user.email) &&
+        !user.emailVerified) {
       await _auth.signOut();
-      throw LeadloopAuthException(data['status'] == 'pending'
+      throw const LeadloopAuthException(
+          'Verify your email before signing in. Use “Set up / verify recovery email” to resend the link.');
+    }
+    final status = data['status'] as String? ?? '';
+    if (emailSetupOnly && (status == 'disabled' || status == 'deleting')) {
+      await _auth.signOut();
+      throw const LeadloopAuthException('This promoter account is disabled.');
+    }
+    if (!emailSetupOnly && data['active'] != true) {
+      await _auth.signOut();
+      throw LeadloopAuthException(status == 'pending'
           ? 'Registration is waiting for owner approval.'
           : 'This promoter account is disabled.');
     }
@@ -98,8 +160,27 @@ class LeadloopAuthService {
       shopId: data['shopId'] as String? ?? '',
       shopName: data['shopName'] as String? ?? '',
     );
-    await _rememberSession(session);
+    if (!emailSetupOnly) await _rememberSession(session);
     return session;
+  }
+
+  Future<void> rememberVerifiedEmail(User user) async {
+    final data =
+        (await _firestore.collection('promoters').doc(user.uid).get()).data();
+    if (data == null ||
+        data['role'] != 'promoter' ||
+        (data['status'] == 'disabled' || data['status'] == 'deleting') ||
+        !user.emailVerified ||
+        RecoveryValidation.legacy(user.email)) {
+      throw const LeadloopAuthException(
+          'A verified promoter email is required.');
+    }
+    final mobile = data['mobile'] as String;
+    await _firestore
+        .collection('promoterMobiles')
+        .doc(mobile)
+        .set({'uid': user.uid});
+    await _deviceEmails.remember(_project, mobile, user.email!);
   }
 
   Future<LeadloopAuthSession> signInAdmin({

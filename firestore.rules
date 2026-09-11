@@ -54,6 +54,22 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // A private uniqueness reservation keeps one promoter account per mobile.
+    // It contains only the Firebase UID and cannot be listed by clients.
+    match /promoterMobiles/{mobile} {
+      allow read: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/promoters/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/promoters/$(request.auth.uid)).data.mobile == mobile;
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
       allow write: if false;
@@ -64,12 +80,6 @@ service cloud.firestore {
         || (isPromoter()
           && request.auth.token.shopIds is list
           && shopId in request.auth.token.shopIds);
-      allow write: if false;
-    }
-
-    // Only callable functions write requests. Codes/hashes/limits remain private.
-    match /pinResetRequests/{promoterId} {
-      allow read: if isAdmin();
       allow write: if false;
     }
 

@@ -1,18 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { deletionHandler } = require('./promoter_deletion');
-const { hash } = require('./pin_reset_logic');
 
 function setup() {
   const data = new Map([
     ['users/owner', { role: 'admin', active: true }],
     ['promoters/p1', { role: 'promoter', active: true, status: 'approved', mobile: '9000000001' }],
     ['promoters/p2', { role: 'promoter', active: true }],
+    ['promoterMobiles/9000000001', { uid: 'p1' }],
+    ['promoterMobiles/9000000002', { uid: 'p2' }],
     ['leads/one', { promoterId: 'p1', followUp1: 'Call later' }],
     ['leads/two', { promoterId: 'p1', outcome: 'purchased' }],
-    ['pinResetRequests/p1', { status: 'issued' }],
-    [`pinResetSecrets/${hash('9000000001')}`, { uid: 'p1', status: 'issued' }],
-    ['pinResetSecrets/other', { uid: 'p2' }],
     ['reminderDevices/one', { uid: 'p1', token: 'first' }],
     ['reminderDevices/other', { uid: 'p2', token: 'other' }],
     ['promoters/p1/preferences/one', { value: 'private' }],
@@ -51,12 +49,12 @@ function setup() {
   return { data, db, auth, deleted, invoke, request };
 }
 
-test('removes Auth, full profile, requests, secrets and own tokens; keeps enquiries and other promoters', async () => {
+test('removes Auth, full profile, mobile reservation and own tokens; keeps enquiries and other promoters', async () => {
   const f = setup(); const enquiries = [...f.data.entries()].filter(([key]) => key.startsWith('leads/'));
   await f.invoke(f.request);
   assert.deepEqual(f.deleted, ['p1']);
-  for (const path of ['promoters/p1', 'promoters/p1/preferences/one', 'pinResetRequests/p1', `pinResetSecrets/${hash('9000000001')}`, 'reminderDevices/one']) assert.equal(f.data.has(path), false);
-  for (const path of ['promoters/p2', 'reminderDevices/other', 'pinResetSecrets/other']) assert.equal(f.data.has(path), true);
+  for (const path of ['promoters/p1', 'promoters/p1/preferences/one', 'promoterMobiles/9000000001', 'reminderDevices/one']) assert.equal(f.data.has(path), false);
+  for (const path of ['promoters/p2', 'promoterMobiles/9000000002', 'reminderDevices/other']) assert.equal(f.data.has(path), true);
   assert.deepEqual([...f.data.entries()].filter(([key]) => key.startsWith('leads/')), enquiries);
   assert.deepEqual(f.data.get('promoterDeletions/p1'), { status: 'complete' });
 });
@@ -78,12 +76,6 @@ test('refuses owner/self and unknown targets', async () => {
   f.data.set('users/p1', { role: 'admin', active: false });
   await assert.rejects(f.invoke(f.request), { code: 'permission-denied' });
   await assert.rejects(f.invoke({ ...f.request, data: { uid: 'unknown', confirmation: 'DELETE' } }), { code: 'not-found' });
-  assert.equal(f.deleted.length, 0);
-});
-test('deletion does not interrupt a PIN reset already processing', async () => {
-  const f = setup();
-  f.data.set(`pinResetSecrets/${hash('9000000001')}`, { uid: 'p1', status: 'processing' });
-  await assert.rejects(f.invoke(f.request), { code: 'failed-precondition' });
   assert.equal(f.deleted.length, 0);
 });
 test('Auth failure locks profile and preserves retryable state', async () => {

@@ -13,13 +13,14 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
-import 'pin_reset_ui.dart';
+import 'email_recovery_ui.dart';
 import 'promoter_deletion_dialog.dart';
 import 'services/export_email_service.dart';
 import 'services/export_file_downloader.dart';
 import 'services/firebase_export_email_service.dart';
 import 'services/firebase_lead_backend.dart';
 import 'services/follow_up_deadline_service.dart';
+import 'services/email_recovery_service.dart';
 import 'services/leadloop_auth_service.dart';
 import 'services/lead_export_service.dart';
 import 'services/lead_search_service.dart';
@@ -81,18 +82,22 @@ class _LeadloopV2State extends State<LeadloopV2> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'Enquiry Tracker',
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
-        themeMode: _themeMode,
-        home: LeadloopAccessGate(
-          store: widget.store,
-          isDarkMode: _isDarkMode,
-          onToggleTheme: _toggleTheme,
-        ),
-      );
+  Widget build(BuildContext context) {
+    final emailAction = kIsWeb ? EmailActionScreen.fromUri(Uri.base) : null;
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Enquiry Tracker',
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: _themeMode,
+      home: emailAction ??
+          LeadloopAccessGate(
+            store: widget.store,
+            isDarkMode: _isDarkMode,
+            onToggleTheme: _toggleTheme,
+          ),
+    );
+  }
 }
 
 class LeadloopAccessGate extends StatefulWidget {
@@ -120,6 +125,8 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
   final _confirmPinController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _recoveryEmailController = TextEditingController();
+  bool _enterEmailOnce = false;
   String _selectedBranch = _branches.first;
   LeadloopAuthSession? _session;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileWatch;
@@ -213,6 +220,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     _confirmPinController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _recoveryEmailController.dispose();
     super.dispose();
   }
 
@@ -231,6 +239,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
           : await _auth.signInPromoter(
               mobile: _mobileController.text,
               pin: _pinController.text,
+              email: _enterEmailOnce ? _recoveryEmailController.text : null,
             );
       if (!mounted) return;
       setState(() => _session = session);
@@ -252,7 +261,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       setState(() => _error = 'PINs do not match.');
       return;
     }
-    if (!RegExp(r'^\d{6,}$').hasMatch(_pinController.text)) {
+    if (!RecoveryValidation.pin(_pinController.text)) {
       setState(() => _error = 'PIN must contain at least 6 digits.');
       return;
     }
@@ -266,12 +275,14 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
         mobile: _mobileController.text,
         pin: _pinController.text,
         shopName: _selectedBranch,
+        email: _recoveryEmailController.text,
       );
       await _auth.signOut();
       if (!mounted) return;
       setState(() {
         _registering = false;
-        _error = 'Registration submitted. The owner must approve your account.';
+        _error =
+            'Account created. Verify the email link and wait for owner approval before signing in.';
       });
     } on FirebaseAuthException catch (error) {
       if (mounted) setState(() => _error = _friendlyAuthError(error));
@@ -286,11 +297,12 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
 
   String _friendlyAuthError(FirebaseAuthException error) {
     return switch (error.code) {
-      'email-already-in-use' => 'This mobile number is already registered.',
+      'email-already-in-use' =>
+        'This email is already registered. Sign in or use Forgot PIN.',
       'invalid-credential' ||
       'wrong-password' ||
       'user-not-found' =>
-        'Mobile number or PIN is incorrect.',
+        'Mobile number or PIN is incorrect. On a new device or after changing email, enter your email once using the option below.',
       'weak-password' => 'PIN must contain at least 6 digits.',
       'network-request-failed' =>
         'Internet is required for first-time authentication.',
@@ -317,6 +329,35 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       _pinController.clear();
       _passwordController.clear();
     });
+  }
+
+  Future<void> _setupRecoveryEmail() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _auth.signInPromoter(
+        mobile: _mobileController.text,
+        pin: _pinController.text,
+        email: _enterEmailOnce ? _recoveryEmailController.text : null,
+        emailSetupOnly: true,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const RecoveryEmailScreen()),
+      );
+      await _auth.clearBlockedSession();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = error is FirebaseAuthException
+            ? _friendlyAuthError(error)
+            : recoveryMessage(error));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -407,9 +448,25 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                               controller: _pinController,
                               obscureText: true,
                               keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(128),
+                              ],
                               decoration: InputDecoration(
                                   labelText: 'Personal PIN',
                                   errorText: _error)),
+                          if (_enterEmailOnce) ...[
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _recoveryEmailController,
+                              keyboardType: TextInputType.emailAddress,
+                              autocorrect: false,
+                              decoration: const InputDecoration(
+                                labelText:
+                                    'Verified email (once on this device)',
+                              ),
+                            ),
+                          ],
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
@@ -421,6 +478,21 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                               const ForgotPinScreen())),
                               child: const Text('Forgot PIN?'),
                             ),
+                          ),
+                          TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => setState(() {
+                                      _enterEmailOnce = !_enterEmailOnce;
+                                      _error = null;
+                                    }),
+                            child: Text(_enterEmailOnce
+                                ? 'Use remembered email / legacy login'
+                                : 'New device / email changed?'),
+                          ),
+                          TextButton(
+                            onPressed: _busy ? null : _setupRecoveryEmail,
+                            child: const Text('Set up / verify recovery email'),
                           ),
                         ],
                         if (!_registering && _ownerMode) ...[
@@ -472,9 +544,22 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                           ),
                           const SizedBox(height: 12),
                           TextField(
+                            controller: _recoveryEmailController,
+                            keyboardType: TextInputType.emailAddress,
+                            autocorrect: false,
+                            decoration: const InputDecoration(
+                              labelText: 'Recovery email (required)',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
                               controller: _pinController,
                               obscureText: true,
                               keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(128),
+                              ],
                               decoration: const InputDecoration(
                                   labelText: 'Create PIN (6+ digits)')),
                           const SizedBox(height: 12),
@@ -482,6 +567,10 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                               controller: _confirmPinController,
                               obscureText: true,
                               keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(128),
+                              ],
                               decoration: InputDecoration(
                                   labelText: 'Confirm PIN', errorText: _error)),
                         ],
@@ -834,6 +923,16 @@ class _LeadloopShellState extends State<LeadloopShell> {
                 ),
               );
             },
+          ),
+        if (!isAdmin)
+          IconButton(
+            tooltip: 'Set up recovery email',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const RecoveryEmailScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.mark_email_read_outlined),
           ),
         if (_firebaseBackend.isConfigured)
           IconButton(
@@ -2220,8 +2319,6 @@ class _LeadloopPromoterAdminScreenState
         Text('$pending awaiting approval · ${_promoters.length} total',
             style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 18),
-        const OwnerPinResetRequests(),
         const SizedBox(height: 18),
         if (_error != null)
           Text(_error!,

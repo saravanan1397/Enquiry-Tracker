@@ -19,7 +19,7 @@ class _PromoterDeletionDialogState extends State<PromoterDeletionDialog> {
         content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text(
-              '${widget.name} · ${widget.mobile}\n\nThis removes their login, profile, PIN reset data and notification registrations. It cannot be undone.\n\nCustomer enquiries and history are kept. Transfer open enquiries to an active promoter so follow-ups continue.\n\nTo block access temporarily, use Disable instead.'),
+              '${widget.name} · ${widget.mobile}\n\nThis removes their login, profile, mobile-number reservation and notification registrations. It cannot be undone.\n\nCustomer enquiries and history are kept. Transfer open enquiries to an active promoter so follow-ups continue.\n\nTo block access temporarily, use Disable instead.'),
           const SizedBox(height: 16),
           TextField(
               onChanged: (value) => setState(() => _confirmation = value),
