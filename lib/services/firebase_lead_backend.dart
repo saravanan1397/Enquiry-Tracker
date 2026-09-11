@@ -132,9 +132,25 @@ class FirebaseLeadBackend {
   }
 
   Future<void> deleteLead(String leadId) async {
+    await deleteLeads([leadId]);
+  }
+
+  /// Permanently deletes records in bounded batches. Firestore permits up to
+  /// 500 writes per batch; keeping this below that limit leaves headroom for
+  /// future server-side bookkeeping.
+  Future<void> deleteLeads(Iterable<String> leadIds) async {
     if (!isConfigured) return;
-    await _leads.doc(leadId).delete();
-    await (_firestore ?? FirebaseFirestore.instance).waitForPendingWrites();
+    final ids = leadIds.toSet().toList(growable: false);
+    for (var offset = 0; offset < ids.length; offset += _writeBatchSize) {
+      final candidateEnd = offset + _writeBatchSize;
+      final end = candidateEnd < ids.length ? candidateEnd : ids.length;
+      final batch = _database.batch();
+      for (final id in ids.sublist(offset, end)) {
+        batch.delete(_leads.doc(id));
+      }
+      await batch.commit();
+    }
+    await _database.waitForPendingWrites();
   }
 
   Future<void> _uploadLeads(List<CustomerLead> leads) async {

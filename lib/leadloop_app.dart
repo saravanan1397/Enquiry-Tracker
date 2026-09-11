@@ -2393,6 +2393,8 @@ class LeadloopRecycleBinScreen extends StatefulWidget {
 }
 
 class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
+  bool _deletingAll = false;
+
   Future<void> _restore(CustomerLead lead) async {
     await widget.store.restore(lead.id);
     await widget.onChanged?.call();
@@ -2423,6 +2425,50 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _deleteAllForever(List<CustomerLead> deleted) async {
+    if (_deletingAll || deleted.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete all permanently?'),
+        content: Text(
+            'All ${deleted.length} records in the recycle bin will be removed from this device and Firebase. This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Delete all forever'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deletingAll = true);
+    try {
+      if (!widget.backend.isConfigured) {
+        throw StateError('Firebase is not configured.');
+      }
+      final ids = deleted.map((lead) => lead.id).toList(growable: false);
+      await widget.backend.deleteLeads(ids);
+      await widget.store.permanentlyDeleteMany(ids);
+      await widget.onChanged?.call();
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${ids.length} records permanently deleted.')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Could not delete all records. Check your internet connection and try again.')));
+    } finally {
+      if (mounted) setState(() => _deletingAll = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final deleted = widget.store.recycleBin();
@@ -2444,6 +2490,22 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
         Text('${deleted.length} records · retained for 30 days',
             style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        if (deleted.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: _deletingAll ? null : () => _deleteAllForever(deleted),
+              icon: _deletingAll
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.delete_sweep_outlined),
+              label:
+                  Text(_deletingAll ? 'Deleting…' : 'Delete all permanently'),
+            ),
+          ),
+        ],
         const SizedBox(height: 22),
         if (deleted.isEmpty)
           const Card(

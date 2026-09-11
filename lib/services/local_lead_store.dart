@@ -117,8 +117,11 @@ class LocalLeadStore {
   }
 
   Future<void> permanentlyDelete(String id) async {
-    await _box.delete(id);
-    _cache.remove(id);
+    await permanentlyDeleteMany([id]);
+  }
+
+  Future<void> permanentlyDeleteMany(Iterable<String> ids) async {
+    await _deleteAll(ids);
   }
 
   List<CustomerLead> activeLeads() {
