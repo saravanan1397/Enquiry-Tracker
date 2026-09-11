@@ -296,6 +296,20 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
   }
 
   String _friendlyAuthError(FirebaseAuthException error) {
+    if (_ownerMode && !_registering) {
+      return switch (error.code) {
+        'invalid-email' => 'Enter a valid owner email address.',
+        'invalid-credential' ||
+        'wrong-password' ||
+        'user-not-found' =>
+          'Owner email or password is incorrect.',
+        'too-many-requests' =>
+          'Too many sign-in attempts. Wait a moment and try again.',
+        'network-request-failed' =>
+          'Internet is required to sign in to the owner account.',
+        _ => error.message ?? 'Owner authentication failed.',
+      };
+    }
     return switch (error.code) {
       'email-already-in-use' =>
         'This email is already registered. Sign in or use Forgot PIN.',

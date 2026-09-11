@@ -47,6 +47,22 @@ void main() {
     expect(find.text('Branch 4'), findsOneWidget);
   });
 
+  testWidgets('owner sign-in requires only email and password',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Owner'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Owner email'), findsOneWidget);
+    expect(find.text('Owner password'), findsOneWidget);
+    expect(find.text('Mobile number'), findsNothing);
+    expect(find.text('Personal PIN'), findsNothing);
+    expect(find.text('Forgot PIN?'), findsNothing);
+    expect(find.text('Set up / verify recovery email'), findsNothing);
+  });
+
   testWidgets(
       'Forgot PIN is visible before sign-in and after an unsuccessful attempt',
       (tester) async {
