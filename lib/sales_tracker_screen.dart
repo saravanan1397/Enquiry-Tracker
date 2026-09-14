@@ -351,6 +351,11 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       for (var index = 0; index < orderedRecords.length; index++)
         orderedRecords[index].id: index + 1,
     };
+    final alphabeticPeople = List<SalesPerson>.of(people)
+      ..sort((a, b) {
+        final name = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        return name != 0 ? name : a.id.compareTo(b.id);
+      });
     final currentMonth = indiaNow();
     final canMoveNext = _selectedMonth
         .isBefore(DateTime(currentMonth.year, currentMonth.month));
@@ -541,25 +546,23 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  runSpacing: 10,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${_displayMonth(_selectedMonth)} records',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w700)),
-                        Text(
-                            '${filteredRecords.length} of ${records.length} entries · ${personGroups.length} salespeople · Person-wise totals shown below'),
-                      ],
-                    ),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
+                LayoutBuilder(builder: (context, constraints) {
+                  final title = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${_displayMonth(_selectedMonth)} records',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      Text(
+                          '${filteredRecords.length} of ${records.length} entries · ${personGroups.length} salespeople · Person-wise totals shown below'),
+                    ],
+                  );
+                  final actions = Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
                       OutlinedButton.icon(
                           onPressed: filteredRecords.isEmpty
                               ? null
@@ -597,9 +600,27 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                           icon: const Icon(Icons.lock_outline),
                           label: const Text('Mark incentives completed'),
                         ),
-                    ]),
-                  ],
-                ),
+                    ],
+                  );
+                  if (constraints.maxWidth >= 860) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(child: title),
+                        const SizedBox(width: 16),
+                        actions,
+                      ],
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      title,
+                      const SizedBox(height: 12),
+                      actions,
+                    ],
+                  );
+                }),
                 const SizedBox(height: 14),
                 Wrap(
                   spacing: 12,
@@ -620,7 +641,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             value: '',
                             child: Text('All salespeople'),
                           ),
-                          ...people.map((person) => DropdownMenuItem(
+                          ...alphabeticPeople.map((person) => DropdownMenuItem(
                                 value: person.id,
                                 child: Text(person.name),
                               )),
@@ -661,20 +682,32 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                         child: Text('No sales records match these filters.')),
                   ),
                 if (filteredRecords.isNotEmpty)
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      columns: const [
-                        DataColumn(label: Text('Date')),
-                        DataColumn(label: Text('SNo'), numeric: true),
-                        DataColumn(label: Text('Name')),
-                        DataColumn(label: Text('Amount'), numeric: true),
-                        DataColumn(label: Text('Action buttons')),
-                      ],
-                      rows: [
-                        for (final group in personGroups) ...[
-                          for (final record in group.records)
-                            DataRow(cells: [
+                  LayoutBuilder(builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minWidth: constraints.maxWidth),
+                        child: DataTable(
+                          horizontalMargin: 24,
+                          columnSpacing: 36,
+                          headingRowColor: WidgetStatePropertyAll(
+                            Theme.of(context)
+                                .colorScheme
+                                .primaryContainer
+                                .withValues(alpha: 0.32),
+                          ),
+                          columns: const [
+                            DataColumn(label: Text('Date')),
+                            DataColumn(label: Text('SNo'), numeric: true),
+                            DataColumn(label: Text('Name')),
+                            DataColumn(label: Text('Amount'), numeric: true),
+                            DataColumn(label: Text('Action buttons')),
+                          ],
+                          rows: [
+                            for (final group in personGroups) ...[
+                              for (final record in group.records)
+                                DataRow(cells: [
                               DataCell(Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,31 +746,33 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                         icon:
                                             const Icon(Icons.delete_outline)),
                                   ])),
-                            ]),
-                          DataRow(
-                            color: WidgetStatePropertyAll(
-                              Theme.of(context)
-                                  .colorScheme
-                                  .primaryContainer
-                                  .withValues(alpha: 0.45),
-                            ),
-                            cells: [
-                              const DataCell(SizedBox.shrink()),
-                              const DataCell(SizedBox.shrink()),
-                              DataCell(Text('${group.personName} total',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800))),
-                              DataCell(Text(
-                                  '₹${_groupedAmount(group.totalMilli)}',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800))),
-                              const DataCell(SizedBox.shrink()),
+                                ]),
+                              DataRow(
+                                color: WidgetStatePropertyAll(
+                                  Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                      .withValues(alpha: 0.45),
+                                ),
+                                cells: [
+                                  const DataCell(SizedBox.shrink()),
+                                  const DataCell(SizedBox.shrink()),
+                                  DataCell(Text('${group.personName} total',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w800))),
+                                  DataCell(Text(
+                                      '₹${_groupedAmount(group.totalMilli)}',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w800))),
+                                  const DataCell(SizedBox.shrink()),
+                                ],
+                              ),
                             ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
               ],
             ),
           ),

@@ -43,15 +43,16 @@ void main() {
       record('one-14', 'one', 'Name1', '2026-09-14', 15000000),
       record('two-14', 'two', 'Person2', '2026-09-14', 10000000),
       record('one-13', 'one', 'Name1', '2026-09-13', 12000000),
+      record('alpha-14', 'alpha', 'alpha Person', '2026-09-14', 5000000),
     ]);
 
-    expect(groups, hasLength(2));
-    expect(groups[0].personName, 'Name1');
-    expect(groups[0].records.map((record) => record.salesDateKey),
+    expect(groups, hasLength(3));
+    expect(groups.map((group) => group.personName),
+        ['alpha Person', 'Name1', 'Person2']);
+    expect(groups[1].records.map((record) => record.salesDateKey),
         ['2026-09-13', '2026-09-14']);
-    expect(groups[0].totalMilli, 27000000);
-    expect(groups[1].personName, 'Person2');
-    expect(groups[1].totalMilli, 10000000);
+    expect(groups[1].totalMilli, 27000000);
+    expect(groups[2].totalMilli, 10000000);
 
     expect(
       filterSalesRecords(
