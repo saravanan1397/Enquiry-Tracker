@@ -6,7 +6,7 @@ import 'package:leadloop/models/sales_record.dart';
 import 'package:leadloop/services/sales_export_service.dart';
 
 void main() {
-  test('exports sales details, timestamps and total to one workbook', () {
+  test('exports sales details, timestamps and person totals to one workbook', () {
     final bytes = SalesExportService().buildWorkbook(
       records: [
         SalesRecord(
@@ -24,6 +24,16 @@ void main() {
           previousAmountMilli: 9000000,
           lastEditedByName: 'Owner',
         ),
+        const SalesRecord(
+          id: 'person-2_2026-09-14',
+          personId: 'person-2',
+          personName: 'PersonTwo',
+          salesDateKey: '2026-09-14',
+          monthKey: '2026-09',
+          amountMilli: 5000000,
+          enteredByUid: 'owner-1',
+          enteredByName: 'Owner',
+        ),
       ],
       exportedAt: DateTime(2026, 9, 14, 19),
     );
@@ -40,7 +50,8 @@ void main() {
     expect(xml, contains('10000.125'));
     expect(xml, contains('9000.000'));
     expect(xml, contains('POS-14'));
-    expect(xml, contains('TOTAL'));
+    expect(xml, contains('PersonName TOTAL'));
+    expect(xml, contains('PersonTwo TOTAL'));
     expect(xml, contains('Entered at'));
   });
 }

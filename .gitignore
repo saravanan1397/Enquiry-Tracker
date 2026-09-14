@@ -9,3 +9,7 @@ android/local.properties
 
 apk/
 .firebase/
+
+# Local backup credentials must never be committed.
+Git secrets.txt
+sshtrackingapp-*.json

@@ -28,6 +28,8 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   TextEditingController? _name;
   SalesPerson? _selectedPerson;
   SalesRecord? _editing;
+  String? _filterPersonId;
+  DateTime? _filterDate;
   late DateTime _selectedDate;
   late DateTime _selectedMonth;
   bool _busy = false;
@@ -59,7 +61,24 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           ? DateTime(now.year, now.month, now.day)
           : DateTime(next.year, next.month, 1);
       _cancelEdit(clearPerson: true);
+      _filterPersonId = null;
+      _filterDate = null;
     });
+  }
+
+  Future<void> _pickFilterDate() async {
+    final now = indiaNow();
+    final today = DateTime(now.year, now.month, now.day);
+    final firstDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+    final monthEnd = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
+    final lastDate = monthEnd.isAfter(today) ? today : monthEnd;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _filterDate ?? lastDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+    );
+    if (picked != null && mounted) setState(() => _filterDate = picked);
   }
 
   void _cancelEdit({bool clearPerson = false}) {
@@ -319,8 +338,19 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   Widget _body(List<SalesPerson> people, SalesMonthState month,
       List<SalesRecord> records,
       {required bool loading}) {
-    final total =
-        records.fold<int>(0, (sum, record) => sum + record.amountMilli);
+    final filteredRecords = filterSalesRecords(
+      records,
+      personId: _filterPersonId,
+      dateKey: _filterDate == null ? null : salesDateKey(_filterDate!),
+    );
+    final personGroups = groupSalesRecordsByPerson(filteredRecords);
+    final orderedRecords = personGroups
+        .expand((group) => group.records)
+        .toList(growable: false);
+    final serialByRecordId = <String, int>{
+      for (var index = 0; index < orderedRecords.length; index++)
+        orderedRecords[index].id: index + 1,
+    };
     final currentMonth = indiaNow();
     final canMoveNext = _selectedMonth
         .isBefore(DateTime(currentMonth.year, currentMonth.month));
@@ -526,13 +556,14 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 .titleLarge
                                 ?.copyWith(fontWeight: FontWeight.w700)),
                         Text(
-                            '${records.length} entries · Total ₹${_groupedAmount(total)}'),
+                            '${filteredRecords.length} of ${records.length} entries · ${personGroups.length} salespeople · Person-wise totals shown below'),
                       ],
                     ),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       OutlinedButton.icon(
-                          onPressed:
-                              records.isEmpty ? null : () => _export(records),
+                          onPressed: filteredRecords.isEmpty
+                              ? null
+                              : () => _export(filteredRecords),
                           icon: const Icon(Icons.table_view_outlined),
                           label: const Text('Export Excel')),
                       if (!month.finalized)
@@ -570,14 +601,66 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 260,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey(_filterPersonId),
+                        initialValue: _filterPersonId ?? '',
+                        decoration: const InputDecoration(
+                          labelText: 'Filter by salesperson',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text('All salespeople'),
+                          ),
+                          ...people.map((person) => DropdownMenuItem(
+                                value: person.id,
+                                child: Text(person.name),
+                              )),
+                        ],
+                        onChanged: (value) => setState(() =>
+                            _filterPersonId = value == null || value.isEmpty
+                                ? null
+                                : value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 220,
+                      child: OutlinedButton.icon(
+                        onPressed: _pickFilterDate,
+                        icon: const Icon(Icons.event_outlined),
+                        label: Text(_filterDate == null
+                            ? 'All dates'
+                            : _displayDate(_filterDate!)),
+                      ),
+                    ),
+                    if (_filterPersonId != null || _filterDate != null)
+                      TextButton.icon(
+                        onPressed: () => setState(() {
+                          _filterPersonId = null;
+                          _filterDate = null;
+                        }),
+                        icon: const Icon(Icons.filter_alt_off_outlined),
+                        label: const Text('Clear filters'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
                 if (loading) const LinearProgressIndicator(),
-                if (!loading && records.isEmpty)
+                if (!loading && filteredRecords.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 28),
                     child: Center(
-                        child: Text('No sales recorded for this month.')),
+                        child: Text('No sales records match these filters.')),
                   ),
-                if (records.isNotEmpty)
+                if (filteredRecords.isNotEmpty)
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
@@ -589,54 +672,69 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                         DataColumn(label: Text('Action buttons')),
                       ],
                       rows: [
-                        for (var index = 0; index < records.length; index++)
-                          DataRow(cells: [
-                            DataCell(Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_displayDate(records[index].salesDate)),
-                                if (records[index].createdAt != null)
-                                  Text(_displayTime(records[index].createdAt!),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall),
-                              ],
-                            )),
-                            DataCell(Text('${index + 1}')),
-                            DataCell(Tooltip(
-                                message: records[index].reference.isEmpty
-                                    ? records[index].personId
-                                    : '${records[index].personId}\n${records[index].reference}',
-                                child: Text(records[index].personName))),
-                            DataCell(Text(
-                                '₹${_groupedAmount(records[index].amountMilli)}')),
-                            DataCell(
-                                Row(mainAxisSize: MainAxisSize.min, children: [
-                              IconButton(
-                                  tooltip: 'Edit',
-                                  onPressed: month.finalized
-                                      ? null
-                                      : () => _edit(records[index], people),
-                                  icon: const Icon(Icons.edit_outlined)),
-                              IconButton(
-                                  tooltip: 'Delete permanently',
-                                  onPressed: month.finalized
-                                      ? null
-                                      : () => _deleteRecord(records[index]),
-                                  icon: const Icon(Icons.delete_outline)),
-                            ])),
-                          ]),
-                        DataRow(cells: [
-                          const DataCell(SizedBox.shrink()),
-                          const DataCell(SizedBox.shrink()),
-                          const DataCell(Text('TOTAL',
-                              style: TextStyle(fontWeight: FontWeight.w800))),
-                          DataCell(Text('₹${_groupedAmount(total)}',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w800))),
-                          const DataCell(SizedBox.shrink()),
-                        ]),
+                        for (final group in personGroups) ...[
+                          for (final record in group.records)
+                            DataRow(cells: [
+                              DataCell(Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(_displayDate(record.salesDate)),
+                                  if (record.createdAt != null)
+                                    Text(_displayTime(record.createdAt!),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall),
+                                ],
+                              )),
+                              DataCell(Text('${serialByRecordId[record.id]}')),
+                              DataCell(Tooltip(
+                                  message: record.reference.isEmpty
+                                      ? record.personId
+                                      : '${record.personId}\n${record.reference}',
+                                  child: Text(record.personName))),
+                              DataCell(Text(
+                                  '₹${_groupedAmount(record.amountMilli)}')),
+                              DataCell(Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                        tooltip: 'Edit',
+                                        onPressed: month.finalized
+                                            ? null
+                                            : () => _edit(record, people),
+                                        icon:
+                                            const Icon(Icons.edit_outlined)),
+                                    IconButton(
+                                        tooltip: 'Delete permanently',
+                                        onPressed: month.finalized
+                                            ? null
+                                            : () => _deleteRecord(record),
+                                        icon:
+                                            const Icon(Icons.delete_outline)),
+                                  ])),
+                            ]),
+                          DataRow(
+                            color: WidgetStatePropertyAll(
+                              Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withValues(alpha: 0.45),
+                            ),
+                            cells: [
+                              const DataCell(SizedBox.shrink()),
+                              const DataCell(SizedBox.shrink()),
+                              DataCell(Text('${group.personName} total',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w800))),
+                              DataCell(Text(
+                                  '₹${_groupedAmount(group.totalMilli)}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w800))),
+                              const DataCell(SizedBox.shrink()),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

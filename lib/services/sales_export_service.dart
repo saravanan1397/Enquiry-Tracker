@@ -23,32 +23,33 @@ class SalesExportService {
         'Entered by',
         'Last edited by',
       ],
-      ...records.map((record) => [
-            record.personId,
-            record.personName,
-            _date(record.salesDate),
-            formatAmountMilli(record.amountMilli),
-            record.reference,
-            _timestamp(record.createdAt),
-            _timestamp(record.updatedAt),
-            record.previousAmountMilli == null
-                ? ''
-                : formatAmountMilli(record.previousAmountMilli!),
-            record.enteredByName,
-            record.lastEditedByName ?? '',
-          ]),
-      [
-        '',
-        'TOTAL',
-        '',
-        formatAmountMilli(
-            records.fold<int>(0, (total, row) => total + row.amountMilli)),
-        '',
-        '',
-        '',
-        '',
-        '',
-        '',
+      for (final group in groupSalesRecordsByPerson(records)) ...[
+        ...group.records.map((record) => [
+              record.personId,
+              record.personName,
+              _date(record.salesDate),
+              formatAmountMilli(record.amountMilli),
+              record.reference,
+              _timestamp(record.createdAt),
+              _timestamp(record.updatedAt),
+              record.previousAmountMilli == null
+                  ? ''
+                  : formatAmountMilli(record.previousAmountMilli!),
+              record.enteredByName,
+              record.lastEditedByName ?? '',
+            ]),
+        [
+          group.personId,
+          '${group.personName} TOTAL',
+          '',
+          formatAmountMilli(group.totalMilli),
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+        ],
       ],
       ['', 'Exported at', '', _timestamp(exportedAt), '', '', '', '', '', ''],
     ];

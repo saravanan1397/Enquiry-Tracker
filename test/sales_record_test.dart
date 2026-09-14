@@ -24,4 +24,42 @@ void main() {
       DateTime(2026, 9, 14, 16),
     );
   });
+
+  test('sales totals are grouped separately for each person', () {
+    SalesRecord record(String id, String personId, String name, String date,
+            int amountMilli) =>
+        SalesRecord(
+          id: id,
+          personId: personId,
+          personName: name,
+          salesDateKey: date,
+          monthKey: '2026-09',
+          amountMilli: amountMilli,
+          enteredByUid: 'owner',
+          enteredByName: 'Owner',
+        );
+
+    final groups = groupSalesRecordsByPerson([
+      record('one-14', 'one', 'Name1', '2026-09-14', 15000000),
+      record('two-14', 'two', 'Person2', '2026-09-14', 10000000),
+      record('one-13', 'one', 'Name1', '2026-09-13', 12000000),
+    ]);
+
+    expect(groups, hasLength(2));
+    expect(groups[0].personName, 'Name1');
+    expect(groups[0].records.map((record) => record.salesDateKey),
+        ['2026-09-13', '2026-09-14']);
+    expect(groups[0].totalMilli, 27000000);
+    expect(groups[1].personName, 'Person2');
+    expect(groups[1].totalMilli, 10000000);
+
+    expect(
+      filterSalesRecords(
+        groups.expand((group) => group.records),
+        personId: 'one',
+        dateKey: '2026-09-14',
+      ).map((record) => record.id),
+      ['one-14'],
+    );
+  });
 }

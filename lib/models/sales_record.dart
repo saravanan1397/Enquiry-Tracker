@@ -63,6 +63,62 @@ class SalesMonthState {
   final String? finalizedByUid;
 }
 
+class SalesPersonRecordGroup {
+  const SalesPersonRecordGroup({
+    required this.personId,
+    required this.personName,
+    required this.records,
+    required this.totalMilli,
+  });
+
+  final String personId;
+  final String personName;
+  final List<SalesRecord> records;
+  final int totalMilli;
+}
+
+List<SalesPersonRecordGroup> groupSalesRecordsByPerson(
+    Iterable<SalesRecord> records) {
+  final grouped = <String, List<SalesRecord>>{};
+  for (final record in records) {
+    grouped.putIfAbsent(record.personId, () => []).add(record);
+  }
+  final result = grouped.entries.map((entry) {
+    entry.value.sort((a, b) {
+      final date = a.salesDateKey.compareTo(b.salesDateKey);
+      if (date != 0) return date;
+      return a.id.compareTo(b.id);
+    });
+    return SalesPersonRecordGroup(
+      personId: entry.key,
+      personName: entry.value.first.personName,
+      records: List.unmodifiable(entry.value),
+      totalMilli: entry.value.fold<int>(
+        0,
+        (total, record) => total + record.amountMilli,
+      ),
+    );
+  }).toList();
+  result.sort((a, b) {
+    final name = a.personName.toLowerCase().compareTo(
+          b.personName.toLowerCase(),
+        );
+    return name != 0 ? name : a.personId.compareTo(b.personId);
+  });
+  return result;
+}
+
+List<SalesRecord> filterSalesRecords(
+  Iterable<SalesRecord> records, {
+  String? personId,
+  String? dateKey,
+}) =>
+    records
+        .where((record) =>
+            (personId == null || record.personId == personId) &&
+            (dateKey == null || record.salesDateKey == dateKey))
+        .toList(growable: false);
+
 String salesDateKey(DateTime value) =>
     '${value.year.toString().padLeft(4, '0')}-'
     '${value.month.toString().padLeft(2, '0')}-'
@@ -72,8 +128,19 @@ String salesMonthKey(DateTime value) =>
     '${value.year.toString().padLeft(4, '0')}-'
     '${value.month.toString().padLeft(2, '0')}';
 
-DateTime indiaDateTime(DateTime value) =>
-    value.toUtc().add(const Duration(hours: 5, minutes: 30));
+DateTime indiaDateTime(DateTime value) {
+  final india = value.toUtc().add(const Duration(hours: 5, minutes: 30));
+  return DateTime(
+    india.year,
+    india.month,
+    india.day,
+    india.hour,
+    india.minute,
+    india.second,
+    india.millisecond,
+    india.microsecond,
+  );
+}
 
 DateTime indiaNow() => indiaDateTime(DateTime.now());
 
