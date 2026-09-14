@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
+import 'owner_home.dart';
 import 'email_recovery_ui.dart';
 import 'promoter_deletion_dialog.dart';
 import 'services/export_email_service.dart';
@@ -723,6 +724,12 @@ class LeadloopShell extends StatefulWidget {
 
 class _LeadloopShellState extends State<LeadloopShell> {
   int _tab = 0;
+  bool _ownerFollowupOpen = false;
+
+  void _ownerBack() => setState(() {
+        _tab = 0;
+        _ownerFollowupOpen = false;
+      });
   late final SyncService _syncService;
   late final FirebaseLeadBackend _firebaseBackend;
   StreamSubscription? _leadSubscription;
@@ -957,20 +964,26 @@ class _LeadloopShellState extends State<LeadloopShell> {
                 icon: Icon(Icons.person_outline), label: 'Promoter')
           ];
     return PopScope(
-      canPop: !isAdmin || _tab == 0,
+      canPop: !isAdmin || !_ownerFollowupOpen,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && isAdmin && _tab != 0) {
-          setState(() => _tab = 0);
+        if (!didPop && isAdmin && _ownerFollowupOpen) {
+          _ownerBack();
         }
       },
       child: Scaffold(
         appBar: AppBar(
-            leading: isAdmin && _tab != 0
-                ? BackButton(onPressed: () => setState(() => _tab = 0))
+            leading: isAdmin && _ownerFollowupOpen
+                ? BackButton(onPressed: _ownerBack)
                 : null,
             title: const Text('Enquiry Tracker'),
             actions: [
-              if (isAdmin) ...[
+              if (isAdmin && _ownerFollowupOpen)
+                IconButton(
+                  tooltip: 'Home',
+                  onPressed: _ownerBack,
+                  icon: const Icon(Icons.home_outlined),
+                ),
+              if (isAdmin && _ownerFollowupOpen) ...[
                 IconButton(
                     tooltip: 'Export to Excel',
                     onPressed: _exporting
@@ -1015,7 +1028,8 @@ class _LeadloopShellState extends State<LeadloopShell> {
                   ),
                   icon: const Icon(Icons.mark_email_read_outlined),
                 ),
-              if (_firebaseBackend.isConfigured)
+              if (_firebaseBackend.isConfigured &&
+                  (!isAdmin || _ownerFollowupOpen))
                 IconButton(
                     tooltip: 'Sync now',
                     onPressed: _syncNow,
@@ -1029,15 +1043,26 @@ class _LeadloopShellState extends State<LeadloopShell> {
                       ? Icons.light_mode_outlined
                       : Icons.dark_mode_outlined)),
               IconButton(
-                  tooltip: 'Lock app',
+                  tooltip: isAdmin ? 'Logout' : 'Lock app',
                   onPressed: widget.onLogout,
-                  icon: const Icon(Icons.lock_outline))
+                  icon: Icon(isAdmin ? Icons.logout : Icons.lock_outline))
             ]),
-        body: SafeArea(child: IndexedStack(index: _tab, children: pages)),
+        body: SafeArea(
+          child: isAdmin && !_ownerFollowupOpen
+              ? OwnerHome(
+                  leads: widget.store.activeLeads(),
+                  onFollowup: () => setState(() {
+                    _tab = 0;
+                    _ownerFollowupOpen = true;
+                  }),
+                )
+              : IndexedStack(index: _tab, children: pages),
+        ),
         // Flutter requires NavigationBar to have at least two destinations.
         // Promoters have one screen, so the bottom navigation is only needed
         // for the admin's Dashboard and Recycle bin tabs.
-        bottomNavigationBar: destinations.length < 2
+        bottomNavigationBar: destinations.length < 2 ||
+                (isAdmin && !_ownerFollowupOpen)
             ? null
             : NavigationBar(
                 selectedIndex: _tab,
