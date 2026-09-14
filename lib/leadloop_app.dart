@@ -16,10 +16,12 @@ import 'models/customer_lead.dart';
 import 'owner_home.dart';
 import 'email_recovery_ui.dart';
 import 'promoter_deletion_dialog.dart';
+import 'sales_tracker_screen.dart';
 import 'services/export_email_service.dart';
 import 'services/export_file_downloader.dart';
 import 'services/firebase_export_email_service.dart';
 import 'services/firebase_lead_backend.dart';
+import 'services/firebase_sales_backend.dart';
 import 'services/follow_up_deadline_service.dart';
 import 'services/email_recovery_service.dart';
 import 'services/leadloop_auth_service.dart';
@@ -725,13 +727,18 @@ class LeadloopShell extends StatefulWidget {
 class _LeadloopShellState extends State<LeadloopShell> {
   int _tab = 0;
   bool _ownerFollowupOpen = false;
+  bool _ownerSalesOpen = false;
+
+  bool get _ownerModuleOpen => _ownerFollowupOpen || _ownerSalesOpen;
 
   void _ownerBack() => setState(() {
         _tab = 0;
         _ownerFollowupOpen = false;
+        _ownerSalesOpen = false;
       });
   late final SyncService _syncService;
   late final FirebaseLeadBackend _firebaseBackend;
+  late final FirebaseSalesBackend _salesBackend;
   StreamSubscription? _leadSubscription;
   bool _exporting = false;
   Timer? _deadlineRefresh;
@@ -741,6 +748,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
   void initState() {
     super.initState();
     _firebaseBackend = FirebaseLeadBackend();
+    _salesBackend = FirebaseSalesBackend();
     _syncService = SyncService();
     _syncService.start(syncPending: _syncNow);
     NotificationService.instance.start(widget.session.uid);
@@ -964,20 +972,20 @@ class _LeadloopShellState extends State<LeadloopShell> {
                 icon: Icon(Icons.person_outline), label: 'Promoter')
           ];
     return PopScope(
-      canPop: !isAdmin || !_ownerFollowupOpen,
+      canPop: !isAdmin || !_ownerModuleOpen,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && isAdmin && _ownerFollowupOpen) {
+        if (!didPop && isAdmin && _ownerModuleOpen) {
           _ownerBack();
         }
       },
       child: Scaffold(
         appBar: AppBar(
-            leading: isAdmin && _ownerFollowupOpen
+            leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
                 : null,
             title: const Text('Enquiry Tracker'),
             actions: [
-              if (isAdmin && _ownerFollowupOpen)
+              if (isAdmin && _ownerModuleOpen)
                 IconButton(
                   tooltip: 'Home',
                   onPressed: _ownerBack,
@@ -1048,15 +1056,27 @@ class _LeadloopShellState extends State<LeadloopShell> {
                   icon: Icon(isAdmin ? Icons.logout : Icons.lock_outline))
             ]),
         body: SafeArea(
-          child: isAdmin && !_ownerFollowupOpen
+          child: isAdmin && !_ownerModuleOpen
               ? OwnerHome(
                   leads: widget.store.activeLeads(),
                   onFollowup: () => setState(() {
                     _tab = 0;
                     _ownerFollowupOpen = true;
                   }),
+                  onSales: kIsWeb
+                      ? () => setState(() {
+                            _ownerFollowupOpen = false;
+                            _ownerSalesOpen = true;
+                          })
+                      : null,
                 )
-              : IndexedStack(index: _tab, children: pages),
+              : isAdmin && _ownerSalesOpen
+                  ? SalesTrackerScreen(
+                      backend: _salesBackend,
+                      ownerUid: widget.session.uid,
+                      ownerName: widget.session.displayName,
+                    )
+                  : IndexedStack(index: _tab, children: pages),
         ),
         // Flutter requires NavigationBar to have at least two destinations.
         // Promoters have one screen, so the bottom navigation is only needed

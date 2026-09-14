@@ -4,10 +4,16 @@ import 'models/customer_lead.dart';
 import 'services/follow_up_deadline_service.dart';
 
 class OwnerHome extends StatelessWidget {
-  const OwnerHome({super.key, required this.leads, required this.onFollowup});
+  const OwnerHome({
+    super.key,
+    required this.leads,
+    required this.onFollowup,
+    required this.onSales,
+  });
 
   final List<CustomerLead> leads;
   final VoidCallback onFollowup;
+  final VoidCallback? onSales;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -19,6 +25,11 @@ class OwnerHome extends StatelessWidget {
             description: 'Customer follow-ups at a glance',
             footer: 'Open records, filters, exports and follow-up management',
             icon: Icons.forum_outlined,
+            actionLabel: 'Open follow-ups',
+            lightAccent: const Color(0xFF0B63CE),
+            darkAccent: const Color(0xFF64B5FF),
+            lightGradient: const [Color(0xFFEAF3FF), Color(0xFFC9E1FF)],
+            darkGradient: const [Color(0xFF07182D), Color(0xFF123B68)],
             onTap: onFollowup,
             metrics: [
               ('TOTAL ENQUIRIES', '${leads.length}'),
@@ -34,13 +45,19 @@ class OwnerHome extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          const _ModuleCard(
+          _ModuleCard(
             title: 'Sales tracker',
             eyebrow: 'SALES',
             description: 'Your sales workspace',
-            footer: 'Sales tracking features will be added here',
+            footer: 'Daily entries, monthly totals, Excel exports and backups',
             icon: Icons.insights_outlined,
-            metrics: [('STATUS', 'Coming soon')],
+            lightAccent: const Color(0xFFD94A16),
+            darkAccent: const Color(0xFFFFA56B),
+            lightGradient: const [Color(0xFFFFF0E8), Color(0xFFFFD4BF)],
+            darkGradient: const [Color(0xFF251007), Color(0xFF6B2610)],
+            actionLabel: onSales == null ? 'Web only' : 'Open sales tracker',
+            metrics: const [('SCHEDULE', 'Daily'), ('CURRENCY', 'INR')],
+            onTap: onSales,
           ),
         ],
       );
@@ -53,12 +70,20 @@ class _ModuleCard extends StatelessWidget {
     required this.description,
     required this.footer,
     required this.icon,
+    required this.actionLabel,
+    required this.lightAccent,
+    required this.darkAccent,
+    required this.lightGradient,
+    required this.darkGradient,
     required this.metrics,
     this.onTap,
   });
 
   final String title, eyebrow, description, footer;
+  final String actionLabel;
   final IconData icon;
+  final Color lightAccent, darkAccent;
+  final List<Color> lightGradient, darkGradient;
   final List<(String, String)> metrics;
   final VoidCallback? onTap;
 
@@ -67,8 +92,8 @@ class _ModuleCard extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final foreground = dark ? const Color(0xFFE9F0F1) : const Color(0xFF20383F);
     final muted = dark ? const Color(0xFF9AADB6) : const Color(0xFF586D76);
-    final accent = dark ? const Color(0xFF85DCC0) : const Color(0xFF216B58);
-    final border = dark ? const Color(0xFF2B3D43) : const Color(0xFFCADAD9);
+    final accent = dark ? darkAccent : lightAccent;
+    final border = accent.withValues(alpha: dark ? 0.58 : 0.38);
     return Material(
       clipBehavior: Clip.antiAlias,
       borderRadius: BorderRadius.circular(22),
@@ -77,16 +102,18 @@ class _ModuleCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
           border: Border.all(color: border),
-          gradient: LinearGradient(
-            colors: dark
-                ? const [Color(0xFF080E14), Color(0xFF152C32)]
-                : const [Color(0xFFF8FAFA), Color(0xFFDFEEEA)],
-          ),
+          gradient: LinearGradient(colors: dark ? darkGradient : lightGradient),
         ),
         child: InkWell(
           onTap: onTap,
           child: Stack(
             children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: Container(width: 6, color: accent),
+              ),
               Positioned(
                 right: -12,
                 top: 28,
@@ -111,10 +138,10 @@ class _ModuleCard extends StatelessWidget {
                       if (onTap != null)
                         Container(
                           padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                              color: Color(0xFFE7BD73), shape: BoxShape.circle),
+                          decoration: BoxDecoration(
+                              color: accent, shape: BoxShape.circle),
                           child: const Icon(Icons.north_east,
-                              size: 18, color: Color(0xFF3D301B)),
+                              size: 18, color: Colors.white),
                         )
                       else
                         Icon(Icons.insights_outlined, color: muted, size: 24),
@@ -179,13 +206,49 @@ class _ModuleCard extends StatelessWidget {
                       }),
                     ),
                     const SizedBox(height: 24),
-                    Row(children: [
-                      Icon(Icons.circle, size: 5, color: accent),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: Text(footer,
-                              style: TextStyle(color: muted, fontSize: 12))),
-                    ]),
+                    LayoutBuilder(builder: (context, constraints) {
+                      final action = FilledButton.icon(
+                        onPressed: onTap,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: accent,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor:
+                              accent.withValues(alpha: 0.32),
+                          disabledForegroundColor:
+                              foreground.withValues(alpha: 0.72),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 16),
+                        ),
+                        icon: Icon(onTap == null
+                            ? Icons.schedule_outlined
+                            : Icons.arrow_forward_rounded),
+                        label: Text(actionLabel,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                      );
+                      final details = Row(children: [
+                        Icon(Icons.circle, size: 5, color: accent),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Text(footer,
+                                style: TextStyle(color: muted, fontSize: 12))),
+                      ]);
+                      if (constraints.maxWidth < 520) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            details,
+                            const SizedBox(height: 16),
+                            action,
+                          ],
+                        );
+                      }
+                      return Row(children: [
+                        Expanded(child: details),
+                        const SizedBox(width: 16),
+                        action,
+                      ]);
+                    }),
                   ],
                 ),
               ),

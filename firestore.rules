@@ -83,6 +83,29 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Sales Tracker is currently available only to active owner accounts.
+    // GitHub's scheduled backup uses a restricted Admin SDK service account
+    // and therefore does not depend on client security rules.
+    match /salesPersons/{personId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /salesPersonNames/{nameId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /salesEntries/{entryId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /salesEntryAudit/{auditId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /salesMonths/{monthId} {
+      allow read, write: if isAdmin();
+    }
+
     // Deny every collection not explicitly listed above.
     match /{document=**} {
       allow read, write: if false;

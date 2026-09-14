@@ -1,0 +1,36 @@
+name: Encrypted Sales Tracker backup
+
+on:
+  schedule:
+    # 11:00 PM Asia/Kolkata (GitHub schedules use UTC).
+    - cron: "30 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout backup code
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Firebase backup dependency
+        run: npm ci --prefix functions --omit=dev
+
+      - name: Read, encrypt and upload Sales Tracker backup
+        run: node functions/scripts/backup-sales.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          SALES_BACKUP_PASSWORD: ${{ secrets.SALES_BACKUP_PASSWORD }}
+          SALES_BACKUP_REPOSITORY: ${{ secrets.SALES_BACKUP_REPOSITORY }}
+          SALES_BACKUP_TOKEN: ${{ secrets.SALES_BACKUP_TOKEN }}
