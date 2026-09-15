@@ -576,8 +576,6 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                               .textTheme
                               .titleLarge
                               ?.copyWith(fontWeight: FontWeight.w700)),
-                      Text(
-                          '${filteredRecords.length} of ${records.length} entries · ${personGroups.length} salespeople · Person-wise totals shown below'),
                     ],
                   );
                   final actions = Wrap(
