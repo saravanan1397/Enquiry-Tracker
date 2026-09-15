@@ -114,6 +114,7 @@ List<SalesPersonRecordGroup> groupSalesRecordsByPerson(
 List<SalesRecord> filterSalesRecords(
   Iterable<SalesRecord> records, {
   String? personId,
+  String? personNameQuery,
   String? dateKey,
   String? fromDateKey,
   String? toDateKey,
@@ -122,6 +123,10 @@ List<SalesRecord> filterSalesRecords(
         .where(
           (record) =>
               (personId == null || record.personId == personId) &&
+              (personNameQuery == null ||
+                  record.personName
+                      .toLowerCase()
+                      .contains(personNameQuery.toLowerCase())) &&
               (dateKey == null || record.salesDateKey == dateKey) &&
               (fromDateKey == null ||
                   record.salesDateKey.compareTo(fromDateKey) >= 0) &&

@@ -25,6 +25,7 @@ class SalesTrackerScreen extends StatefulWidget {
 class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   final _amount = TextEditingController();
   final _reference = TextEditingController();
+  final _salespersonSearch = TextEditingController();
   TextEditingController? _name;
   SalesPerson? _selectedPerson;
   SalesRecord? _editing;
@@ -49,6 +50,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   void dispose() {
     _amount.dispose();
     _reference.dispose();
+    _salespersonSearch.dispose();
     super.dispose();
   }
 
@@ -65,6 +67,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           : DateTime(next.year, next.month, 1);
       _cancelEdit(clearPerson: true);
       _filterPersonId = null;
+      _salespersonSearch.clear();
       _filterDate = null;
       _filterDateRange = null;
       _visibleRecordCount = 20;
@@ -634,6 +637,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     final filteredRecords = filterSalesRecords(
       records,
       personId: _filterPersonId,
+      personNameQuery: _salespersonSearch.text.trim().isEmpty
+          ? null
+          : _salespersonSearch.text.trim(),
       dateKey: _filterDate == null ? null : salesDateKey(_filterDate!),
       fromDateKey: _filterDateRange == null
           ? null
@@ -909,6 +915,34 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                         ),
                         SizedBox(
                           width: 240,
+                          child: TextField(
+                            controller: _salespersonSearch,
+                            decoration: InputDecoration(
+                              labelText: 'Search salesperson',
+                              hintText: 'Enter a name',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: _salespersonSearch.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      tooltip: 'Clear search',
+                                      onPressed: () => setState(() {
+                                        _salespersonSearch.clear();
+                                        _visibleRecordCount = 20;
+                                      }),
+                                      icon: const Icon(Icons.close),
+                                    ),
+                            ),
+                            onChanged: (value) => setState(() {
+                              if (value.trim().isNotEmpty) {
+                                _filterPersonId = null;
+                              }
+                              _visibleRecordCount = 20;
+                            }),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 240,
                           child: DropdownButtonFormField<String>(
                             key: ValueKey(_filterPersonId),
                             initialValue: _filterPersonId ?? '',
@@ -929,6 +963,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                               ),
                             ],
                             onChanged: (value) => setState(() {
+                              _salespersonSearch.clear();
                               _filterPersonId =
                                   value == null || value.isEmpty ? null : value;
                               _visibleRecordCount = 20;
@@ -959,11 +994,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             ),
                           ),
                         ),
-                        if (_filterPersonId != null ||
+                        if (_salespersonSearch.text.trim().isNotEmpty ||
+                            _filterPersonId != null ||
                             _filterDate != null ||
                             _filterDateRange != null)
                           TextButton.icon(
                             onPressed: () => setState(() {
+                              _salespersonSearch.clear();
                               _filterPersonId = null;
                               _filterDate = null;
                               _filterDateRange = null;
