@@ -154,7 +154,7 @@ for (const monthKey of [...monthKeys].sort()) {
   });
   const release = await releaseForMonth(monthKey);
   const assetName =
-    `sales-backup-${monthKey}-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
+    `sales-backup-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
   const uploadUrl = release.upload_url.replace('{?name,label}', '');
   await githubRequest(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
     method: 'POST',
