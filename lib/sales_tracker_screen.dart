@@ -35,6 +35,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   late DateTime _selectedMonth;
   bool _busy = false;
   bool _backupBusy = false;
+  int _visibleRecordCount = 20;
 
   @override
   void initState() {
@@ -66,6 +67,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       _filterPersonId = null;
       _filterDate = null;
       _filterDateRange = null;
+      _visibleRecordCount = 20;
     });
   }
 
@@ -85,6 +87,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       setState(() {
         _filterDate = picked;
         _filterDateRange = null;
+        _visibleRecordCount = 20;
       });
     }
   }
@@ -107,6 +110,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       setState(() {
         _filterDateRange = picked;
         _filterDate = null;
+        _visibleRecordCount = 20;
       });
     }
   }
@@ -640,6 +644,21 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     final personGroups = groupSalesRecordsByPerson(filteredRecords);
     final orderedRecords =
         personGroups.expand((group) => group.records).toList(growable: false);
+    final visibleRecords =
+        orderedRecords.take(_visibleRecordCount).toList(growable: false);
+    final visibleRecordIds = visibleRecords.map((record) => record.id).toSet();
+    final visiblePersonGroups = personGroups
+        .map((group) => SalesPersonRecordGroup(
+              personId: group.personId,
+              personName: group.personName,
+              records: group.records
+                  .where((record) => visibleRecordIds.contains(record.id))
+                  .toList(growable: false),
+              totalMilli: group.totalMilli,
+            ))
+        .where((group) => group.records.isNotEmpty)
+        .toList(growable: false);
+    final hasMoreRecords = visibleRecords.length < orderedRecords.length;
     final serialByRecordId = <String, int>{
       for (var index = 0; index < orderedRecords.length; index++)
         orderedRecords[index].id: index + 1,
@@ -909,10 +928,11 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 ),
                               ),
                             ],
-                            onChanged: (value) => setState(
-                              () => _filterPersonId =
-                                  value == null || value.isEmpty ? null : value,
-                            ),
+                            onChanged: (value) => setState(() {
+                              _filterPersonId =
+                                  value == null || value.isEmpty ? null : value;
+                              _visibleRecordCount = 20;
+                            }),
                           ),
                         ),
                         SizedBox(
@@ -947,6 +967,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                               _filterPersonId = null;
                               _filterDate = null;
                               _filterDateRange = null;
+                              _visibleRecordCount = 20;
                             }),
                             icon: const Icon(Icons.filter_alt_off_outlined),
                             label: const Text('Clear filters'),
@@ -1107,7 +1128,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                               ),
                             ],
                             rows: [
-                              for (final group in personGroups) ...[
+                              for (final group in visiblePersonGroups) ...[
                                 for (final record in group.records)
                                   DataRow(
                                     cells: [
@@ -1209,6 +1230,22 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                         ),
                       );
                     },
+                  ),
+                if (hasMoreRecords)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: FilledButton.tonalIcon(
+                        onPressed: () => setState(
+                          () => _visibleRecordCount += 20,
+                        ),
+                        icon: const Icon(Icons.expand_more),
+                        label: Text(
+                          'Load more (${orderedRecords.length - visibleRecords.length} remaining)',
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
