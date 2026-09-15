@@ -29,29 +29,31 @@ class FirebaseSalesBackend {
   Stream<List<SalesPerson>> watchPeople() {
     if (!isConfigured) return Stream.value(const []);
     return _people.snapshots().map((snapshot) {
-      final result = snapshot.docs.map(_personFromDocument).toList();
-      result
-          .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final result = snapshot.docs
+          .map(_personFromDocument)
+          .where((person) => person.active)
+          .toList();
+      result.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
       return result;
     });
   }
 
   Stream<List<SalesRecord>> watchMonth(String monthKey) {
     if (!isConfigured) return Stream.value(const []);
-    return _entries.where('monthKey', isEqualTo: monthKey).snapshots().map(
-      (snapshot) {
-        final result = snapshot.docs.map(_recordFromDocument).toList();
-        result.sort((a, b) {
-          final date = a.salesDateKey.compareTo(b.salesDateKey);
-          return date != 0
-              ? date
-              : a.personName
-                  .toLowerCase()
-                  .compareTo(b.personName.toLowerCase());
-        });
-        return result;
-      },
-    );
+    return _entries.where('monthKey', isEqualTo: monthKey).snapshots().map((
+      snapshot,
+    ) {
+      final result = snapshot.docs.map(_recordFromDocument).toList();
+      result.sort((a, b) {
+        final date = a.salesDateKey.compareTo(b.salesDateKey);
+        return date != 0
+            ? date
+            : a.personName.toLowerCase().compareTo(b.personName.toLowerCase());
+      });
+      return result;
+    });
   }
 
   Stream<SalesMonthState> watchMonthState(String monthKey) {
@@ -82,7 +84,24 @@ class FirebaseSalesBackend {
         final personId = existingReservation.data()?['personId'] as String?;
         if (personId != null) {
           final existingPerson = await transaction.get(_people.doc(personId));
-          if (existingPerson.exists) return _personFromSnapshot(existingPerson);
+          if (existingPerson.exists) {
+            if (existingPerson.data()?['active'] == false) {
+              transaction.update(existingPerson.reference, {
+                'active': true,
+                'reactivatedAt': FieldValue.serverTimestamp(),
+                'deactivatedAt': null,
+                'deactivatedByUid': null,
+              });
+            }
+            final restored = _personFromSnapshot(existingPerson);
+            return SalesPerson(
+              id: restored.id,
+              name: restored.name,
+              normalizedName: restored.normalizedName,
+              active: true,
+              createdAt: restored.createdAt,
+            );
+          }
         }
       }
 
@@ -90,6 +109,7 @@ class FirebaseSalesBackend {
       transaction.set(person, {
         'name': cleanName,
         'normalizedName': normalized,
+        'active': true,
         'createdAt': FieldValue.serverTimestamp(),
       });
       transaction.set(reservation, {
@@ -105,8 +125,85 @@ class FirebaseSalesBackend {
     });
   }
 
+  Future<void> renamePerson({
+    required SalesPerson person,
+    required String requestedName,
+  }) async {
+    final cleanName = requestedName.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (cleanName.isEmpty) {
+      throw const FormatException('Enter the salesperson name.');
+    }
+    final normalized = cleanName.toLowerCase();
+    final newReservationId = sha256.convert(utf8.encode(normalized)).toString();
+
+    await _database.runTransaction((transaction) async {
+      final personReference = _people.doc(person.id);
+      final current = await transaction.get(personReference);
+      if (!current.exists || current.data()?['active'] == false) {
+        throw StateError('This salesperson is no longer active.');
+      }
+      final oldNormalized =
+          current.data()?['normalizedName'] as String? ?? person.normalizedName;
+      final oldReservationId =
+          sha256.convert(utf8.encode(oldNormalized)).toString();
+      final newReservation = _nameReservations.doc(newReservationId);
+      final reserved = await transaction.get(newReservation);
+      final reservedPersonId = reserved.data()?['personId'] as String?;
+      if (reserved.exists && reservedPersonId != person.id) {
+        throw StateError('A salesperson with this name already exists.');
+      }
+
+      transaction.update(personReference, {
+        'name': cleanName,
+        'normalizedName': normalized,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(newReservation, {
+        'personId': person.id,
+        'normalizedName': normalized,
+        'createdAt':
+            reserved.data()?['createdAt'] ?? FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (oldReservationId != newReservationId) {
+        transaction.delete(_nameReservations.doc(oldReservationId));
+      }
+    });
+
+    final entries =
+        await _entries.where('personId', isEqualTo: person.id).get();
+    for (var offset = 0; offset < entries.docs.length; offset += 400) {
+      final end = offset + 400 < entries.docs.length
+          ? offset + 400
+          : entries.docs.length;
+      final batch = _database.batch();
+      for (final document in entries.docs.sublist(offset, end)) {
+        batch.update(document.reference, {
+          'personName': cleanName,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> deactivatePerson({
+    required SalesPerson person,
+    required String ownerUid,
+  }) async {
+    await _people.doc(person.id).update({
+      'active': false,
+      'deactivatedAt': FieldValue.serverTimestamp(),
+      'deactivatedByUid': ownerUid,
+    });
+    await _database.waitForPendingWrites();
+  }
+
   Future<SalesRecord?> findDailyRecord(
-      String personId, DateTime salesDate) async {
+    String personId,
+    DateTime salesDate,
+  ) async {
     final id = '${personId}_${salesDateKey(salesDate)}';
     final document = await _entries.doc(id).get();
     return document.exists ? _recordFromSnapshot(document) : null;
@@ -129,7 +226,8 @@ class FirebaseSalesBackend {
       final month = await transaction.get(_months.doc(monthKey));
       if (month.data()?['finalized'] == true) {
         throw StateError(
-            'This month is locked. Reopen it before making changes.');
+          'This month is locked. Reopen it before making changes.',
+        );
       }
       final existing = await transaction.get(entry);
       if (existing.exists && !updateExisting) {
@@ -179,7 +277,8 @@ class FirebaseSalesBackend {
     final month = await _months.doc(monthKey).get();
     if (month.data()?['finalized'] == true) {
       throw StateError(
-          'This month is locked. Reopen it before deleting records.');
+        'This month is locked. Reopen it before deleting records.',
+      );
     }
     final audits = await _audit.where('entryId', isEqualTo: entryId).get();
     final batch = _database.batch()..delete(_entries.doc(entryId));
@@ -247,29 +346,35 @@ class FirebaseSalesBackend {
   }
 
   SalesPerson _personFromDocument(
-          QueryDocumentSnapshot<Map<String, dynamic>> document) =>
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) =>
       SalesPerson(
         id: document.id,
         name: document.data()['name'] as String? ?? '',
         normalizedName: document.data()['normalizedName'] as String? ?? '',
+        active: document.data()['active'] as bool? ?? true,
         createdAt: _dateTime(document.data()['createdAt']),
       );
 
   SalesPerson _personFromSnapshot(
-          DocumentSnapshot<Map<String, dynamic>> document) =>
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) =>
       SalesPerson(
         id: document.id,
         name: document.data()?['name'] as String? ?? '',
         normalizedName: document.data()?['normalizedName'] as String? ?? '',
+        active: document.data()?['active'] as bool? ?? true,
         createdAt: _dateTime(document.data()?['createdAt']),
       );
 
   SalesRecord _recordFromDocument(
-          QueryDocumentSnapshot<Map<String, dynamic>> document) =>
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) =>
       _recordFromSnapshot(document);
 
   SalesRecord _recordFromSnapshot(
-      DocumentSnapshot<Map<String, dynamic>> document) {
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
     final data = document.data()!;
     return SalesRecord(
       id: document.id,

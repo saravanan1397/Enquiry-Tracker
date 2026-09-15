@@ -3,12 +3,14 @@ class SalesPerson {
     required this.id,
     required this.name,
     required this.normalizedName,
+    this.active = true,
     this.createdAt,
   });
 
   final String id;
   final String name;
   final String normalizedName;
+  final bool active;
   final DateTime? createdAt;
 }
 
@@ -78,7 +80,8 @@ class SalesPersonRecordGroup {
 }
 
 List<SalesPersonRecordGroup> groupSalesRecordsByPerson(
-    Iterable<SalesRecord> records) {
+  Iterable<SalesRecord> records,
+) {
   final grouped = <String, List<SalesRecord>>{};
   for (final record in records) {
     grouped.putIfAbsent(record.personId, () => []).add(record);
@@ -116,13 +119,15 @@ List<SalesRecord> filterSalesRecords(
   String? toDateKey,
 }) =>
     records
-        .where((record) =>
-            (personId == null || record.personId == personId) &&
-            (dateKey == null || record.salesDateKey == dateKey) &&
-            (fromDateKey == null ||
-                record.salesDateKey.compareTo(fromDateKey) >= 0) &&
-            (toDateKey == null ||
-                record.salesDateKey.compareTo(toDateKey) <= 0))
+        .where(
+          (record) =>
+              (personId == null || record.personId == personId) &&
+              (dateKey == null || record.salesDateKey == dateKey) &&
+              (fromDateKey == null ||
+                  record.salesDateKey.compareTo(fromDateKey) >= 0) &&
+              (toDateKey == null ||
+                  record.salesDateKey.compareTo(toDateKey) <= 0),
+        )
         .toList(growable: false);
 
 String salesDateKey(DateTime value) =>

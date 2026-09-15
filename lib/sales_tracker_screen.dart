@@ -143,18 +143,227 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         builder: (context) => AlertDialog(
           title: const Text('Update existing entry?'),
           content: Text(
-              '${existing.personName} already has a sales entry for ${_displayDate(existing.salesDate)}. The previous amount will be retained in the edit history.'),
+            '${existing.personName} already has a sales entry for ${_displayDate(existing.salesDate)}. The previous amount will be retained in the edit history.',
+          ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Update existing')),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Update existing'),
+            ),
           ],
         ),
       ) ??
       false;
+
+  Future<void> _addSalesperson(List<SalesPerson> people) async {
+    final controller = TextEditingController();
+    final requestedName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add salesperson'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Salesperson name',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Add salesperson'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final cleanName = requestedName?.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (cleanName == null || cleanName.isEmpty || !mounted) return;
+    if (people.any(
+      (person) => person.normalizedName == cleanName.toLowerCase(),
+    )) {
+      _message('$cleanName is already in the salesperson list.');
+      return;
+    }
+    try {
+      await widget.backend.ensurePerson(cleanName);
+      if (mounted) _message('$cleanName added to the salesperson list.');
+    } catch (error) {
+      if (mounted) _message(_friendlyError(error));
+    }
+  }
+
+  Future<void> _renameSalesperson(SalesPerson person) async {
+    final controller = TextEditingController(text: person.name);
+    final requestedName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit salesperson name'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Salesperson name',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save name'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final cleanName = requestedName?.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (cleanName == null || cleanName.isEmpty || !mounted) return;
+    try {
+      await widget.backend.renamePerson(
+        person: person,
+        requestedName: cleanName,
+      );
+      if (!mounted) return;
+      if (_selectedPerson?.id == person.id) {
+        setState(() {
+          _selectedPerson = SalesPerson(
+            id: person.id,
+            name: cleanName,
+            normalizedName: cleanName.toLowerCase(),
+            createdAt: person.createdAt,
+          );
+          _name?.text = cleanName;
+        });
+      }
+      _message('Salesperson name updated. Historical sales remain linked.');
+    } catch (error) {
+      if (mounted) _message(_friendlyError(error));
+    }
+  }
+
+  Future<void> _deactivateSalesperson(SalesPerson person) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete salesperson?'),
+        content: Text(
+          'Remove ${person.name} from the active salesperson list? Existing sales records, totals, exports and backups will remain available.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.person_remove_outlined),
+            label: const Text('Delete salesperson'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.backend.deactivatePerson(
+        person: person,
+        ownerUid: widget.ownerUid,
+      );
+      if (!mounted) return;
+      if (_selectedPerson?.id == person.id) {
+        setState(() {
+          _selectedPerson = null;
+          _name?.clear();
+        });
+      }
+      _message(
+        '${person.name} removed. Historical sales records were preserved.',
+      );
+    } catch (error) {
+      if (mounted) _message(_friendlyError(error));
+    }
+  }
+
+  Future<void> _viewSalespersons() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Salespersons'),
+        content: SizedBox(
+          width: 560,
+          height: 420,
+          child: StreamBuilder<List<SalesPerson>>(
+            stream: widget.backend.watchPeople(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final people = snapshot.data ?? const <SalesPerson>[];
+              if (people.isEmpty) {
+                return const Center(child: Text('No salespersons added yet.'));
+              }
+              return ListView.separated(
+                itemCount: people.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final person = people[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      child: Text(
+                        person.name.isEmpty
+                            ? '?'
+                            : person.name.substring(0, 1).toUpperCase(),
+                      ),
+                    ),
+                    title: Text(person.name),
+                    subtitle: Text('Person ID: ${person.id}'),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: [
+                        IconButton(
+                          tooltip: 'Edit name',
+                          onPressed: () => _renameSalesperson(person),
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
+                        IconButton(
+                          tooltip: 'Delete salesperson',
+                          onPressed: () => _deactivateSalesperson(person),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _save(List<SalesPerson> people, bool finalized) async {
     if (_busy || finalized) return;
@@ -172,15 +381,18 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     try {
       final exact = people
           .where(
-              (person) => person.normalizedName == requestedName.toLowerCase())
+            (person) => person.normalizedName == requestedName.toLowerCase(),
+          )
           .toList();
       final person = _editing != null
           ? _selectedPerson!
           : exact.isNotEmpty
               ? exact.first
               : await widget.backend.ensurePerson(requestedName);
-      final existing =
-          await widget.backend.findDailyRecord(person.id, _selectedDate);
+      final existing = await widget.backend.findDailyRecord(
+        person.id,
+        _selectedDate,
+      );
       var updateExisting = existing != null;
       if (existing != null && _editing?.id != existing.id) {
         updateExisting = await _confirmUpdate(existing);
@@ -201,9 +413,11 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         _name?.clear();
         _cancelEdit();
       });
-      _message(updateExisting
-          ? 'Daily sales entry updated.'
-          : 'Daily sales entry saved.');
+      _message(
+        updateExisting
+            ? 'Daily sales entry updated.'
+            : 'Daily sales entry saved.',
+      );
     } catch (error) {
       if (mounted) _message(_friendlyError(error));
     } finally {
@@ -235,14 +449,17 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Delete sales entry?'),
         content: Text(
-            'Permanently delete ${record.personName} — ${_displayDate(record.salesDate)} from the application and Firestore? GitHub backups will not be deleted.'),
+          'Permanently delete ${record.personName} — ${_displayDate(record.salesDate)} from the application and Firestore? GitHub backups will not be deleted.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete permanently')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete permanently'),
+          ),
         ],
       ),
     );
@@ -257,25 +474,33 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
 
   Future<void> _setFinalized(bool value) async {
     await widget.backend.setFinalized(
-        monthKey: _monthKey, finalized: value, ownerUid: widget.ownerUid);
+      monthKey: _monthKey,
+      finalized: value,
+      ownerUid: widget.ownerUid,
+    );
     if (!mounted) return;
-    _message(value
-        ? 'Month locked. Data remains available until you delete it.'
-        : 'Month reopened for editing.');
+    _message(
+      value
+          ? 'Month locked. Data remains available until you delete it.'
+          : 'Month reopened for editing.',
+    );
     if (!value) return;
     final deleteNow = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Keep or delete this month?'),
         content: Text(
-            'Incentives for $_monthKey are marked completed. Previous-month data will remain available unless you choose permanent deletion.'),
+          'Incentives for $_monthKey are marked completed. Previous-month data will remain available unless you choose permanent deletion.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Keep data')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep data'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Continue to deletion')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue to deletion'),
+          ),
         ],
       ),
     );
@@ -293,24 +518,28 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-                'This removes the selected month from the application and Firestore. GitHub backups remain until you delete them manually.'),
+              'This removes the selected month from the application and Firestore. GitHub backups remain until you delete them manually.',
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               decoration: InputDecoration(
-                  labelText: 'Type $_monthKey to confirm',
-                  border: const OutlineInputBorder()),
+                labelText: 'Type $_monthKey to confirm',
+                border: const OutlineInputBorder(),
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Keep data')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep data'),
+          ),
           FilledButton(
-              onPressed: () =>
-                  Navigator.pop(context, controller.text.trim() == _monthKey),
-              child: const Text('Delete month')),
+            onPressed: () =>
+                Navigator.pop(context, controller.text.trim() == _monthKey),
+            child: const Text('Delete month'),
+          ),
         ],
       ),
     );
@@ -333,8 +562,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       return;
     }
     final now = indiaNow();
-    final bytes =
-        SalesExportService().buildWorkbook(records: records, exportedAt: now);
+    final bytes = SalesExportService().buildWorkbook(
+      records: records,
+      exportedAt: now,
+    );
     final fileName =
         'Sales_Tracker_${_monthKey}_${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${now.year}.xlsx';
     await downloadExcelExport(bytes, fileName);
@@ -352,7 +583,8 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       );
       if (mounted) {
         _message(
-            'Backup requested. The encrypted GitHub backup will be created within about 5 minutes.');
+          'Backup requested. The encrypted GitHub backup will be created within about 5 minutes.',
+        );
       }
     } catch (error) {
       if (mounted) _message(_friendlyError(error));
@@ -375,9 +607,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                 stream: widget.backend.watchMonth(_monthKey),
                 builder: (context, recordsSnapshot) {
                   final records = recordsSnapshot.data ?? const <SalesRecord>[];
-                  return _body(people, month, records,
-                      loading: recordsSnapshot.connectionState ==
-                          ConnectionState.waiting);
+                  return _body(
+                    people,
+                    month,
+                    records,
+                    loading: recordsSnapshot.connectionState ==
+                        ConnectionState.waiting,
+                  );
                 },
               );
             },
@@ -385,9 +621,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         },
       );
 
-  Widget _body(List<SalesPerson> people, SalesMonthState month,
-      List<SalesRecord> records,
-      {required bool loading}) {
+  Widget _body(
+    List<SalesPerson> people,
+    SalesMonthState month,
+    List<SalesRecord> records, {
+    required bool loading,
+  }) {
     final filteredRecords = filterSalesRecords(
       records,
       personId: _filterPersonId,
@@ -395,14 +634,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       fromDateKey: _filterDateRange == null
           ? null
           : salesDateKey(_filterDateRange!.start),
-      toDateKey: _filterDateRange == null
-          ? null
-          : salesDateKey(_filterDateRange!.end),
+      toDateKey:
+          _filterDateRange == null ? null : salesDateKey(_filterDateRange!.end),
     );
     final personGroups = groupSalesRecordsByPerson(filteredRecords);
-    final orderedRecords = personGroups
-        .expand((group) => group.records)
-        .toList(growable: false);
+    final orderedRecords =
+        personGroups.expand((group) => group.records).toList(growable: false);
     final serialByRecordId = <String, int>{
       for (var index = 0; index < orderedRecords.length; index++)
         orderedRecords[index].id: index + 1,
@@ -413,8 +650,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         return name != 0 ? name : a.id.compareTo(b.id);
       });
     final currentMonth = indiaNow();
-    final canMoveNext = _selectedMonth
-        .isBefore(DateTime(currentMonth.year, currentMonth.month));
+    final canMoveNext = _selectedMonth.isBefore(
+      DateTime(currentMonth.year, currentMonth.month),
+    );
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -427,23 +665,29 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
             const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('SALES TRACKER',
-                    style: TextStyle(fontSize: 11, letterSpacing: 1.2)),
+                Text(
+                  'SALES TRACKER',
+                  style: TextStyle(fontSize: 11, letterSpacing: 1.2),
+                ),
                 SizedBox(height: 4),
-                Text('Daily salesperson sales',
-                    style:
-                        TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+                Text(
+                  'Daily salesperson sales',
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+                ),
               ],
             ),
             SegmentedButton<int>(
               segments: [
                 const ButtonSegment(value: -1, icon: Icon(Icons.chevron_left)),
                 ButtonSegment(
-                    value: 0, label: Text(_displayMonth(_selectedMonth))),
+                  value: 0,
+                  label: Text(_displayMonth(_selectedMonth)),
+                ),
                 ButtonSegment(
-                    value: 1,
-                    enabled: canMoveNext,
-                    icon: const Icon(Icons.chevron_right)),
+                  value: 1,
+                  enabled: canMoveNext,
+                  icon: const Icon(Icons.chevron_right),
+                ),
               ],
               selected: const {0},
               onSelectionChanged: (selection) {
@@ -466,16 +710,21 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                 runSpacing: 8,
                 children: [
                   const Text('Incentives finalized — this month is locked.'),
-                  Wrap(spacing: 8, children: [
-                    OutlinedButton.icon(
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton.icon(
                         onPressed: _busy ? null : () => _setFinalized(false),
                         icon: const Icon(Icons.lock_open_outlined),
-                        label: const Text('Reopen month')),
-                    FilledButton.icon(
+                        label: const Text('Reopen month'),
+                      ),
+                      FilledButton.icon(
                         onPressed: _busy ? null : _deleteMonth,
                         icon: const Icon(Icons.delete_forever_outlined),
-                        label: const Text('Delete month')),
-                  ]),
+                        label: const Text('Delete month'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -487,110 +736,133 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    _editing == null ? 'Enter daily sales' : 'Edit daily sales',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+                  _editing == null ? 'Enter daily sales' : 'Edit daily sales',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 16),
-                LayoutBuilder(builder: (context, constraints) {
-                  final width = constraints.maxWidth;
-                  final fieldWidth = width < 900 ? width : (width - 24) / 3;
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      SizedBox(
-                        width: fieldWidth,
-                        child: Autocomplete<SalesPerson>(
-                          displayStringForOption: (person) => person.name,
-                          optionsBuilder: (value) {
-                            final query = value.text.trim().toLowerCase();
-                            if (query.isEmpty) return people;
-                            return people.where((person) =>
-                                person.name.toLowerCase().contains(query));
-                          },
-                          onSelected: (person) => _selectedPerson = person,
-                          fieldViewBuilder:
-                              (context, controller, focusNode, onSubmitted) {
-                            _name = controller;
-                            return TextField(
-                              controller: controller,
-                              focusNode: focusNode,
-                              readOnly: month.finalized || _editing != null,
-                              decoration: const InputDecoration(
-                                labelText: 'Salesperson name',
-                                hintText: 'Select or enter a new name',
-                                border: OutlineInputBorder(),
-                              ),
-                            );
-                          },
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final fieldWidth = width < 900 ? width : (width - 24) / 3;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        SizedBox(
+                          width: fieldWidth,
+                          child: Autocomplete<SalesPerson>(
+                            displayStringForOption: (person) => person.name,
+                            optionsBuilder: (value) {
+                              final query = value.text.trim().toLowerCase();
+                              if (query.isEmpty) return people;
+                              return people.where(
+                                (person) =>
+                                    person.name.toLowerCase().contains(query),
+                              );
+                            },
+                            onSelected: (person) => _selectedPerson = person,
+                            fieldViewBuilder:
+                                (context, controller, focusNode, onSubmitted) {
+                              _name = controller;
+                              return TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                readOnly: month.finalized || _editing != null,
+                                decoration: const InputDecoration(
+                                  labelText: 'Salesperson name',
+                                  hintText: 'Select or enter a new name',
+                                  border: OutlineInputBorder(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        width: fieldWidth,
-                        child: InkWell(
-                          onTap: month.finalized ? null : _pickDate,
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
+                        SizedBox(
+                          width: fieldWidth,
+                          child: InkWell(
+                            onTap: month.finalized ? null : _pickDate,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
                                 labelText: 'Sales date',
                                 border: OutlineInputBorder(),
-                                suffixIcon:
-                                    Icon(Icons.calendar_month_outlined)),
-                            child: Text(_displayDate(_selectedDate)),
+                                suffixIcon: Icon(Icons.calendar_month_outlined),
+                              ),
+                              child: Text(_displayDate(_selectedDate)),
+                            ),
                           ),
                         ),
-                      ),
-                      SizedBox(
-                        width: fieldWidth,
-                        child: TextField(
-                          controller: _amount,
-                          readOnly: month.finalized,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          inputFormatters: [_AmountInputFormatter()],
-                          decoration: const InputDecoration(
-                            labelText: 'Daily sales amount',
-                            prefixText: '₹ ',
-                            hintText: '0.000',
-                            border: OutlineInputBorder(),
+                        SizedBox(
+                          width: fieldWidth,
+                          child: TextField(
+                            controller: _amount,
+                            readOnly: month.finalized,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [_AmountInputFormatter()],
+                            decoration: const InputDecoration(
+                              labelText: 'Daily sales amount',
+                              prefixText: '₹ ',
+                              hintText: '0.000',
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                         ),
-                      ),
-                      SizedBox(
-                        width: width,
-                        child: TextField(
-                          controller: _reference,
-                          readOnly: month.finalized,
-                          maxLength: 250,
-                          decoration: const InputDecoration(
-                            labelText: 'Reference / remarks (optional)',
-                            hintText:
-                                'POS report, sales sheet or correction note',
-                            border: OutlineInputBorder(),
+                        SizedBox(
+                          width: width,
+                          child: TextField(
+                            controller: _reference,
+                            readOnly: month.finalized,
+                            maxLength: 250,
+                            decoration: const InputDecoration(
+                              labelText: 'Reference / remarks (optional)',
+                              hintText:
+                                  'POS report, sales sheet or correction note',
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                         ),
+                      ],
+                    );
+                  },
+                ),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _busy || month.finalized
+                          ? null
+                          : () => _save(people, month.finalized),
+                      icon: Icon(
+                        _editing == null
+                            ? Icons.save_outlined
+                            : Icons.edit_outlined,
                       ),
-                    ],
-                  );
-                }),
-                Wrap(spacing: 10, runSpacing: 8, children: [
-                  FilledButton.icon(
-                    onPressed: _busy || month.finalized
-                        ? null
-                        : () => _save(people, month.finalized),
-                    icon: Icon(_editing == null
-                        ? Icons.save_outlined
-                        : Icons.edit_outlined),
-                    label: Text(
-                        _editing == null ? 'Save daily sales' : 'Save changes'),
-                  ),
-                  if (_editing != null)
-                    TextButton(
+                      label: Text(
+                        _editing == null ? 'Save daily sales' : 'Save changes',
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _addSalesperson(people),
+                      icon: const Icon(Icons.person_add_alt_1_outlined),
+                      label: const Text('Add salesperson'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _viewSalespersons,
+                      icon: const Icon(Icons.people_outline),
+                      label: const Text('View salespersons'),
+                    ),
+                    if (_editing != null)
+                      TextButton(
                         onPressed: () =>
                             setState(() => _cancelEdit(clearPerson: true)),
-                        child: const Text('Cancel edit')),
-                ]),
+                        child: const Text('Cancel edit'),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -602,289 +874,342 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                LayoutBuilder(builder: (context, constraints) {
-                  final headingAndFilters = Wrap(
-                    spacing: 12,
-                    runSpacing: 10,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text('${_displayMonth(_selectedMonth)} records',
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final headingAndFilters = Wrap(
+                      spacing: 12,
+                      runSpacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '${_displayMonth(_selectedMonth)} records',
                           style: Theme.of(context)
                               .textTheme
                               .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700)),
-                      SizedBox(
-                        width: 240,
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey(_filterPersonId),
-                          initialValue: _filterPersonId ?? '',
-                          decoration: const InputDecoration(
-                            labelText: 'Filter by salesperson',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            const DropdownMenuItem(
-                              value: '',
-                              child: Text('All salespeople'),
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        SizedBox(
+                          width: 240,
+                          child: DropdownButtonFormField<String>(
+                            key: ValueKey(_filterPersonId),
+                            initialValue: _filterPersonId ?? '',
+                            decoration: const InputDecoration(
+                              labelText: 'Filter by salesperson',
+                              border: OutlineInputBorder(),
                             ),
-                            ...alphabeticPeople.map((person) =>
-                                DropdownMenuItem(
+                            items: [
+                              const DropdownMenuItem(
+                                value: '',
+                                child: Text('All salespeople'),
+                              ),
+                              ...alphabeticPeople.map(
+                                (person) => DropdownMenuItem(
                                   value: person.id,
                                   child: Text(person.name),
-                                )),
-                          ],
-                          onChanged: (value) => setState(() =>
-                              _filterPersonId = value == null || value.isEmpty
-                                  ? null
-                                  : value),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 190,
-                        child: OutlinedButton.icon(
-                          onPressed: _pickFilterDate,
-                          icon: const Icon(Icons.event_outlined),
-                          label: Text(_filterDate == null
-                              ? 'Single date'
-                              : _displayDate(_filterDate!)),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 265,
-                        child: OutlinedButton.icon(
-                          onPressed: _pickFilterDateRange,
-                          icon: const Icon(Icons.date_range_outlined),
-                          label: Text(
-                            _filterDateRange == null
-                                ? 'From – To date'
-                                : '${_displayDate(_filterDateRange!.start)} – ${_displayDate(_filterDateRange!.end)}',
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) => setState(
+                              () => _filterPersonId =
+                                  value == null || value.isEmpty ? null : value,
+                            ),
                           ),
                         ),
-                      ),
-                      if (_filterPersonId != null ||
-                          _filterDate != null ||
-                          _filterDateRange != null)
-                        TextButton.icon(
-                          onPressed: () => setState(() {
-                            _filterPersonId = null;
-                            _filterDate = null;
-                            _filterDateRange = null;
-                          }),
-                          icon: const Icon(Icons.filter_alt_off_outlined),
-                          label: const Text('Clear filters'),
+                        SizedBox(
+                          width: 190,
+                          child: OutlinedButton.icon(
+                            onPressed: _pickFilterDate,
+                            icon: const Icon(Icons.event_outlined),
+                            label: Text(
+                              _filterDate == null
+                                  ? 'Single date'
+                                  : _displayDate(_filterDate!),
+                            ),
+                          ),
                         ),
-                    ],
-                  );
-                  final actions = Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _backupBusy ? null : _requestBackup,
-                        icon: _backupBusy
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.cloud_upload_outlined),
-                        label:
-                            Text(_backupBusy ? 'Requesting' : 'Back up now'),
-                      ),
-                      OutlinedButton.icon(
+                        SizedBox(
+                          width: 265,
+                          child: OutlinedButton.icon(
+                            onPressed: _pickFilterDateRange,
+                            icon: const Icon(Icons.date_range_outlined),
+                            label: Text(
+                              _filterDateRange == null
+                                  ? 'From – To date'
+                                  : '${_displayDate(_filterDateRange!.start)} – ${_displayDate(_filterDateRange!.end)}',
+                            ),
+                          ),
+                        ),
+                        if (_filterPersonId != null ||
+                            _filterDate != null ||
+                            _filterDateRange != null)
+                          TextButton.icon(
+                            onPressed: () => setState(() {
+                              _filterPersonId = null;
+                              _filterDate = null;
+                              _filterDateRange = null;
+                            }),
+                            icon: const Icon(Icons.filter_alt_off_outlined),
+                            label: const Text('Clear filters'),
+                          ),
+                      ],
+                    );
+                    final actions = Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _backupBusy ? null : _requestBackup,
+                          icon: _backupBusy
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.cloud_upload_outlined),
+                          label: Text(
+                            _backupBusy ? 'Requesting' : 'Back up now',
+                          ),
+                        ),
+                        OutlinedButton.icon(
                           onPressed: filteredRecords.isEmpty
                               ? null
                               : () => _export(filteredRecords),
                           icon: const Icon(Icons.table_view_outlined),
-                          label: const Text('Export Excel')),
-                      if (!month.finalized)
-                        FilledButton.tonalIcon(
-                          onPressed: records.isEmpty || _busy
-                              ? null
-                              : () async {
-                                  final confirm = await showDialog<bool>(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text('Finalize incentives?'),
-                                      content: Text(
-                                          'Lock $_monthKey after incentive processing? Data will remain available until you manually delete it.'),
-                                      actions: [
-                                        TextButton(
+                          label: const Text('Export Excel'),
+                        ),
+                        if (!month.finalized)
+                          FilledButton.tonalIcon(
+                            onPressed: records.isEmpty || _busy
+                                ? null
+                                : () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text(
+                                          'Finalize incentives?',
+                                        ),
+                                        content: Text(
+                                          'Lock $_monthKey after incentive processing? Data will remain available until you manually delete it.',
+                                        ),
+                                        actions: [
+                                          TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(context, false),
-                                            child: const Text('Not yet')),
-                                        FilledButton(
+                                            child: const Text('Not yet'),
+                                          ),
+                                          FilledButton(
                                             onPressed: () =>
                                                 Navigator.pop(context, true),
                                             child: const Text(
-                                                'Finalize and lock')),
-                                      ],
-                                    ),
-                                  );
-                                  if (confirm == true) {
-                                    await _setFinalized(true);
-                                  }
-                                },
-                          icon: const Icon(Icons.lock_outline),
-                          label: const Text('Mark incentives completed'),
-                        ),
-                    ],
-                  );
-                  if (constraints.maxWidth >= 1500) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                                              'Finalize and lock',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true) {
+                                      await _setFinalized(true);
+                                    }
+                                  },
+                            icon: const Icon(Icons.lock_outline),
+                            label: const Text('Mark incentives completed'),
+                          ),
+                      ],
+                    );
+                    if (constraints.maxWidth >= 1500) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(child: headingAndFilters),
+                          const SizedBox(width: 16),
+                          actions,
+                        ],
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(child: headingAndFilters),
-                        const SizedBox(width: 16),
+                        headingAndFilters,
+                        const SizedBox(height: 12),
                         actions,
                       ],
                     );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      headingAndFilters,
-                      const SizedBox(height: 12),
-                      actions,
-                    ],
-                  );
-                }),
+                  },
+                ),
                 const SizedBox(height: 14),
                 if (loading) const LinearProgressIndicator(),
                 if (!loading && filteredRecords.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 28),
                     child: Center(
-                        child: Text('No sales records match these filters.')),
+                      child: Text('No sales records match these filters.'),
+                    ),
                   ),
                 if (filteredRecords.isNotEmpty)
-                  LayoutBuilder(builder: (context, constraints) {
-                    final tableWidth = constraints.maxWidth < 1080
-                        ? 1080.0
-                        : constraints.maxWidth;
-                    final contentWidth = tableWidth - (24 * 2) - (52 * 4);
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(minWidth: tableWidth),
-                        child: DataTable(
-                          horizontalMargin: 24,
-                          columnSpacing: 52,
-                          headingRowColor: WidgetStatePropertyAll(
-                            Theme.of(context)
-                                .colorScheme
-                                .primaryContainer
-                                .withValues(alpha: 0.32),
-                          ),
-                          columns: [
-                            DataColumn(
-                              label: SizedBox(
-                                width: contentWidth * 0.08,
-                                child: const Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Text('SNo'),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final tableWidth = constraints.maxWidth < 1080
+                          ? 1080.0
+                          : constraints.maxWidth;
+                      final contentWidth = tableWidth - (24 * 2) - (52 * 4);
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minWidth: tableWidth),
+                          child: DataTable(
+                            horizontalMargin: 24,
+                            columnSpacing: 52,
+                            headingRowColor: WidgetStatePropertyAll(
+                              Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withValues(alpha: 0.32),
+                            ),
+                            columns: [
+                              DataColumn(
+                                label: SizedBox(
+                                  width: contentWidth * 0.08,
+                                  child: const Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text('SNo'),
+                                  ),
+                                ),
+                                numeric: true,
+                              ),
+                              DataColumn(
+                                label: SizedBox(
+                                  width: contentWidth * 0.32,
+                                  child: const Text('Name'),
                                 ),
                               ),
-                              numeric: true,
-                            ),
-                            DataColumn(
-                              label: SizedBox(
-                                width: contentWidth * 0.32,
-                                child: const Text('Name'),
+                              DataColumn(
+                                label: SizedBox(
+                                  width: contentWidth * 0.17,
+                                  child: const Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text('Amount'),
+                                  ),
+                                ),
+                                numeric: true,
                               ),
-                            ),
-                            DataColumn(
-                              label: SizedBox(
-                                width: contentWidth * 0.17,
-                                child: const Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Text('Amount'),
+                              DataColumn(
+                                label: SizedBox(
+                                  width: contentWidth * 0.28,
+                                  child: const Text('Date'),
                                 ),
                               ),
-                              numeric: true,
-                            ),
-                            DataColumn(
-                              label: SizedBox(
-                                width: contentWidth * 0.28,
-                                child: const Text('Date'),
-                              ),
-                            ),
-                            DataColumn(
-                              label: SizedBox(
-                                width: contentWidth * 0.15,
-                                child: const Text('Action buttons'),
-                              ),
-                            ),
-                          ],
-                          rows: [
-                            for (final group in personGroups) ...[
-                              for (final record in group.records)
-                                DataRow(cells: [
-                              DataCell(Text('${serialByRecordId[record.id]}')),
-                              DataCell(Tooltip(
-                                  message: record.reference.isEmpty
-                                      ? record.personId
-                                      : '${record.personId}\n${record.reference}',
-                                  child: Text(record.personName))),
-                              DataCell(Text(
-                                  '₹${_groupedAmount(record.amountMilli)}')),
-                              DataCell(Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(_displayDate(record.salesDate)),
-                                  if (record.createdAt != null)
-                                    Text(_displayTime(record.createdAt!),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall),
-                                ],
-                              )),
-                              DataCell(Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                        tooltip: 'Edit',
-                                        onPressed: month.finalized
-                                            ? null
-                                            : () => _edit(record, people),
-                                        icon:
-                                            const Icon(Icons.edit_outlined)),
-                                    IconButton(
-                                        tooltip: 'Delete permanently',
-                                        onPressed: month.finalized
-                                            ? null
-                                            : () => _deleteRecord(record),
-                                        icon:
-                                            const Icon(Icons.delete_outline)),
-                                  ])),
-                                ]),
-                              DataRow(
-                                color: WidgetStatePropertyAll(
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer
-                                      .withValues(alpha: 0.45),
+                              DataColumn(
+                                label: SizedBox(
+                                  width: contentWidth * 0.15,
+                                  child: const Text('Action buttons'),
                                 ),
-                                cells: [
-                                  const DataCell(SizedBox.shrink()),
-                                  DataCell(Text('${group.personName} total',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w800))),
-                                  DataCell(Text(
-                                      '₹${_groupedAmount(group.totalMilli)}',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w800))),
-                                  const DataCell(SizedBox.shrink()),
-                                  const DataCell(SizedBox.shrink()),
-                                ],
                               ),
                             ],
-                          ],
+                            rows: [
+                              for (final group in personGroups) ...[
+                                for (final record in group.records)
+                                  DataRow(
+                                    cells: [
+                                      DataCell(
+                                        Text('${serialByRecordId[record.id]}'),
+                                      ),
+                                      DataCell(
+                                        Tooltip(
+                                          message: record.reference.isEmpty
+                                              ? record.personId
+                                              : '${record.personId}\n${record.reference}',
+                                          child: Text(record.personName),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          '₹${_groupedAmount(record.amountMilli)}',
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _displayDate(record.salesDate),
+                                            ),
+                                            if (record.createdAt != null)
+                                              Text(
+                                                _displayTime(record.createdAt!),
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              tooltip: 'Edit',
+                                              onPressed: month.finalized
+                                                  ? null
+                                                  : () => _edit(record, people),
+                                              icon: const Icon(
+                                                Icons.edit_outlined,
+                                              ),
+                                            ),
+                                            IconButton(
+                                              tooltip: 'Delete permanently',
+                                              onPressed: month.finalized
+                                                  ? null
+                                                  : () => _deleteRecord(record),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                DataRow(
+                                  color: WidgetStatePropertyAll(
+                                    Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer
+                                        .withValues(alpha: 0.45),
+                                  ),
+                                  cells: [
+                                    const DataCell(SizedBox.shrink()),
+                                    DataCell(
+                                      Text(
+                                        '${group.personName} total',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        '₹${_groupedAmount(group.totalMilli)}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    const DataCell(SizedBox.shrink()),
+                                    const DataCell(SizedBox.shrink()),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  }),
+                      );
+                    },
+                  ),
               ],
             ),
           ),
@@ -910,7 +1235,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       'September',
       'October',
       'November',
-      'December'
+      'December',
     ][value.month - 1];
     return '$month ${value.year}';
   }
@@ -925,8 +1250,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   String _groupedAmount(int milli) {
     final raw = formatAmountMilli(milli);
     final parts = raw.split('.');
-    final grouped = parts.first
-        .replaceAllMapped(RegExp(r'(?<=\d)(?=(\d{3})+(?!\d))'), (_) => ',');
+    final grouped = parts.first.replaceAllMapped(
+      RegExp(r'(?<=\d)(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
     return '$grouped.${parts.last}';
   }
 
@@ -942,7 +1269,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
 class _AmountInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     final value = newValue.text.replaceAll(',', '');
     return RegExp(r'^\d*(\.\d{0,3})?$').hasMatch(value)
         ? newValue.copyWith(text: value)
