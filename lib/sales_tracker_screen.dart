@@ -683,11 +683,14 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                   ),
                 if (filteredRecords.isNotEmpty)
                   LayoutBuilder(builder: (context, constraints) {
+                    final tableWidth = constraints.maxWidth < 1080
+                        ? 1080.0
+                        : constraints.maxWidth;
+                    final contentWidth = tableWidth - (24 * 2) - (52 * 4);
                     return SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: ConstrainedBox(
-                        constraints:
-                            BoxConstraints(minWidth: constraints.maxWidth),
+                        constraints: BoxConstraints(minWidth: tableWidth),
                         child: DataTable(
                           horizontalMargin: 24,
                           columnSpacing: 52,
@@ -697,28 +700,38 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 .primaryContainer
                                 .withValues(alpha: 0.32),
                           ),
-                          columns: const [
+                          columns: [
                             DataColumn(
-                              label: Text('Date'),
-                              columnWidth: FlexColumnWidth(1.4),
+                              label: SizedBox(
+                                width: contentWidth * 0.28,
+                                child: const Text('Date'),
+                              ),
                             ),
                             DataColumn(
-                              label: Text('SNo'),
+                              label: SizedBox(
+                                width: contentWidth * 0.08,
+                                child: const Text('SNo'),
+                              ),
                               numeric: true,
-                              columnWidth: FixedColumnWidth(72),
                             ),
                             DataColumn(
-                              label: Text('Name'),
-                              columnWidth: FlexColumnWidth(1.6),
+                              label: SizedBox(
+                                width: contentWidth * 0.32,
+                                child: const Text('Name'),
+                              ),
                             ),
                             DataColumn(
-                              label: Text('Amount'),
+                              label: SizedBox(
+                                width: contentWidth * 0.17,
+                                child: const Text('Amount'),
+                              ),
                               numeric: true,
-                              columnWidth: FlexColumnWidth(0.8),
                             ),
                             DataColumn(
-                              label: Text('Action buttons'),
-                              columnWidth: FixedColumnWidth(180),
+                              label: SizedBox(
+                                width: contentWidth * 0.15,
+                                child: const Text('Action buttons'),
+                              ),
                             ),
                           ],
                           rows: [
