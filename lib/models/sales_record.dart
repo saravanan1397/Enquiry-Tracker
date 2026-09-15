@@ -112,11 +112,17 @@ List<SalesRecord> filterSalesRecords(
   Iterable<SalesRecord> records, {
   String? personId,
   String? dateKey,
+  String? fromDateKey,
+  String? toDateKey,
 }) =>
     records
         .where((record) =>
             (personId == null || record.personId == personId) &&
-            (dateKey == null || record.salesDateKey == dateKey))
+            (dateKey == null || record.salesDateKey == dateKey) &&
+            (fromDateKey == null ||
+                record.salesDateKey.compareTo(fromDateKey) >= 0) &&
+            (toDateKey == null ||
+                record.salesDateKey.compareTo(toDateKey) <= 0))
         .toList(growable: false);
 
 String salesDateKey(DateTime value) =>

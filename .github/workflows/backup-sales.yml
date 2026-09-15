@@ -7,6 +7,15 @@ on:
     # Securely pick up owner requests from Firestore within about five minutes.
     - cron: "2-57/5 * * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Backup operation
+        required: true
+        default: Process pending app request
+        type: choice
+        options:
+          - Process pending app request
+          - Force current backup
 
 permissions:
   contents: read
@@ -36,4 +45,4 @@ jobs:
           SALES_BACKUP_PASSWORD: ${{ secrets.SALES_BACKUP_PASSWORD }}
           SALES_BACKUP_REPOSITORY: ${{ secrets.SALES_BACKUP_REPOSITORY }}
           SALES_BACKUP_TOKEN: ${{ secrets.SALES_BACKUP_TOKEN }}
-          SALES_BACKUP_RUN_MODE: ${{ github.event_name == 'workflow_dispatch' && 'forced' || github.event.schedule == '30 17 * * *' && 'daily' || 'requested' }}
+          SALES_BACKUP_RUN_MODE: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'Force current backup' && 'forced' || 'requested') || github.event.schedule == '30 17 * * *' && 'daily' || 'requested' }}

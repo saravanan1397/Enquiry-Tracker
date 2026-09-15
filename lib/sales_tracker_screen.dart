@@ -30,6 +30,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   SalesRecord? _editing;
   String? _filterPersonId;
   DateTime? _filterDate;
+  DateTimeRange? _filterDateRange;
   late DateTime _selectedDate;
   late DateTime _selectedMonth;
   bool _busy = false;
@@ -64,6 +65,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       _cancelEdit(clearPerson: true);
       _filterPersonId = null;
       _filterDate = null;
+      _filterDateRange = null;
     });
   }
 
@@ -79,7 +81,34 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       firstDate: firstDate,
       lastDate: lastDate,
     );
-    if (picked != null && mounted) setState(() => _filterDate = picked);
+    if (picked != null && mounted) {
+      setState(() {
+        _filterDate = picked;
+        _filterDateRange = null;
+      });
+    }
+  }
+
+  Future<void> _pickFilterDateRange() async {
+    final now = indiaNow();
+    final today = DateTime(now.year, now.month, now.day);
+    final firstDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+    final monthEnd = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
+    final lastDate = monthEnd.isAfter(today) ? today : monthEnd;
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: _filterDateRange,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      helpText: 'Select sales date range',
+      saveText: 'Apply range',
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _filterDateRange = picked;
+        _filterDate = null;
+      });
+    }
   }
 
   void _cancelEdit({bool clearPerson = false}) {
@@ -363,6 +392,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       records,
       personId: _filterPersonId,
       dateKey: _filterDate == null ? null : salesDateKey(_filterDate!),
+      fromDateKey: _filterDateRange == null
+          ? null
+          : salesDateKey(_filterDateRange!.start),
+      toDateKey: _filterDateRange == null
+          ? null
+          : salesDateKey(_filterDateRange!.end),
     );
     final personGroups = groupSalesRecordsByPerson(filteredRecords);
     final orderedRecords = personGroups
@@ -568,14 +603,76 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 LayoutBuilder(builder: (context, constraints) {
-                  final title = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  final headingAndFilters = Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text('${_displayMonth(_selectedMonth)} records',
                           style: Theme.of(context)
                               .textTheme
                               .titleLarge
                               ?.copyWith(fontWeight: FontWeight.w700)),
+                      SizedBox(
+                        width: 240,
+                        child: DropdownButtonFormField<String>(
+                          key: ValueKey(_filterPersonId),
+                          initialValue: _filterPersonId ?? '',
+                          decoration: const InputDecoration(
+                            labelText: 'Filter by salesperson',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: '',
+                              child: Text('All salespeople'),
+                            ),
+                            ...alphabeticPeople.map((person) =>
+                                DropdownMenuItem(
+                                  value: person.id,
+                                  child: Text(person.name),
+                                )),
+                          ],
+                          onChanged: (value) => setState(() =>
+                              _filterPersonId = value == null || value.isEmpty
+                                  ? null
+                                  : value),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 190,
+                        child: OutlinedButton.icon(
+                          onPressed: _pickFilterDate,
+                          icon: const Icon(Icons.event_outlined),
+                          label: Text(_filterDate == null
+                              ? 'Single date'
+                              : _displayDate(_filterDate!)),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 265,
+                        child: OutlinedButton.icon(
+                          onPressed: _pickFilterDateRange,
+                          icon: const Icon(Icons.date_range_outlined),
+                          label: Text(
+                            _filterDateRange == null
+                                ? 'From – To date'
+                                : '${_displayDate(_filterDateRange!.start)} – ${_displayDate(_filterDateRange!.end)}',
+                          ),
+                        ),
+                      ),
+                      if (_filterPersonId != null ||
+                          _filterDate != null ||
+                          _filterDateRange != null)
+                        TextButton.icon(
+                          onPressed: () => setState(() {
+                            _filterPersonId = null;
+                            _filterDate = null;
+                            _filterDateRange = null;
+                          }),
+                          icon: const Icon(Icons.filter_alt_off_outlined),
+                          label: const Text('Clear filters'),
+                        ),
                     ],
                   );
                   final actions = Wrap(
@@ -633,11 +730,11 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                         ),
                     ],
                   );
-                  if (constraints.maxWidth >= 860) {
+                  if (constraints.maxWidth >= 1500) {
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(child: title),
+                        Expanded(child: headingAndFilters),
                         const SizedBox(width: 16),
                         actions,
                       ],
@@ -646,64 +743,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      title,
+                      headingAndFilters,
                       const SizedBox(height: 12),
                       actions,
                     ],
                   );
                 }),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 260,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey(_filterPersonId),
-                        initialValue: _filterPersonId ?? '',
-                        decoration: const InputDecoration(
-                          labelText: 'Filter by salesperson',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: '',
-                            child: Text('All salespeople'),
-                          ),
-                          ...alphabeticPeople.map((person) => DropdownMenuItem(
-                                value: person.id,
-                                child: Text(person.name),
-                              )),
-                        ],
-                        onChanged: (value) => setState(() =>
-                            _filterPersonId = value == null || value.isEmpty
-                                ? null
-                                : value),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 220,
-                      child: OutlinedButton.icon(
-                        onPressed: _pickFilterDate,
-                        icon: const Icon(Icons.event_outlined),
-                        label: Text(_filterDate == null
-                            ? 'All dates'
-                            : _displayDate(_filterDate!)),
-                      ),
-                    ),
-                    if (_filterPersonId != null || _filterDate != null)
-                      TextButton.icon(
-                        onPressed: () => setState(() {
-                          _filterPersonId = null;
-                          _filterDate = null;
-                        }),
-                        icon: const Icon(Icons.filter_alt_off_outlined),
-                        label: const Text('Clear filters'),
-                      ),
-                  ],
-                ),
                 const SizedBox(height: 14),
                 if (loading) const LinearProgressIndicator(),
                 if (!loading && filteredRecords.isEmpty)

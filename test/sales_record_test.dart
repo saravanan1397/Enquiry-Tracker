@@ -62,5 +62,14 @@ void main() {
       ).map((record) => record.id),
       ['one-14'],
     );
+
+    expect(
+      filterSalesRecords(
+        groups.expand((group) => group.records),
+        fromDateKey: '2026-09-13',
+        toDateKey: '2026-09-14',
+      ).map((record) => record.id),
+      ['alpha-14', 'one-13', 'one-14', 'two-14'],
+    );
   });
 }
