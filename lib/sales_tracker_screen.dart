@@ -703,12 +703,6 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                           columns: [
                             DataColumn(
                               label: SizedBox(
-                                width: contentWidth * 0.28,
-                                child: const Text('Date'),
-                              ),
-                            ),
-                            DataColumn(
-                              label: SizedBox(
                                 width: contentWidth * 0.08,
                                 child: const Text('SNo'),
                               ),
@@ -729,6 +723,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             ),
                             DataColumn(
                               label: SizedBox(
+                                width: contentWidth * 0.28,
+                                child: const Text('Date'),
+                              ),
+                            ),
+                            DataColumn(
+                              label: SizedBox(
                                 width: contentWidth * 0.15,
                                 child: const Text('Action buttons'),
                               ),
@@ -738,6 +738,14 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             for (final group in personGroups) ...[
                               for (final record in group.records)
                                 DataRow(cells: [
+                              DataCell(Text('${serialByRecordId[record.id]}')),
+                              DataCell(Tooltip(
+                                  message: record.reference.isEmpty
+                                      ? record.personId
+                                      : '${record.personId}\n${record.reference}',
+                                  child: Text(record.personName))),
+                              DataCell(Text(
+                                  '₹${_groupedAmount(record.amountMilli)}')),
                               DataCell(Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -750,14 +758,6 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                             .bodySmall),
                                 ],
                               )),
-                              DataCell(Text('${serialByRecordId[record.id]}')),
-                              DataCell(Tooltip(
-                                  message: record.reference.isEmpty
-                                      ? record.personId
-                                      : '${record.personId}\n${record.reference}',
-                                  child: Text(record.personName))),
-                              DataCell(Text(
-                                  '₹${_groupedAmount(record.amountMilli)}')),
                               DataCell(Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -786,7 +786,6 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 ),
                                 cells: [
                                   const DataCell(SizedBox.shrink()),
-                                  const DataCell(SizedBox.shrink()),
                                   DataCell(Text('${group.personName} total',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w800))),
@@ -794,6 +793,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                       '₹${_groupedAmount(group.totalMilli)}',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w800))),
+                                  const DataCell(SizedBox.shrink()),
                                   const DataCell(SizedBox.shrink()),
                                 ],
                               ),
