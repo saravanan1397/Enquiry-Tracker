@@ -983,7 +983,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
             leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
                 : null,
-            title: const Text('Enquiry Tracker'),
+            title: Text(isAdmin ? 'Admin Panel' : 'Enquiry Tracker'),
             actions: [
               if (isAdmin && _ownerModuleOpen)
                 IconButton(

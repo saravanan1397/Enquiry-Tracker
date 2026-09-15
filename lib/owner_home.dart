@@ -26,10 +26,10 @@ class OwnerHome extends StatelessWidget {
             footer: 'Open records, filters, exports and follow-up management',
             icon: Icons.forum_outlined,
             actionLabel: 'Open follow-ups',
-            lightAccent: const Color(0xFF0B63CE),
-            darkAccent: const Color(0xFF64B5FF),
-            lightGradient: const [Color(0xFFEAF3FF), Color(0xFFC9E1FF)],
-            darkGradient: const [Color(0xFF07182D), Color(0xFF123B68)],
+            lightAccent: const Color(0xFF1F5E9C),
+            darkAccent: const Color(0xFF82B7E8),
+            lightGradient: const [Color(0xFFF4F8FC), Color(0xFFE2ECF6)],
+            darkGradient: const [Color(0xFF0D1722), Color(0xFF142B40)],
             onTap: onFollowup,
             metrics: [
               ('TOTAL ENQUIRIES', '${leads.length}'),
@@ -51,10 +51,10 @@ class OwnerHome extends StatelessWidget {
             description: 'Your sales workspace',
             footer: 'Daily entries, monthly totals, Excel exports and backups',
             icon: Icons.insights_outlined,
-            lightAccent: const Color(0xFFD94A16),
-            darkAccent: const Color(0xFFFFA56B),
-            lightGradient: const [Color(0xFFFFF0E8), Color(0xFFFFD4BF)],
-            darkGradient: const [Color(0xFF251007), Color(0xFF6B2610)],
+            lightAccent: const Color(0xFF14735F),
+            darkAccent: const Color(0xFF7AC7B2),
+            lightGradient: const [Color(0xFFF3F8F6), Color(0xFFE0EEE9)],
+            darkGradient: const [Color(0xFF0C1917), Color(0xFF17332D)],
             actionLabel: onSales == null ? 'Web only' : 'Open sales tracker',
             metrics: const [('SCHEDULE', 'Daily'), ('CURRENCY', 'INR')],
             onTap: onSales,
@@ -93,7 +93,8 @@ class _ModuleCard extends StatelessWidget {
     final foreground = dark ? const Color(0xFFE9F0F1) : const Color(0xFF20383F);
     final muted = dark ? const Color(0xFF9AADB6) : const Color(0xFF586D76);
     final accent = dark ? darkAccent : lightAccent;
-    final border = accent.withValues(alpha: dark ? 0.58 : 0.38);
+    final accentForeground = dark ? const Color(0xFF07191D) : Colors.white;
+    final border = accent.withValues(alpha: dark ? 0.46 : 0.3);
     return Material(
       clipBehavior: Clip.antiAlias,
       borderRadius: BorderRadius.circular(22),
@@ -140,8 +141,8 @@ class _ModuleCard extends StatelessWidget {
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                               color: accent, shape: BoxShape.circle),
-                          child: const Icon(Icons.north_east,
-                              size: 18, color: Colors.white),
+                          child: Icon(Icons.north_east,
+                              size: 18, color: accentForeground),
                         )
                       else
                         Icon(Icons.insights_outlined, color: muted, size: 24),
@@ -211,7 +212,7 @@ class _ModuleCard extends StatelessWidget {
                         onPressed: onTap,
                         style: FilledButton.styleFrom(
                           backgroundColor: accent,
-                          foregroundColor: Colors.white,
+                          foregroundColor: accentForeground,
                           disabledBackgroundColor:
                               accent.withValues(alpha: 0.32),
                           disabledForegroundColor:
