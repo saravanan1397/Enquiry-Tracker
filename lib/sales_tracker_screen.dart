@@ -704,7 +704,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             DataColumn(
                               label: SizedBox(
                                 width: contentWidth * 0.08,
-                                child: const Text('SNo'),
+                                child: const Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text('SNo'),
+                                ),
                               ),
                               numeric: true,
                             ),
@@ -717,7 +720,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             DataColumn(
                               label: SizedBox(
                                 width: contentWidth * 0.17,
-                                child: const Text('Amount'),
+                                child: const Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text('Amount'),
+                                ),
                               ),
                               numeric: true,
                             ),
