@@ -27,6 +27,8 @@ const githubHeaders = {
 
 initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
+const runMode = process.env.SALES_BACKUP_RUN_MODE?.trim() || 'daily';
+const requestReference = db.collection('salesBackupRequests').doc('current');
 
 const istParts = (date = new Date()) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -60,18 +62,6 @@ const documents = async (query) => {
     ...serialize(document.data()),
   }));
 };
-
-const current = istParts();
-const currentMonth = `${current.year}-${current.month}`;
-const cutoff = Timestamp.fromDate(new Date(Date.now() - 48 * 60 * 60 * 1000));
-const recentlyChanged = await documents(
-  db.collection('salesEntries').where('updatedAt', '>=', cutoff),
-);
-const monthKeys = new Set([
-  currentMonth,
-  ...recentlyChanged.map((entry) => entry.monthKey).filter(Boolean),
-]);
-const people = await documents(db.collection('salesPersons'));
 
 const githubRequest = async (url, options = {}) => {
   const response = await fetch(url, {
@@ -133,36 +123,99 @@ const encrypt = (payload) => {
   );
 };
 
-for (const monthKey of [...monthKeys].sort()) {
-  const [entries, audit, monthState] = await Promise.all([
-    documents(db.collection('salesEntries').where('monthKey', '==', monthKey)),
-    documents(db.collection('salesEntryAudit').where('monthKey', '==', monthKey)),
-    documents(db.collection('salesMonths').where('monthKey', '==', monthKey)),
-  ]);
-  const generated = istParts();
-  const generatedAtIst = `${generated.year}-${generated.month}-${generated.day}T${generated.hour}:${generated.minute}:${generated.second}+05:30`;
-  const encrypted = encrypt({
-    format: 'ENQUIRY_TRACKER_SALES_DATA_V1',
-    projectId: serviceAccount.project_id,
-    monthKey,
-    generatedAtIst,
-    sourceCommit: process.env.GITHUB_SHA ?? null,
-    people,
-    entries,
-    audit,
-    monthState,
-  });
-  const release = await releaseForMonth(monthKey);
-  const assetName =
-    `sales-backup-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
-  const uploadUrl = release.upload_url.replace('{?name,label}', '');
-  await githubRequest(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': String(encrypted.length),
-    },
-    body: encrypted,
-  });
-  console.log(`Uploaded ${assetName} (${encrypted.length} bytes)`);
+let requestedBackup = false;
+
+try {
+  const current = istParts();
+  const currentMonth = `${current.year}-${current.month}`;
+  let monthKeys;
+
+  if (runMode === 'requested') {
+    const request = await requestReference.get();
+    const requestData = request.data();
+    if (!request.exists || requestData?.status !== 'pending') {
+      console.log('No pending owner backup request.');
+      process.exit(0);
+    }
+    requestedBackup = true;
+    const requestedMonth = requestData.monthKey;
+    if (!/^\d{4}-\d{2}$/.test(requestedMonth ?? '')) {
+      throw new Error('The pending backup request has an invalid month.');
+    }
+    monthKeys = new Set([requestedMonth]);
+    await requestReference.update({
+      status: 'processing',
+      startedAt: Timestamp.now(),
+      error: null,
+    });
+  } else {
+    const cutoff = Timestamp.fromDate(
+      new Date(Date.now() - 48 * 60 * 60 * 1000),
+    );
+    const recentlyChanged = await documents(
+      db.collection('salesEntries').where('updatedAt', '>=', cutoff),
+    );
+    monthKeys = new Set([
+      currentMonth,
+      ...recentlyChanged.map((entry) => entry.monthKey).filter(Boolean),
+    ]);
+  }
+
+  const people = await documents(db.collection('salesPersons'));
+  const assetNames = [];
+
+  for (const monthKey of [...monthKeys].sort()) {
+    const [entries, audit, monthState] = await Promise.all([
+      documents(db.collection('salesEntries').where('monthKey', '==', monthKey)),
+      documents(
+        db.collection('salesEntryAudit').where('monthKey', '==', monthKey),
+      ),
+      documents(db.collection('salesMonths').where('monthKey', '==', monthKey)),
+    ]);
+    const generated = istParts();
+    const generatedAtIst = `${generated.year}-${generated.month}-${generated.day}T${generated.hour}:${generated.minute}:${generated.second}+05:30`;
+    const encrypted = encrypt({
+      format: 'ENQUIRY_TRACKER_SALES_DATA_V1',
+      projectId: serviceAccount.project_id,
+      monthKey,
+      generatedAtIst,
+      sourceCommit: process.env.GITHUB_SHA ?? null,
+      people,
+      entries,
+      audit,
+      monthState,
+    });
+    const release = await releaseForMonth(monthKey);
+    const assetName =
+      `sales-backup-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
+    const uploadUrl = release.upload_url.replace('{?name,label}', '');
+    await githubRequest(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(encrypted.length),
+      },
+      body: encrypted,
+    });
+    assetNames.push(assetName);
+    console.log(`Uploaded ${assetName} (${encrypted.length} bytes)`);
+  }
+
+  if (requestedBackup) {
+    await requestReference.update({
+      status: 'completed',
+      completedAt: Timestamp.now(),
+      assetNames,
+      error: null,
+    });
+  }
+} catch (error) {
+  if (requestedBackup) {
+    await requestReference.update({
+      status: 'failed',
+      completedAt: Timestamp.now(),
+      error: String(error?.message ?? error).slice(0, 500),
+    });
+  }
+  throw error;
 }

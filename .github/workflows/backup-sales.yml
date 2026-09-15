@@ -4,6 +4,8 @@ on:
   schedule:
     # 11:00 PM Asia/Kolkata (GitHub schedules use UTC).
     - cron: "30 17 * * *"
+    # Securely pick up owner requests from Firestore within about five minutes.
+    - cron: "2-57/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -34,3 +36,4 @@ jobs:
           SALES_BACKUP_PASSWORD: ${{ secrets.SALES_BACKUP_PASSWORD }}
           SALES_BACKUP_REPOSITORY: ${{ secrets.SALES_BACKUP_REPOSITORY }}
           SALES_BACKUP_TOKEN: ${{ secrets.SALES_BACKUP_TOKEN }}
+          SALES_BACKUP_RUN_MODE: ${{ github.event_name == 'workflow_dispatch' && 'forced' || github.event.schedule == '30 17 * * *' && 'daily' || 'requested' }}

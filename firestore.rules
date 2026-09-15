@@ -106,6 +106,10 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /salesBackupRequests/{requestId} {
+      allow read, write: if isAdmin();
+    }
+
     // Deny every collection not explicitly listed above.
     match /{document=**} {
       allow read, write: if false;

@@ -23,6 +23,8 @@ class FirebaseSalesBackend {
       _database.collection('salesEntryAudit');
   CollectionReference<Map<String, dynamic>> get _months =>
       _database.collection('salesMonths');
+  DocumentReference<Map<String, dynamic>> get _backupRequest =>
+      _database.collection('salesBackupRequests').doc('current');
 
   Stream<List<SalesPerson>> watchPeople() {
     if (!isConfigured) return Stream.value(const []);
@@ -200,6 +202,28 @@ class FirebaseSalesBackend {
       'finalizedByUid': finalized ? ownerUid : null,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  Future<void> requestBackup({
+    required String monthKey,
+    required String ownerUid,
+    required String ownerName,
+  }) async {
+    if (!RegExp(r'^\d{4}-\d{2}$').hasMatch(monthKey)) {
+      throw const FormatException('Select a valid sales month.');
+    }
+    await _backupRequest.set({
+      'monthKey': monthKey,
+      'requestedAt': FieldValue.serverTimestamp(),
+      'requestedByUid': ownerUid,
+      'requestedByName': ownerName,
+      'status': 'pending',
+      'startedAt': null,
+      'completedAt': null,
+      'assetNames': const <String>[],
+      'error': null,
+    });
+    await _database.waitForPendingWrites();
   }
 
   Future<void> deleteMonth(String monthKey) async {

@@ -33,6 +33,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   late DateTime _selectedDate;
   late DateTime _selectedMonth;
   bool _busy = false;
+  bool _backupBusy = false;
 
   @override
   void initState() {
@@ -311,6 +312,26 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     if (mounted) _message('Sales Excel export downloaded.');
   }
 
+  Future<void> _requestBackup() async {
+    if (_backupBusy) return;
+    setState(() => _backupBusy = true);
+    try {
+      await widget.backend.requestBackup(
+        monthKey: _monthKey,
+        ownerUid: widget.ownerUid,
+        ownerName: widget.ownerName,
+      );
+      if (mounted) {
+        _message(
+            'Backup requested. The encrypted GitHub backup will be created within about 5 minutes.');
+      }
+    } catch (error) {
+      if (mounted) _message(_friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _backupBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<SalesPerson>>(
         stream: widget.backend.watchPeople(),
@@ -563,6 +584,18 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      OutlinedButton.icon(
+                        onPressed: _backupBusy ? null : _requestBackup,
+                        icon: _backupBusy
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.cloud_upload_outlined),
+                        label:
+                            Text(_backupBusy ? 'Requesting' : 'Back up now'),
+                      ),
                       OutlinedButton.icon(
                           onPressed: filteredRecords.isEmpty
                               ? null
