@@ -690,7 +690,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             BoxConstraints(minWidth: constraints.maxWidth),
                         child: DataTable(
                           horizontalMargin: 24,
-                          columnSpacing: 36,
+                          columnSpacing: 52,
                           headingRowColor: WidgetStatePropertyAll(
                             Theme.of(context)
                                 .colorScheme
@@ -698,11 +698,28 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 .withValues(alpha: 0.32),
                           ),
                           columns: const [
-                            DataColumn(label: Text('Date')),
-                            DataColumn(label: Text('SNo'), numeric: true),
-                            DataColumn(label: Text('Name')),
-                            DataColumn(label: Text('Amount'), numeric: true),
-                            DataColumn(label: Text('Action buttons')),
+                            DataColumn(
+                              label: Text('Date'),
+                              columnWidth: FlexColumnWidth(1.4),
+                            ),
+                            DataColumn(
+                              label: Text('SNo'),
+                              numeric: true,
+                              columnWidth: FixedColumnWidth(72),
+                            ),
+                            DataColumn(
+                              label: Text('Name'),
+                              columnWidth: FlexColumnWidth(1.6),
+                            ),
+                            DataColumn(
+                              label: Text('Amount'),
+                              numeric: true,
+                              columnWidth: FlexColumnWidth(0.8),
+                            ),
+                            DataColumn(
+                              label: Text('Action buttons'),
+                              columnWidth: FixedColumnWidth(180),
+                            ),
                           ],
                           rows: [
                             for (final group in personGroups) ...[
