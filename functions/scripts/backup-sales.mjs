@@ -76,8 +76,8 @@ const githubRequest = async (url, options = {}) => {
   return response;
 };
 
-const releaseForMonth = async (monthKey) => {
-  const tag = `sales-${monthKey}`;
+const fullBackupRelease = async () => {
+  const tag = 'sales-tracker-full';
   const existing = await fetch(
     `${githubApi}/repos/${backupRepository}/releases/tags/${tag}`,
     { headers: githubHeaders },
@@ -93,8 +93,8 @@ const releaseForMonth = async (monthKey) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tag_name: tag,
-        name: `Sales backup ${monthKey}`,
-        body: 'Encrypted Enquiry Tracker Sales Tracker backups. Delete this release manually only when the corresponding month may be permanently removed from GitHub.',
+        name: 'Sales Tracker full backup',
+        body: 'Complete encrypted Sales Tracker snapshots containing every available month, salesperson, daily sale, audit record and month status.',
         draft: false,
         prerelease: false,
       }),
@@ -142,10 +142,6 @@ const requestStatusUpdate = async (fields, phase) => {
 };
 
 try {
-  const current = istParts();
-  const currentMonth = `${current.year}-${current.month}`;
-  let monthKeys;
-
   if (runMode === 'requested') {
     const request = await requestReference.get();
     const requestData = request.data();
@@ -154,68 +150,51 @@ try {
       process.exit(0);
     }
     requestedBackup = true;
-    const requestedMonth = requestData.monthKey;
-    if (!/^\d{4}-\d{2}$/.test(requestedMonth ?? '')) {
-      throw new Error('The pending backup request has an invalid month.');
-    }
-    monthKeys = new Set([requestedMonth]);
     await requestStatusUpdate({
       status: 'processing',
       startedAt: Timestamp.now(),
       error: null,
     }, 'mark the owner backup request as processing');
-  } else {
-    const cutoff = Timestamp.fromDate(
-      new Date(Date.now() - 48 * 60 * 60 * 1000),
-    );
-    const recentlyChanged = await documents(
-      db.collection('salesEntries').where('updatedAt', '>=', cutoff),
-    );
-    monthKeys = new Set([
-      currentMonth,
-      ...recentlyChanged.map((entry) => entry.monthKey).filter(Boolean),
-    ]);
   }
 
-  const people = await documents(db.collection('salesPersons'));
-  const assetNames = [];
-
-  for (const monthKey of [...monthKeys].sort()) {
-    const [entries, audit, monthState] = await Promise.all([
-      documents(db.collection('salesEntries').where('monthKey', '==', monthKey)),
-      documents(
-        db.collection('salesEntryAudit').where('monthKey', '==', monthKey),
-      ),
-      documents(db.collection('salesMonths').where('monthKey', '==', monthKey)),
-    ]);
-    const generated = istParts();
-    const generatedAtIst = `${generated.year}-${generated.month}-${generated.day}T${generated.hour}:${generated.minute}:${generated.second}+05:30`;
-    const encrypted = encrypt({
-      format: 'ENQUIRY_TRACKER_SALES_DATA_V1',
-      projectId: serviceAccount.project_id,
-      monthKey,
-      generatedAtIst,
-      sourceCommit: process.env.GITHUB_SHA ?? null,
-      people,
-      entries,
-      audit,
-      monthState,
-    });
-    const release = await releaseForMonth(monthKey);
-    const assetName =
-      `sales-backup-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
-    const uploadUrl = release.upload_url.replace('{?name,label}', '');
-    await githubRequest(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': String(encrypted.length),
-      },
-      body: encrypted,
-    });
-    assetNames.push(assetName);
-    console.log(`Uploaded ${assetName} (${encrypted.length} bytes)`);
-  }
+  const [people, personNames, entries, audit, monthState] = await Promise.all([
+    documents(db.collection('salesPersons')),
+    documents(db.collection('salesPersonNames')),
+    documents(db.collection('salesEntries')),
+    documents(db.collection('salesEntryAudit')),
+    documents(db.collection('salesMonths')),
+  ]);
+  const generated = istParts();
+  const generatedAtIst = `${generated.year}-${generated.month}-${generated.day}T${generated.hour}:${generated.minute}:${generated.second}+05:30`;
+  const encrypted = encrypt({
+    format: 'ENQUIRY_TRACKER_SALES_DATA_V2',
+    scope: 'all-sales-tracker-data',
+    projectId: serviceAccount.project_id,
+    generatedAtIst,
+    sourceCommit: process.env.GITHUB_SHA ?? null,
+    people,
+    personNames,
+    entries,
+    audit,
+    monthState,
+  });
+  const release = await fullBackupRelease();
+  const assetName =
+    `sales-backup-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
+  const uploadUrl = release.upload_url.replace('{?name,label}', '');
+  await githubRequest(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(encrypted.length),
+    },
+    body: encrypted,
+  });
+  const assetNames = [assetName];
+  console.log(
+    `Uploaded complete Sales Tracker backup ${assetName} ` +
+      `(${encrypted.length} bytes; ${entries.length} sales entries)`,
+  );
 
   if (requestedBackup) {
     await requestStatusUpdate({

@@ -312,6 +312,7 @@ class FirebaseSalesBackend {
       throw const FormatException('Select a valid sales month.');
     }
     await _backupRequest.set({
+      'scope': 'all-sales-tracker-data',
       'monthKey': monthKey,
       'requestedAt': FieldValue.serverTimestamp(),
       'requestedByUid': ownerUid,
