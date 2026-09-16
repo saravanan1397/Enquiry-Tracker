@@ -101,17 +101,26 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     final firstDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
     final monthEnd = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
     final lastDate = monthEnd.isAfter(today) ? today : monthEnd;
-    final picked = await showDateRangePicker(
+    final fromDate = await showDatePicker(
       context: context,
-      initialDateRange: _filterDateRange,
+      initialDate: _filterDateRange?.start ?? firstDate,
       firstDate: firstDate,
       lastDate: lastDate,
-      helpText: 'Select sales date range',
-      saveText: 'Apply range',
+      helpText: 'Select From date',
     );
-    if (picked != null && mounted) {
+    if (fromDate == null || !mounted) return;
+    final toDate = await showDatePicker(
+      context: context,
+      initialDate: _filterDateRange?.end.isBefore(fromDate) == false
+          ? _filterDateRange!.end
+          : fromDate,
+      firstDate: fromDate,
+      lastDate: lastDate,
+      helpText: 'Select To date',
+    );
+    if (toDate != null && mounted) {
       setState(() {
-        _filterDateRange = picked;
+        _filterDateRange = DateTimeRange(start: fromDate, end: toDate);
         _filterDate = null;
         _visibleRecordCount = 20;
       });
@@ -614,12 +623,16 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                 stream: widget.backend.watchMonth(_monthKey),
                 builder: (context, recordsSnapshot) {
                   final records = recordsSnapshot.data ?? const <SalesRecord>[];
-                  return _body(
-                    people,
-                    month,
-                    records,
-                    loading: recordsSnapshot.connectionState ==
-                        ConnectionState.waiting,
+                  return StreamBuilder<SalesBackupStatus?>(
+                    stream: widget.backend.watchBackupStatus(),
+                    builder: (context, backupSnapshot) => _body(
+                      people,
+                      month,
+                      records,
+                      backupStatus: backupSnapshot.data,
+                      loading: recordsSnapshot.connectionState ==
+                          ConnectionState.waiting,
+                    ),
                   );
                 },
               );
@@ -632,6 +645,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     List<SalesPerson> people,
     SalesMonthState month,
     List<SalesRecord> records, {
+    required SalesBackupStatus? backupStatus,
     required bool loading,
   }) {
     final filteredRecords = filterSalesRecords(
@@ -1016,8 +1030,11 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                       runSpacing: 8,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: _backupBusy ? null : _requestBackup,
-                          icon: _backupBusy
+                          onPressed:
+                              _backupBusy || (backupStatus?.isActive ?? false)
+                                  ? null
+                                  : _requestBackup,
+                          icon: _backupBusy || (backupStatus?.isActive ?? false)
                               ? const SizedBox.square(
                                   dimension: 18,
                                   child: CircularProgressIndicator(
@@ -1026,7 +1043,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 )
                               : const Icon(Icons.cloud_upload_outlined),
                           label: Text(
-                            _backupBusy ? 'Requesting' : 'Back up now',
+                            _backupBusy
+                                ? 'Requesting'
+                                : backupStatus?.status == 'pending'
+                                    ? 'Backup queued'
+                                    : backupStatus?.status == 'processing'
+                                        ? 'Backing up'
+                                        : 'Back up now',
                           ),
                         ),
                         OutlinedButton.icon(
@@ -1095,6 +1118,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                     );
                   },
                 ),
+                if (backupStatus != null) ...[
+                  const SizedBox(height: 12),
+                  _backupStatusBanner(backupStatus),
+                ],
                 const SizedBox(height: 14),
                 if (loading) const LinearProgressIndicator(),
                 if (!loading && filteredRecords.isEmpty)
@@ -1319,6 +1346,100 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     return '${local.hour.toString().padLeft(2, '0')}:'
         '${local.minute.toString().padLeft(2, '0')}:'
         '${local.second.toString().padLeft(2, '0')}';
+  }
+
+  String _displayDateTimeIst(DateTime value) {
+    final local = indiaDateTime(value);
+    return '${_displayDate(local)} '
+        '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}:'
+        '${local.second.toString().padLeft(2, '0')} IST';
+  }
+
+  Widget _backupStatusBanner(SalesBackupStatus backup) {
+    final scheme = Theme.of(context).colorScheme;
+    late final IconData icon;
+    late final String title;
+    late final String detail;
+    late final Color foreground;
+    late final Color background;
+
+    switch (backup.status) {
+      case 'pending':
+        icon = Icons.schedule_outlined;
+        title = 'Manual backup queued';
+        detail = 'Waiting for the GitHub backup process to start.';
+        foreground = scheme.onSecondaryContainer;
+        background = scheme.secondaryContainer;
+      case 'processing':
+        icon = Icons.cloud_sync_outlined;
+        title = 'Manual backup in progress';
+        detail = backup.startedAt == null
+            ? 'The complete Sales Tracker backup is being created.'
+            : 'Started ${_displayDateTimeIst(backup.startedAt!)}.';
+        foreground = scheme.onTertiaryContainer;
+        background = scheme.tertiaryContainer;
+      case 'completed':
+        icon = Icons.check_circle_outline;
+        title = 'Manual backup successful';
+        final completed = backup.completedAt == null
+            ? ''
+            : 'Completed ${_displayDateTimeIst(backup.completedAt!)}.';
+        final assets = backup.assetNames.isEmpty
+            ? ''
+            : ' File: ${backup.assetNames.join(', ')}';
+        detail = '$completed$assets'.trim();
+        foreground = scheme.onPrimaryContainer;
+        background = scheme.primaryContainer;
+      case 'failed':
+        icon = Icons.error_outline;
+        title = 'Manual backup failed';
+        detail = backup.error?.trim().isNotEmpty == true
+            ? backup.error!.trim()
+            : 'Open GitHub Actions to inspect the failed backup run.';
+        foreground = scheme.onErrorContainer;
+        background = scheme.errorContainer;
+      default:
+        icon = Icons.info_outline;
+        title = 'Manual backup status unavailable';
+        detail = 'Current status: ${backup.status}';
+        foreground = scheme.onSurfaceVariant;
+        background = scheme.surfaceContainerHighest;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: foreground),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (detail.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(detail, style: TextStyle(color: foreground)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _groupedAmount(int milli) {

@@ -6,6 +6,26 @@ import 'package:firebase_core/firebase_core.dart';
 
 import '../models/sales_record.dart';
 
+class SalesBackupStatus {
+  const SalesBackupStatus({
+    required this.status,
+    this.requestedAt,
+    this.startedAt,
+    this.completedAt,
+    this.assetNames = const [],
+    this.error,
+  });
+
+  final String status;
+  final DateTime? requestedAt;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final List<String> assetNames;
+  final String? error;
+
+  bool get isActive => status == 'pending' || status == 'processing';
+}
+
 class FirebaseSalesBackend {
   FirebaseSalesBackend({FirebaseFirestore? firestore}) : _firestore = firestore;
 
@@ -65,6 +85,24 @@ class FirebaseSalesBackend {
         finalized: data?['finalized'] as bool? ?? false,
         finalizedAt: _dateTime(data?['finalizedAt']),
         finalizedByUid: data?['finalizedByUid'] as String?,
+      );
+    });
+  }
+
+  Stream<SalesBackupStatus?> watchBackupStatus() {
+    if (!isConfigured) return Stream.value(null);
+    return _backupRequest.snapshots().map((document) {
+      final data = document.data();
+      if (!document.exists || data == null) return null;
+      return SalesBackupStatus(
+        status: data['status'] as String? ?? 'unknown',
+        requestedAt: _dateTime(data['requestedAt']),
+        startedAt: _dateTime(data['startedAt']),
+        completedAt: _dateTime(data['completedAt']),
+        assetNames: (data['assetNames'] as List<dynamic>? ?? const [])
+            .whereType<String>()
+            .toList(growable: false),
+        error: data['error'] as String?,
       );
     });
   }
