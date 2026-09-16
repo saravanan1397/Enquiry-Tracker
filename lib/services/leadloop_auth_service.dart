@@ -149,7 +149,10 @@ class LeadloopAuthService {
           'Verify your email before signing in. Use “Set up / verify recovery email” to resend the link.');
     }
     final status = data['status'] as String? ?? '';
-    if (emailSetupOnly && (status == 'disabled' || status == 'deleting')) {
+    if (emailSetupOnly &&
+        (status == 'disabled' ||
+            status == 'recycled' ||
+            status == 'deleting')) {
       await _auth.signOut();
       throw const LeadloopAuthException('This promoter account is disabled.');
     }
@@ -175,7 +178,9 @@ class LeadloopAuthService {
         (await _firestore.collection('promoters').doc(user.uid).get()).data();
     if (data == null ||
         data['role'] != 'promoter' ||
-        (data['status'] == 'disabled' || data['status'] == 'deleting') ||
+        (data['status'] == 'disabled' ||
+            data['status'] == 'recycled' ||
+            data['status'] == 'deleting') ||
         !user.emailVerified ||
         RecoveryValidation.legacy(user.email)) {
       throw const LeadloopAuthException(

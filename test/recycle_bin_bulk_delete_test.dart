@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:leadloop/leadloop_app.dart';
 import 'package:leadloop/models/customer_lead.dart';
 import 'package:leadloop/services/firebase_lead_backend.dart';
+import 'package:leadloop/services/firebase_sales_backend.dart';
 import 'package:leadloop/services/local_lead_store.dart';
 
 class _FakeBackend extends FirebaseLeadBackend {
@@ -10,6 +11,10 @@ class _FakeBackend extends FirebaseLeadBackend {
 
   @override
   bool get isConfigured => true;
+
+  @override
+  Stream<List<LeadloopPromoterProfile>> watchDeletedPromoters() =>
+      Stream.value(const []);
 
   @override
   Future<void> deleteLeads(Iterable<String> leadIds) async {
@@ -52,12 +57,18 @@ void main() {
     final backend = _FakeBackend();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: LeadloopRecycleBinScreen(store: store, backend: backend),
+        body: LeadloopRecycleBinScreen(
+          store: store,
+          backend: backend,
+          salesBackend: FirebaseSalesBackend(),
+          ownerUid: 'owner',
+        ),
       ),
     ));
 
-    expect(find.text('Delete all permanently'), findsOneWidget);
-    await tester.tap(find.text('Delete all permanently'));
+    expect(
+        find.text('Delete all customer enquiries permanently'), findsOneWidget);
+    await tester.tap(find.text('Delete all customer enquiries permanently'));
     await tester.pumpAndSettle();
     expect(find.textContaining('All 2 records'), findsOneWidget);
 
@@ -66,7 +77,7 @@ void main() {
 
     expect(backend.deletedIds, unorderedEquals(['one', 'two']));
     expect(store.recycleBin(), isEmpty);
-    expect(find.text('Recycle bin is empty'), findsOneWidget);
+    expect(find.text('No customer enquiries in Recycle Bin.'), findsOneWidget);
   });
 
   testWidgets('cancelling bulk deletion keeps every record', (tester) async {
@@ -74,11 +85,16 @@ void main() {
     final backend = _FakeBackend();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: LeadloopRecycleBinScreen(store: store, backend: backend),
+        body: LeadloopRecycleBinScreen(
+          store: store,
+          backend: backend,
+          salesBackend: FirebaseSalesBackend(),
+          ownerUid: 'owner',
+        ),
       ),
     ));
 
-    await tester.tap(find.text('Delete all permanently'));
+    await tester.tap(find.text('Delete all customer enquiries permanently'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();

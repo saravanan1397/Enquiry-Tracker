@@ -51,11 +51,24 @@ class FirebaseSalesBackend {
     return _people.snapshots().map((snapshot) {
       final result = snapshot.docs
           .map(_personFromDocument)
-          .where((person) => person.active)
+          .where((person) => person.active && person.deletedAt == null)
           .toList();
       result.sort(
         (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
+      return result;
+    });
+  }
+
+  Stream<List<SalesPerson>> watchDeletedPeople() {
+    if (!isConfigured) return Stream.value(const []);
+    return _people.snapshots().map((snapshot) {
+      final result = snapshot.docs
+          .map(_personFromDocument)
+          .where((person) => !person.active || person.deletedAt != null)
+          .toList();
+      result
+          .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       return result;
     });
   }
@@ -65,7 +78,10 @@ class FirebaseSalesBackend {
     return _entries.where('monthKey', isEqualTo: monthKey).snapshots().map((
       snapshot,
     ) {
-      final result = snapshot.docs.map(_recordFromDocument).toList();
+      final result = snapshot.docs
+          .map(_recordFromDocument)
+          .where((record) => record.deletedAt == null)
+          .toList();
       result.sort((a, b) {
         final date = a.salesDateKey.compareTo(b.salesDateKey);
         return date != 0
@@ -85,7 +101,42 @@ class FirebaseSalesBackend {
         finalized: data?['finalized'] as bool? ?? false,
         finalizedAt: _dateTime(data?['finalizedAt']),
         finalizedByUid: data?['finalizedByUid'] as String?,
+        deletedAt: _dateTime(data?['deletedAt']),
       );
+    });
+  }
+
+  Stream<List<SalesRecord>> watchDeletedEntries() {
+    if (!isConfigured) return Stream.value(const []);
+    return _entries.snapshots().map((snapshot) {
+      final result = snapshot.docs
+          .map(_recordFromDocument)
+          .where((record) =>
+              record.deletedAt != null && !record.deletedAsPartOfMonth)
+          .toList();
+      result.sort((a, b) => b.deletedAt!.compareTo(a.deletedAt!));
+      return result;
+    });
+  }
+
+  Stream<List<SalesMonthState>> watchDeletedMonths() {
+    if (!isConfigured) return Stream.value(const []);
+    return _months.snapshots().map((snapshot) {
+      final result = snapshot.docs
+          .map((document) {
+            final data = document.data();
+            return SalesMonthState(
+              monthKey: document.id,
+              finalized: data['finalized'] as bool? ?? false,
+              finalizedAt: _dateTime(data['finalizedAt']),
+              finalizedByUid: data['finalizedByUid'] as String?,
+              deletedAt: _dateTime(data['deletedAt']),
+            );
+          })
+          .where((month) => month.deletedAt != null)
+          .toList();
+      result.sort((a, b) => b.monthKey.compareTo(a.monthKey));
+      return result;
     });
   }
 
@@ -123,13 +174,11 @@ class FirebaseSalesBackend {
         if (personId != null) {
           final existingPerson = await transaction.get(_people.doc(personId));
           if (existingPerson.exists) {
-            if (existingPerson.data()?['active'] == false) {
-              transaction.update(existingPerson.reference, {
-                'active': true,
-                'reactivatedAt': FieldValue.serverTimestamp(),
-                'deactivatedAt': null,
-                'deactivatedByUid': null,
-              });
+            if (existingPerson.data()?['active'] == false ||
+                existingPerson.data()?['deletedAt'] != null) {
+              throw StateError(
+                'This salesperson is in the recycle bin. Restore the profile there.',
+              );
             }
             final restored = _personFromSnapshot(existingPerson);
             return SalesPerson(
@@ -226,14 +275,44 @@ class FirebaseSalesBackend {
     await _database.waitForPendingWrites();
   }
 
-  Future<void> deactivatePerson({
+  Future<void> recyclePerson({
     required SalesPerson person,
     required String ownerUid,
   }) async {
     await _people.doc(person.id).update({
       'active': false,
-      'deactivatedAt': FieldValue.serverTimestamp(),
-      'deactivatedByUid': ownerUid,
+      'deletedAt': FieldValue.serverTimestamp(),
+      'deletedByUid': ownerUid,
+    });
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> restorePerson(String personId) async {
+    await _people.doc(personId).update({
+      'active': true,
+      'deletedAt': null,
+      'deletedByUid': null,
+      'restoredAt': FieldValue.serverTimestamp(),
+    });
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> permanentlyDeletePerson(SalesPerson person) async {
+    final reservationId =
+        sha256.convert(utf8.encode(person.normalizedName)).toString();
+    final reservation = _nameReservations.doc(reservationId);
+    await _database.runTransaction((transaction) async {
+      final current = await transaction.get(_people.doc(person.id));
+      if (current.exists &&
+          current.data()?['active'] != false &&
+          current.data()?['deletedAt'] == null) {
+        throw StateError('Move the salesperson to the recycle bin first.');
+      }
+      final reserved = await transaction.get(reservation);
+      if (reserved.data()?['personId'] == person.id) {
+        transaction.delete(reservation);
+      }
+      transaction.delete(_people.doc(person.id));
     });
     await _database.waitForPendingWrites();
   }
@@ -244,7 +323,8 @@ class FirebaseSalesBackend {
   ) async {
     final id = '${personId}_${salesDateKey(salesDate)}';
     final document = await _entries.doc(id).get();
-    return document.exists ? _recordFromSnapshot(document) : null;
+    if (!document.exists || document.data()?['deletedAt'] != null) return null;
+    return _recordFromSnapshot(document);
   }
 
   Future<void> saveDailyRecord({
@@ -268,7 +348,8 @@ class FirebaseSalesBackend {
         );
       }
       final existing = await transaction.get(entry);
-      if (existing.exists && !updateExisting) {
+      final existingIsDeleted = existing.data()?['deletedAt'] != null;
+      if (existing.exists && !existingIsDeleted && !updateExisting) {
         throw StateError('A daily record already exists for this salesperson.');
       }
       if (existing.exists) {
@@ -292,6 +373,9 @@ class FirebaseSalesBackend {
           'updatedAt': FieldValue.serverTimestamp(),
           'lastEditedByUid': ownerUid,
           'lastEditedByName': ownerName,
+          'deletedAt': null,
+          'deletedByUid': null,
+          'deletedAsPartOfMonth': false,
         });
       } else {
         transaction.set(entry, {
@@ -311,13 +395,36 @@ class FirebaseSalesBackend {
     await _database.waitForPendingWrites();
   }
 
-  Future<void> deleteRecord(String entryId, String monthKey) async {
+  Future<void> recycleRecord({
+    required String entryId,
+    required String monthKey,
+    required String ownerUid,
+  }) async {
     final month = await _months.doc(monthKey).get();
     if (month.data()?['finalized'] == true) {
       throw StateError(
         'This month is locked. Reopen it before deleting records.',
       );
     }
+    await _entries.doc(entryId).update({
+      'deletedAt': FieldValue.serverTimestamp(),
+      'deletedByUid': ownerUid,
+      'deletedAsPartOfMonth': false,
+    });
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> restoreRecord(String entryId) async {
+    await _entries.doc(entryId).update({
+      'deletedAt': null,
+      'deletedByUid': null,
+      'deletedAsPartOfMonth': false,
+      'restoredAt': FieldValue.serverTimestamp(),
+    });
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> permanentlyDeleteRecord(String entryId) async {
     final audits = await _audit.where('entryId', isEqualTo: entryId).get();
     final batch = _database.batch()..delete(_entries.doc(entryId));
     for (final document in audits.docs) {
@@ -364,7 +471,64 @@ class FirebaseSalesBackend {
     await _database.waitForPendingWrites();
   }
 
-  Future<void> deleteMonth(String monthKey) async {
+  Future<void> recycleMonth(String monthKey, String ownerUid) async {
+    final entries = await _entries.where('monthKey', isEqualTo: monthKey).get();
+    for (var offset = 0; offset < entries.docs.length; offset += 400) {
+      final end = offset + 400 < entries.docs.length
+          ? offset + 400
+          : entries.docs.length;
+      final batch = _database.batch();
+      var writes = 0;
+      for (final document in entries.docs.sublist(offset, end)) {
+        if (document.data()['deletedAt'] == null) {
+          batch.update(document.reference, {
+            'deletedAt': FieldValue.serverTimestamp(),
+            'deletedByUid': ownerUid,
+            'deletedAsPartOfMonth': true,
+          });
+          writes++;
+        }
+      }
+      if (writes > 0) await batch.commit();
+    }
+    await _months.doc(monthKey).set({
+      'monthKey': monthKey,
+      'deletedAt': FieldValue.serverTimestamp(),
+      'deletedByUid': ownerUid,
+    }, SetOptions(merge: true));
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> restoreMonth(String monthKey) async {
+    final entries = await _entries.where('monthKey', isEqualTo: monthKey).get();
+    for (var offset = 0; offset < entries.docs.length; offset += 400) {
+      final end = offset + 400 < entries.docs.length
+          ? offset + 400
+          : entries.docs.length;
+      final batch = _database.batch();
+      var writes = 0;
+      for (final document in entries.docs.sublist(offset, end)) {
+        if (document.data()['deletedAsPartOfMonth'] == true) {
+          batch.update(document.reference, {
+            'deletedAt': null,
+            'deletedByUid': null,
+            'deletedAsPartOfMonth': false,
+            'restoredAt': FieldValue.serverTimestamp(),
+          });
+          writes++;
+        }
+      }
+      if (writes > 0) await batch.commit();
+    }
+    await _months.doc(monthKey).update({
+      'deletedAt': null,
+      'deletedByUid': null,
+      'restoredAt': FieldValue.serverTimestamp(),
+    });
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> permanentlyDeleteMonth(String monthKey) async {
     final entries = await _entries.where('monthKey', isEqualTo: monthKey).get();
     final audits = await _audit.where('monthKey', isEqualTo: monthKey).get();
     final references = <DocumentReference<Map<String, dynamic>>>[
@@ -393,6 +557,7 @@ class FirebaseSalesBackend {
         normalizedName: document.data()['normalizedName'] as String? ?? '',
         active: document.data()['active'] as bool? ?? true,
         createdAt: _dateTime(document.data()['createdAt']),
+        deletedAt: _dateTime(document.data()['deletedAt']),
       );
 
   SalesPerson _personFromSnapshot(
@@ -404,6 +569,7 @@ class FirebaseSalesBackend {
         normalizedName: document.data()?['normalizedName'] as String? ?? '',
         active: document.data()?['active'] as bool? ?? true,
         createdAt: _dateTime(document.data()?['createdAt']),
+        deletedAt: _dateTime(document.data()?['deletedAt']),
       );
 
   SalesRecord _recordFromDocument(
@@ -430,6 +596,8 @@ class FirebaseSalesBackend {
       previousAmountMilli: (data['previousAmountMilli'] as num?)?.toInt(),
       lastEditedByUid: data['lastEditedByUid'] as String?,
       lastEditedByName: data['lastEditedByName'] as String?,
+      deletedAt: _dateTime(data['deletedAt']),
+      deletedAsPartOfMonth: data['deletedAsPartOfMonth'] as bool? ?? false,
     );
   }
 

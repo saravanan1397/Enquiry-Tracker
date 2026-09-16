@@ -5,6 +5,7 @@ class SalesPerson {
     required this.normalizedName,
     this.active = true,
     this.createdAt,
+    this.deletedAt,
   });
 
   final String id;
@@ -12,6 +13,7 @@ class SalesPerson {
   final String normalizedName;
   final bool active;
   final DateTime? createdAt;
+  final DateTime? deletedAt;
 }
 
 class SalesRecord {
@@ -30,6 +32,8 @@ class SalesRecord {
     this.previousAmountMilli,
     this.lastEditedByUid,
     this.lastEditedByName,
+    this.deletedAt,
+    this.deletedAsPartOfMonth = false,
   });
 
   final String id;
@@ -46,6 +50,8 @@ class SalesRecord {
   final int? previousAmountMilli;
   final String? lastEditedByUid;
   final String? lastEditedByName;
+  final DateTime? deletedAt;
+  final bool deletedAsPartOfMonth;
 
   DateTime get salesDate => DateTime.parse(salesDateKey);
   double get amount => amountMilli / 1000;
@@ -57,12 +63,14 @@ class SalesMonthState {
     this.finalized = false,
     this.finalizedAt,
     this.finalizedByUid,
+    this.deletedAt,
   });
 
   final String monthKey;
   final bool finalized;
   final DateTime? finalizedAt;
   final String? finalizedByUid;
+  final DateTime? deletedAt;
 }
 
 class SalesPersonRecordGroup {

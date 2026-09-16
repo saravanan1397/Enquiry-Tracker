@@ -16,6 +16,7 @@ class LeadloopPromoterProfile {
     required this.shopName,
     required this.active,
     required this.status,
+    this.deletedAt,
   });
 
   final String uid;
@@ -25,6 +26,7 @@ class LeadloopPromoterProfile {
   final String shopName;
   final bool active;
   final String status;
+  final DateTime? deletedAt;
 }
 
 /// Firebase transport for the offline-first local lead store.
@@ -79,21 +81,85 @@ class FirebaseLeadBackend {
     final snapshot = await (_firestore ?? FirebaseFirestore.instance)
         .collection('promoters')
         .get();
-    final profiles = snapshot.docs.map((document) {
-      final data = document.data();
-      return LeadloopPromoterProfile(
-        uid: document.id,
-        name: data['name'] as String? ?? 'Unnamed promoter',
-        mobile: data['mobile'] as String? ?? '',
-        shopId: data['shopId'] as String? ?? '',
-        shopName: data['shopName'] as String? ?? '',
-        active: data['active'] as bool? ?? false,
-        status: data['status'] as String? ?? 'pending',
-      );
-    }).toList();
+    final profiles = snapshot.docs
+        .map((document) {
+          final data = document.data();
+          return LeadloopPromoterProfile(
+            uid: document.id,
+            name: data['name'] as String? ?? 'Unnamed promoter',
+            mobile: data['mobile'] as String? ?? '',
+            shopId: data['shopId'] as String? ?? '',
+            shopName: data['shopName'] as String? ?? '',
+            active: data['active'] as bool? ?? false,
+            status: data['status'] as String? ?? 'pending',
+            deletedAt: _dateTime(data['deletedAt']),
+          );
+        })
+        .where((profile) =>
+            profile.deletedAt == null &&
+            profile.status != 'recycled' &&
+            profile.status != 'deleting')
+        .toList();
     profiles
         .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return profiles;
+  }
+
+  Stream<List<LeadloopPromoterProfile>> watchDeletedPromoters() {
+    if (!isConfigured) return Stream.value(const []);
+    return _database.collection('promoters').snapshots().map((snapshot) {
+      final result = snapshot.docs
+          .map((document) {
+            final data = document.data();
+            return LeadloopPromoterProfile(
+              uid: document.id,
+              name: data['name'] as String? ?? 'Unnamed promoter',
+              mobile: data['mobile'] as String? ?? '',
+              shopId: data['shopId'] as String? ?? '',
+              shopName: data['shopName'] as String? ?? '',
+              active: data['active'] as bool? ?? false,
+              status: data['status'] as String? ?? 'pending',
+              deletedAt: _dateTime(data['deletedAt']),
+            );
+          })
+          .where((profile) =>
+              profile.deletedAt != null ||
+              profile.status == 'recycled' ||
+              profile.status == 'deleting')
+          .toList();
+      result
+          .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return result;
+    });
+  }
+
+  Future<void> recyclePromoter(LeadloopPromoterProfile promoter) async {
+    await _database.collection('promoters').doc(promoter.uid).update({
+      'previousActive': promoter.active,
+      'previousStatus': promoter.status,
+      'active': false,
+      'status': 'recycled',
+      'deletedAt': FieldValue.serverTimestamp(),
+    });
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> restorePromoter(String uid) async {
+    final reference = _database.collection('promoters').doc(uid);
+    await _database.runTransaction((transaction) async {
+      final document = await transaction.get(reference);
+      if (!document.exists) return;
+      final data = document.data()!;
+      transaction.update(reference, {
+        'active': data['previousActive'] as bool? ?? true,
+        'status': data['previousStatus'] as String? ?? 'approved',
+        'deletedAt': null,
+        'previousActive': FieldValue.delete(),
+        'previousStatus': FieldValue.delete(),
+        'restoredAt': FieldValue.serverTimestamp(),
+      });
+    });
+    await _database.waitForPendingWrites();
   }
 
   Future<void> updatePromoter({

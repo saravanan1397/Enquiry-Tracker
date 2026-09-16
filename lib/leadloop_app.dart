@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
+import 'models/sales_record.dart';
 import 'owner_home.dart';
 import 'email_recovery_ui.dart';
 import 'promoter_deletion_dialog.dart';
@@ -946,6 +947,8 @@ class _LeadloopShellState extends State<LeadloopShell> {
             LeadloopRecycleBinScreen(
                 store: widget.store,
                 backend: _firebaseBackend,
+                salesBackend: _salesBackend,
+                ownerUid: widget.session.uid,
                 onChanged: _syncService.syncNow)
           ]
         : <Widget>[
@@ -2312,36 +2315,39 @@ class _LeadloopPromoterAdminScreenState
   String? _error;
   bool _changing = false;
 
-  Future<void> _deletePermanently(LeadloopPromoterProfile promoter) async {
+  Future<void> _moveToRecycleBin(LeadloopPromoterProfile promoter) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) =>
-          PromoterDeletionDialog(name: promoter.name, mobile: promoter.mobile),
+      builder: (_) => AlertDialog(
+        title: const Text('Move promoter to recycle bin?'),
+        content: Text(
+            '${promoter.name} will be disabled immediately and can be restored from Recycle Bin. Customer enquiries will be kept.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Move to recycle bin')),
+        ],
+      ),
     );
     if (confirmed != true || !mounted) return;
     setState(() => _changing = true);
     try {
-      await FirebaseFunctions.instanceFor(region: 'asia-south1')
-          .httpsCallable(
-        'deletePromoterPermanently',
-        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
-      )
-          .call({'uid': promoter.uid, 'confirmation': 'DELETE'});
+      await widget.backend.recyclePromoter(promoter);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              'Promoter permanently deleted. Customer enquiries were kept.')));
+          content:
+              Text('Promoter moved to Recycle Bin and access was disabled.')));
       await _load();
     } catch (error) {
       if (!mounted) return;
-      final message = error is FirebaseFunctionsException &&
-              ['not-found', 'unavailable'].contains(error.code)
-          ? 'Deletion service unavailable. Deploy the Firebase function first; Blaze billing is required.'
-          : error is FirebaseFunctionsException
-              ? error.message ?? 'Deletion failed. Retry to finish cleanup.'
-              : 'Could not confirm deletion. Check your connection and retry.';
+      const message =
+          'Could not move the promoter to Recycle Bin. Check your connection and retry.';
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+          .showSnackBar(const SnackBar(content: Text(message)));
       await _load();
     } finally {
       if (mounted) setState(() => _changing = false);
@@ -2476,7 +2482,7 @@ class _LeadloopPromoterAdminScreenState
                     tooltip: 'Manage promoter',
                     onSelected: (action) {
                       if (action == 'delete') {
-                        _deletePermanently(promoter);
+                        _moveToRecycleBin(promoter);
                       } else if (action == 'disable') {
                         _disable(promoter);
                       } else {
@@ -2492,11 +2498,8 @@ class _LeadloopPromoterAdminScreenState
                                 : promoter.status == 'disabled'
                                     ? 'Reactivate'
                                     : 'Approve')),
-                      PopupMenuItem(
-                          value: 'delete',
-                          child: Text(promoter.status == 'deleting'
-                              ? 'Retry permanent deletion'
-                              : 'Delete permanently')),
+                      const PopupMenuItem(
+                          value: 'delete', child: Text('Move to recycle bin')),
                     ],
                   ),
                 ),
@@ -2508,10 +2511,17 @@ class _LeadloopPromoterAdminScreenState
 
 class LeadloopRecycleBinScreen extends StatefulWidget {
   const LeadloopRecycleBinScreen(
-      {super.key, required this.store, required this.backend, this.onChanged});
+      {super.key,
+      required this.store,
+      required this.backend,
+      required this.salesBackend,
+      required this.ownerUid,
+      this.onChanged});
 
   final LocalLeadStore store;
   final FirebaseLeadBackend backend;
+  final FirebaseSalesBackend salesBackend;
+  final String ownerUid;
   final Future<void> Function()? onChanged;
 
   @override
@@ -2521,6 +2531,26 @@ class LeadloopRecycleBinScreen extends StatefulWidget {
 
 class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
   bool _deletingAll = false;
+
+  Future<bool> _confirmPermanent(String title, String message) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: const Text('Delete forever'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
 
   Future<void> _restore(CustomerLead lead) async {
     await widget.store.restore(lead.id);
@@ -2596,6 +2626,214 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
     }
   }
 
+  Future<void> _restorePromoter(LeadloopPromoterProfile promoter) async {
+    await widget.backend.restorePromoter(promoter.uid);
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('${promoter.name} restored.')));
+    }
+  }
+
+  Future<void> _deletePromoterForever(LeadloopPromoterProfile promoter) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          PromoterDeletionDialog(name: promoter.name, mobile: promoter.mobile),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await FirebaseFunctions.instanceFor(region: 'asia-south1')
+          .httpsCallable(
+        'deletePromoterPermanently',
+        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+      )
+          .call({'uid': promoter.uid, 'confirmation': 'DELETE'});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${promoter.name} permanently deleted.')));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is FirebaseFunctionsException
+          ? error.message ?? 'Permanent promoter deletion failed.'
+          : 'Could not permanently delete the promoter. Retry later.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  Future<void> _restoreSalesperson(SalesPerson person) async {
+    await widget.salesBackend.restorePerson(person.id);
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('${person.name} restored.')));
+    }
+  }
+
+  Future<void> _deleteSalespersonForever(SalesPerson person) async {
+    final confirmed = await _confirmPermanent(
+      'Delete salesperson permanently?',
+      '${person.name} will be removed from Firebase. Historical sales entries remain unchanged.',
+    );
+    if (!confirmed) return;
+    await widget.salesBackend.permanentlyDeletePerson(person);
+  }
+
+  Future<void> _restoreSalesEntry(SalesRecord record) async {
+    await widget.salesBackend.restoreRecord(record.id);
+  }
+
+  Future<void> _deleteSalesEntryForever(SalesRecord record) async {
+    final confirmed = await _confirmPermanent(
+      'Delete sales entry permanently?',
+      '${record.personName} · ${record.salesDateKey} and its edit history will be removed from Firebase.',
+    );
+    if (!confirmed) return;
+    await widget.salesBackend.permanentlyDeleteRecord(record.id);
+  }
+
+  Future<void> _restoreSalesMonth(SalesMonthState month) async {
+    await widget.salesBackend.restoreMonth(month.monthKey);
+  }
+
+  Future<void> _deleteSalesMonthForever(SalesMonthState month) async {
+    final confirmed = await _confirmPermanent(
+      'Delete ${month.monthKey} permanently?',
+      'Every sales entry and audit record for this month will be removed from Firebase. GitHub backups remain.',
+    );
+    if (!confirmed) return;
+    await widget.salesBackend.permanentlyDeleteMonth(month.monthKey);
+  }
+
+  Widget _sectionTitle(String title, String emptyMessage, int count) => Padding(
+        padding: const EdgeInsets.only(top: 22, bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            if (count == 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(emptyMessage,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ),
+          ],
+        ),
+      );
+
+  Widget _promoterRecycleSection() =>
+      StreamBuilder<List<LeadloopPromoterProfile>>(
+        stream: widget.backend.watchDeletedPromoters(),
+        builder: (context, snapshot) {
+          final promoters = snapshot.data ?? const [];
+          return Column(
+            children: [
+              _sectionTitle('Promoter accounts',
+                  'No promoter accounts in Recycle Bin.', promoters.length),
+              ...promoters.map((promoter) => Card(
+                    child: ListTile(
+                      title: Text(promoter.name),
+                      subtitle: Text(
+                          '${promoter.mobile}\n${promoter.shopName.isEmpty ? 'No shop assigned' : promoter.shopName}'),
+                      isThreeLine: true,
+                      trailing: Wrap(children: [
+                        TextButton(
+                            onPressed: () => _restorePromoter(promoter),
+                            child: const Text('Restore')),
+                        IconButton(
+                            tooltip: 'Delete permanently',
+                            onPressed: () => _deletePromoterForever(promoter),
+                            icon: const Icon(Icons.delete_forever_outlined)),
+                      ]),
+                    ),
+                  )),
+            ],
+          );
+        },
+      );
+
+  Widget _salespersonRecycleSection() => StreamBuilder<List<SalesPerson>>(
+        stream: widget.salesBackend.watchDeletedPeople(),
+        builder: (context, snapshot) {
+          final people = snapshot.data ?? const [];
+          return Column(children: [
+            _sectionTitle('Salespersons',
+                'No salesperson profiles in Recycle Bin.', people.length),
+            ...people.map((person) => Card(
+                  child: ListTile(
+                    title: Text(person.name),
+                    subtitle: Text('Person ID: ${person.id}'),
+                    trailing: Wrap(children: [
+                      TextButton(
+                          onPressed: () => _restoreSalesperson(person),
+                          child: const Text('Restore')),
+                      IconButton(
+                          tooltip: 'Delete permanently',
+                          onPressed: () => _deleteSalespersonForever(person),
+                          icon: const Icon(Icons.delete_forever_outlined)),
+                    ]),
+                  ),
+                )),
+          ]);
+        },
+      );
+
+  Widget _salesEntryRecycleSection() => StreamBuilder<List<SalesRecord>>(
+        stream: widget.salesBackend.watchDeletedEntries(),
+        builder: (context, snapshot) {
+          final records = snapshot.data ?? const [];
+          return Column(children: [
+            _sectionTitle('Individual sales entries',
+                'No individual sales entries in Recycle Bin.', records.length),
+            ...records.map((record) => Card(
+                  child: ListTile(
+                    title: Text(record.personName),
+                    subtitle: Text(
+                        '${record.salesDateKey} · ₹${formatAmountMilli(record.amountMilli)}'),
+                    trailing: Wrap(children: [
+                      TextButton(
+                          onPressed: () => _restoreSalesEntry(record),
+                          child: const Text('Restore')),
+                      IconButton(
+                          tooltip: 'Delete permanently',
+                          onPressed: () => _deleteSalesEntryForever(record),
+                          icon: const Icon(Icons.delete_forever_outlined)),
+                    ]),
+                  ),
+                )),
+          ]);
+        },
+      );
+
+  Widget _salesMonthRecycleSection() => StreamBuilder<List<SalesMonthState>>(
+        stream: widget.salesBackend.watchDeletedMonths(),
+        builder: (context, snapshot) {
+          final months = snapshot.data ?? const [];
+          return Column(children: [
+            _sectionTitle('Sales months', 'No sales months in Recycle Bin.',
+                months.length),
+            ...months.map((month) => Card(
+                  child: ListTile(
+                    title: Text(month.monthKey),
+                    subtitle: const Text('Complete Sales Tracker month'),
+                    trailing: Wrap(children: [
+                      TextButton(
+                          onPressed: () => _restoreSalesMonth(month),
+                          child: const Text('Restore')),
+                      IconButton(
+                          tooltip: 'Delete permanently',
+                          onPressed: () => _deleteSalesMonthForever(month),
+                          icon: const Icon(Icons.delete_forever_outlined)),
+                    ]),
+                  ),
+                )),
+          ]);
+        },
+      );
+
   @override
   Widget build(BuildContext context) {
     final deleted = widget.store.recycleBin();
@@ -2614,9 +2852,10 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
                 fontWeight: FontWeight.w600,
                 letterSpacing: -0.6)),
         const SizedBox(height: 8),
-        Text('${deleted.length} records · retained for 30 days',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const Text('Restore records or permanently remove them from Firebase.',
+            style: TextStyle(color: Colors.grey)),
+        _sectionTitle('Customer enquiries',
+            'No customer enquiries in Recycle Bin.', deleted.length),
         if (deleted.isNotEmpty) ...[
           const SizedBox(height: 12),
           Align(
@@ -2628,30 +2867,14 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
                       dimension: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.delete_sweep_outlined),
-              label:
-                  Text(_deletingAll ? 'Deleting…' : 'Delete all permanently'),
+              label: Text(_deletingAll
+                  ? 'Deleting…'
+                  : 'Delete all customer enquiries permanently'),
             ),
           ),
         ],
         const SizedBox(height: 22),
-        if (deleted.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(36),
-              child: Column(
-                children: [
-                  Icon(Icons.delete_outline, size: 34),
-                  SizedBox(height: 10),
-                  Text('Recycle bin is empty',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  SizedBox(height: 4),
-                  Text('Deleted customer records will appear here.',
-                      textAlign: TextAlign.center),
-                ],
-              ),
-            ),
-          )
-        else
+        if (deleted.isNotEmpty)
           ...deleted.map(
             (lead) => Card(
               child: ListTile(
@@ -2674,6 +2897,10 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
               ),
             ),
           ),
+        _promoterRecycleSection(),
+        _salespersonRecycleSection(),
+        _salesEntryRecycleSection(),
+        _salesMonthRecycleSection(),
       ],
     );
   }

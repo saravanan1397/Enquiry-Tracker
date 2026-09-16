@@ -274,13 +274,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     }
   }
 
-  Future<void> _deactivateSalesperson(SalesPerson person) async {
+  Future<void> _recycleSalesperson(SalesPerson person) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete salesperson?'),
+        title: const Text('Move salesperson to recycle bin?'),
         content: Text(
-          'Remove ${person.name} from the active salesperson list? Existing sales records, totals, exports and backups will remain available.',
+          'Remove ${person.name} from the active salesperson list? The profile can be restored from Recycle Bin. Existing sales records, totals, exports and backups will remain available.',
         ),
         actions: [
           TextButton(
@@ -290,14 +290,14 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           FilledButton.icon(
             onPressed: () => Navigator.pop(context, true),
             icon: const Icon(Icons.person_remove_outlined),
-            label: const Text('Delete salesperson'),
+            label: const Text('Move to recycle bin'),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
     try {
-      await widget.backend.deactivatePerson(
+      await widget.backend.recyclePerson(
         person: person,
         ownerUid: widget.ownerUid,
       );
@@ -309,7 +309,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         });
       }
       _message(
-        '${person.name} removed. Historical sales records were preserved.',
+        '${person.name} moved to Recycle Bin. Historical sales records were preserved.',
       );
     } catch (error) {
       if (mounted) _message(_friendlyError(error));
@@ -359,8 +359,8 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                           icon: const Icon(Icons.edit_outlined),
                         ),
                         IconButton(
-                          tooltip: 'Delete salesperson',
-                          onPressed: () => _deactivateSalesperson(person),
+                          tooltip: 'Move salesperson to recycle bin',
+                          onPressed: () => _recycleSalesperson(person),
                           icon: const Icon(Icons.delete_outline),
                         ),
                       ],
@@ -463,9 +463,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete sales entry?'),
+        title: const Text('Move sales entry to recycle bin?'),
         content: Text(
-          'Permanently delete ${record.personName} — ${_displayDate(record.salesDate)} from the application and Firestore? GitHub backups will not be deleted.',
+          'Move ${record.personName} — ${_displayDate(record.salesDate)} to Recycle Bin? It can be restored until permanently deleted there.',
         ),
         actions: [
           TextButton(
@@ -474,15 +474,19 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete permanently'),
+            child: const Text('Move to recycle bin'),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
     try {
-      await widget.backend.deleteRecord(record.id, record.monthKey);
-      if (mounted) _message('Sales entry permanently deleted from Firestore.');
+      await widget.backend.recycleRecord(
+        entryId: record.id,
+        monthKey: record.monthKey,
+        ownerUid: widget.ownerUid,
+      );
+      if (mounted) _message('Sales entry moved to Recycle Bin.');
     } catch (error) {
       if (mounted) _message(_friendlyError(error));
     }
@@ -504,9 +508,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     final deleteNow = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Keep or delete this month?'),
+        title: const Text('Keep or recycle this month?'),
         content: Text(
-          'Incentives for $_monthKey are marked completed. Previous-month data will remain available unless you choose permanent deletion.',
+          'Incentives for $_monthKey are marked completed. You can keep the data here or move the month to Recycle Bin.',
         ),
         actions: [
           TextButton(
@@ -515,7 +519,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Continue to deletion'),
+            child: const Text('Continue to recycle'),
           ),
         ],
       ),
@@ -528,13 +532,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete $_monthKey permanently?'),
+        title: Text('Move $_monthKey to Recycle Bin?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'This removes the selected month from the application and Firestore. GitHub backups remain until you delete them manually.',
+              'The selected month will leave Sales Tracker but remain in Firebase until you permanently delete it from Recycle Bin. GitHub backups are unchanged.',
             ),
             const SizedBox(height: 16),
             TextField(
@@ -554,7 +558,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           FilledButton(
             onPressed: () =>
                 Navigator.pop(context, controller.text.trim() == _monthKey),
-            child: const Text('Delete month'),
+            child: const Text('Move month'),
           ),
         ],
       ),
@@ -563,8 +567,8 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     if (confirmed != true) return;
     setState(() => _busy = true);
     try {
-      await widget.backend.deleteMonth(_monthKey);
-      if (mounted) _message('$_monthKey permanently deleted from Firestore.');
+      await widget.backend.recycleMonth(_monthKey, widget.ownerUid);
+      if (mounted) _message('$_monthKey moved to Recycle Bin.');
     } catch (error) {
       if (mounted) _message(_friendlyError(error));
     } finally {
@@ -760,7 +764,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                       FilledButton.icon(
                         onPressed: _busy ? null : _deleteMonth,
                         icon: const Icon(Icons.delete_forever_outlined),
-                        label: const Text('Delete month'),
+                        label: const Text('Move month to Recycle Bin'),
                       ),
                     ],
                   ),
@@ -1246,7 +1250,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                               ),
                                             ),
                                             IconButton(
-                                              tooltip: 'Delete permanently',
+                                              tooltip: 'Move to recycle bin',
                                               onPressed: month.finalized
                                                   ? null
                                                   : () => _deleteRecord(record),
