@@ -125,6 +125,22 @@ const encrypt = (payload) => {
 
 let requestedBackup = false;
 
+const requestStatusUpdate = async (fields, phase) => {
+  try {
+    await requestReference.update(fields);
+  } catch (error) {
+    if (Number(error?.code) === 7 || error?.code === 'permission-denied') {
+      throw new Error(
+        `The backup service account cannot ${phase} in Firestore. ` +
+          'Grant it the Cloud Datastore User role (roles/datastore.user) ' +
+          'for the Firebase project, then rerun the backup.',
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+};
+
 try {
   const current = istParts();
   const currentMonth = `${current.year}-${current.month}`;
@@ -143,11 +159,11 @@ try {
       throw new Error('The pending backup request has an invalid month.');
     }
     monthKeys = new Set([requestedMonth]);
-    await requestReference.update({
+    await requestStatusUpdate({
       status: 'processing',
       startedAt: Timestamp.now(),
       error: null,
-    });
+    }, 'mark the owner backup request as processing');
   } else {
     const cutoff = Timestamp.fromDate(
       new Date(Date.now() - 48 * 60 * 60 * 1000),
@@ -202,20 +218,27 @@ try {
   }
 
   if (requestedBackup) {
-    await requestReference.update({
+    await requestStatusUpdate({
       status: 'completed',
       completedAt: Timestamp.now(),
       assetNames,
       error: null,
-    });
+    }, 'mark the owner backup request as completed');
   }
 } catch (error) {
   if (requestedBackup) {
-    await requestReference.update({
-      status: 'failed',
-      completedAt: Timestamp.now(),
-      error: String(error?.message ?? error).slice(0, 500),
-    });
+    try {
+      await requestStatusUpdate({
+        status: 'failed',
+        completedAt: Timestamp.now(),
+        error: String(error?.message ?? error).slice(0, 500),
+      }, 'record the failed owner backup request');
+    } catch (statusError) {
+      console.error(
+        'Could not record the backup failure in Firestore:',
+        statusError,
+      );
+    }
   }
   throw error;
 }
