@@ -36,6 +36,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   late DateTime _selectedMonth;
   bool _busy = false;
   bool _backupBusy = false;
+  bool _showRecycleBin = false;
   int _visibleRecordCount = 20;
 
   @override
@@ -614,36 +615,44 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<SalesPerson>>(
-        stream: widget.backend.watchPeople(),
-        builder: (context, peopleSnapshot) {
-          final people = peopleSnapshot.data ?? const <SalesPerson>[];
-          return StreamBuilder<SalesMonthState>(
-            stream: widget.backend.watchMonthState(_monthKey),
-            builder: (context, monthSnapshot) {
-              final month =
-                  monthSnapshot.data ?? SalesMonthState(monthKey: _monthKey);
-              return StreamBuilder<List<SalesRecord>>(
-                stream: widget.backend.watchMonth(_monthKey),
-                builder: (context, recordsSnapshot) {
-                  final records = recordsSnapshot.data ?? const <SalesRecord>[];
-                  return StreamBuilder<SalesBackupStatus?>(
-                    stream: widget.backend.watchBackupStatus(),
-                    builder: (context, backupSnapshot) => _body(
-                      people,
-                      month,
-                      records,
-                      backupStatus: backupSnapshot.data,
-                      loading: recordsSnapshot.connectionState ==
-                          ConnectionState.waiting,
-                    ),
-                  );
-                },
-              );
-            },
-          );
-        },
+  Widget build(BuildContext context) {
+    if (_showRecycleBin) {
+      return _SalesTrackerRecycleBin(
+        backend: widget.backend,
+        onBack: () => setState(() => _showRecycleBin = false),
       );
+    }
+    return StreamBuilder<List<SalesPerson>>(
+      stream: widget.backend.watchPeople(),
+      builder: (context, peopleSnapshot) {
+        final people = peopleSnapshot.data ?? const <SalesPerson>[];
+        return StreamBuilder<SalesMonthState>(
+          stream: widget.backend.watchMonthState(_monthKey),
+          builder: (context, monthSnapshot) {
+            final month =
+                monthSnapshot.data ?? SalesMonthState(monthKey: _monthKey);
+            return StreamBuilder<List<SalesRecord>>(
+              stream: widget.backend.watchMonth(_monthKey),
+              builder: (context, recordsSnapshot) {
+                final records = recordsSnapshot.data ?? const <SalesRecord>[];
+                return StreamBuilder<SalesBackupStatus?>(
+                  stream: widget.backend.watchBackupStatus(),
+                  builder: (context, backupSnapshot) => _body(
+                    people,
+                    month,
+                    records,
+                    backupStatus: backupSnapshot.data,
+                    loading: recordsSnapshot.connectionState ==
+                        ConnectionState.waiting,
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
 
   Widget _body(
     List<SalesPerson> people,
@@ -1033,6 +1042,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              setState(() => _showRecycleBin = true),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Sales recycle bin'),
+                        ),
                         OutlinedButton.icon(
                           onPressed:
                               _backupBusy || (backupStatus?.isActive ?? false)
@@ -1463,6 +1478,204 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
 
   void _message(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+}
+
+class _SalesTrackerRecycleBin extends StatelessWidget {
+  const _SalesTrackerRecycleBin({
+    required this.backend,
+    required this.onBack,
+  });
+
+  final FirebaseSalesBackend backend;
+  final VoidCallback onBack;
+
+  Future<bool> _confirm(
+          BuildContext context, String title, String message) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: const Text('Delete forever'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  void _message(BuildContext context, String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  Widget _heading(
+    BuildContext context,
+    String title,
+    String emptyMessage,
+    int count,
+  ) =>
+      Padding(
+        padding: const EdgeInsets.only(top: 22, bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            if (count == 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(emptyMessage,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ),
+          ],
+        ),
+      );
+
+  Widget _salespeople(BuildContext context) => StreamBuilder<List<SalesPerson>>(
+        stream: backend.watchDeletedPeople(),
+        builder: (context, snapshot) {
+          final people = snapshot.data ?? const [];
+          return Column(children: [
+            _heading(context, 'Salespersons',
+                'No salesperson profiles in this recycle bin.', people.length),
+            ...people.map((person) => Card(
+                  child: ListTile(
+                    title: Text(person.name),
+                    subtitle: Text('Person ID: ${person.id}'),
+                    trailing: Wrap(children: [
+                      TextButton(
+                          onPressed: () async {
+                            await backend.restorePerson(person.id);
+                            if (context.mounted) {
+                              _message(context, '${person.name} restored.');
+                            }
+                          },
+                          child: const Text('Restore')),
+                      IconButton(
+                          tooltip: 'Delete permanently',
+                          onPressed: () async {
+                            final confirmed = await _confirm(
+                              context,
+                              'Delete salesperson permanently?',
+                              '${person.name} will be removed from Firebase. Historical sales entries remain unchanged.',
+                            );
+                            if (confirmed) {
+                              await backend.permanentlyDeletePerson(person);
+                            }
+                          },
+                          icon: const Icon(Icons.delete_forever_outlined)),
+                    ]),
+                  ),
+                )),
+          ]);
+        },
+      );
+
+  Widget _entries(BuildContext context) => StreamBuilder<List<SalesRecord>>(
+        stream: backend.watchDeletedEntries(),
+        builder: (context, snapshot) {
+          final records = snapshot.data ?? const [];
+          return Column(children: [
+            _heading(
+                context,
+                'Individual sales entries',
+                'No individual sales entries in this recycle bin.',
+                records.length),
+            ...records.map((record) => Card(
+                  child: ListTile(
+                    title: Text(record.personName),
+                    subtitle: Text(
+                        '${record.salesDateKey} · ₹${formatAmountMilli(record.amountMilli)}'),
+                    trailing: Wrap(children: [
+                      TextButton(
+                          onPressed: () => backend.restoreRecord(record.id),
+                          child: const Text('Restore')),
+                      IconButton(
+                          tooltip: 'Delete permanently',
+                          onPressed: () async {
+                            final confirmed = await _confirm(
+                              context,
+                              'Delete sales entry permanently?',
+                              '${record.personName} · ${record.salesDateKey} and its edit history will be removed from Firebase.',
+                            );
+                            if (confirmed) {
+                              await backend.permanentlyDeleteRecord(record.id);
+                            }
+                          },
+                          icon: const Icon(Icons.delete_forever_outlined)),
+                    ]),
+                  ),
+                )),
+          ]);
+        },
+      );
+
+  Widget _months(BuildContext context) => StreamBuilder<List<SalesMonthState>>(
+        stream: backend.watchDeletedMonths(),
+        builder: (context, snapshot) {
+          final months = snapshot.data ?? const [];
+          return Column(children: [
+            _heading(context, 'Sales months',
+                'No sales months in this recycle bin.', months.length),
+            ...months.map((month) => Card(
+                  child: ListTile(
+                    title: Text(month.monthKey),
+                    subtitle: const Text('Complete Sales Tracker month'),
+                    trailing: Wrap(children: [
+                      TextButton(
+                          onPressed: () => backend.restoreMonth(month.monthKey),
+                          child: const Text('Restore')),
+                      IconButton(
+                          tooltip: 'Delete permanently',
+                          onPressed: () async {
+                            final confirmed = await _confirm(
+                              context,
+                              'Delete ${month.monthKey} permanently?',
+                              'Every sales entry and audit record for this month will be removed from Firebase. GitHub backups remain.',
+                            );
+                            if (confirmed) {
+                              await backend
+                                  .permanentlyDeleteMonth(month.monthKey);
+                            }
+                          },
+                          icon: const Icon(Icons.delete_forever_outlined)),
+                    ]),
+                  ),
+                )),
+          ]);
+        },
+      );
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Row(children: [
+            IconButton(
+                tooltip: 'Back to Sales Tracker',
+                onPressed: onBack,
+                icon: const Icon(Icons.arrow_back)),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text('Sales Tracker recycle bin',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          const Text(
+              'Only Sales Tracker records are displayed here. Permanent deletion removes Firebase data; GitHub backups remain.'),
+          _salespeople(context),
+          _entries(context),
+          _months(context),
+        ],
+      );
 }
 
 class _AmountInputFormatter extends TextInputFormatter {

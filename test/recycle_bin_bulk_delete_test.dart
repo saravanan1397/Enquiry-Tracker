@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:leadloop/leadloop_app.dart';
 import 'package:leadloop/models/customer_lead.dart';
 import 'package:leadloop/services/firebase_lead_backend.dart';
-import 'package:leadloop/services/firebase_sales_backend.dart';
 import 'package:leadloop/services/local_lead_store.dart';
 
 class _FakeBackend extends FirebaseLeadBackend {
@@ -60,8 +59,7 @@ void main() {
         body: LeadloopRecycleBinScreen(
           store: store,
           backend: backend,
-          salesBackend: FirebaseSalesBackend(),
-          ownerUid: 'owner',
+          onBack: () {},
         ),
       ),
     ));
@@ -88,8 +86,7 @@ void main() {
         body: LeadloopRecycleBinScreen(
           store: store,
           backend: backend,
-          salesBackend: FirebaseSalesBackend(),
-          ownerUid: 'owner',
+          onBack: () {},
         ),
       ),
     ));
