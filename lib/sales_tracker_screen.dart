@@ -926,20 +926,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final headingAndFilters = Wrap(
+                Builder(
+                  builder: (context) {
+                    final options = Wrap(
                       spacing: 12,
                       runSpacing: 10,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Text(
-                          '${_displayMonth(_selectedMonth)} records',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
                         SizedBox(
                           width: 240,
                           child: TextField(
@@ -1036,12 +1029,6 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             icon: const Icon(Icons.filter_alt_off_outlined),
                             label: const Text('Clear filters'),
                           ),
-                      ],
-                    );
-                    final actions = Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
                         OutlinedButton.icon(
                           onPressed: () =>
                               setState(() => _showRecycleBin = true),
@@ -1117,22 +1104,18 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                           ),
                       ],
                     );
-                    if (constraints.maxWidth >= 1500) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(child: headingAndFilters),
-                          const SizedBox(width: 16),
-                          actions,
-                        ],
-                      );
-                    }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        headingAndFilters,
+                        Text(
+                          '${_displayMonth(_selectedMonth)} records',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
                         const SizedBox(height: 12),
-                        actions,
+                        options,
                       ],
                     );
                   },
