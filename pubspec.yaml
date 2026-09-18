@@ -34,4 +34,7 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  assets:
+    - images/selvan_logo_transparent.png
+    - images/selvan_logo_transparent_dark.png
 

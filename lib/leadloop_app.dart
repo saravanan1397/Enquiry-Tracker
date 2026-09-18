@@ -977,7 +977,9 @@ class _LeadloopShellState extends State<LeadloopShell> {
             leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
                 : null,
-            title: Text(isAdmin ? 'Admin Panel' : 'Enquiry Tracker'),
+            title: isAdmin
+                ? const _OwnerBrandLogo()
+                : const Text('Enquiry Tracker'),
             actions: [
               if (isAdmin && _ownerModuleOpen)
                 IconButton(
@@ -1081,6 +1083,33 @@ class _LeadloopShellState extends State<LeadloopShell> {
                 selectedIndex: _tab,
                 onDestinationSelected: (index) => setState(() => _tab = index),
                 destinations: destinations),
+      ),
+    );
+  }
+}
+
+class _OwnerBrandLogo extends StatelessWidget {
+  const _OwnerBrandLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      label: 'Selvan Steel House',
+      image: true,
+      child: SizedBox(
+        width: 260,
+        height: 46,
+        child: ClipRect(
+          child: Image.asset(
+            dark
+                ? 'images/selvan_logo_transparent_dark.png'
+                : 'images/selvan_logo_transparent.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            filterQuality: FilterQuality.high,
+          ),
+        ),
       ),
     );
   }
