@@ -1175,14 +1175,18 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             );
                           }
                           final tableWidth = constraints.maxWidth;
-                          final contentWidth = tableWidth - (24 * 2) - (52 * 4);
+                          const columnSpacing = 24.0;
+                          final contentWidth =
+                              tableWidth - (24 * 2) - (columnSpacing * 5);
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
                               constraints: BoxConstraints(minWidth: tableWidth),
                               child: DataTable(
                                 horizontalMargin: 24,
-                                columnSpacing: 52,
+                                columnSpacing: columnSpacing,
+                                dataRowMinHeight: 58,
+                                dataRowMaxHeight: 74,
                                 headingRowColor: WidgetStatePropertyAll(
                                   Theme.of(context)
                                       .colorScheme
@@ -1192,7 +1196,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 columns: [
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.08,
+                                      width: contentWidth * 0.06,
                                       child: const Align(
                                         alignment: Alignment.centerRight,
                                         child: Text('SNo'),
@@ -1202,13 +1206,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.32,
+                                      width: contentWidth * 0.18,
                                       child: const Text('Name'),
                                     ),
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.17,
+                                      width: contentWidth * 0.16,
                                       child: const Align(
                                         alignment: Alignment.centerRight,
                                         child: Text('Amount'),
@@ -1218,13 +1222,19 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.28,
+                                      width: contentWidth * 0.16,
                                       child: const Text('Date'),
                                     ),
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.15,
+                                      width: contentWidth * 0.26,
+                                      child: const Text('Remarks'),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: contentWidth * 0.18,
                                       child: const Text('Action buttons'),
                                     ),
                                   ),
@@ -1269,6 +1279,21 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                                   ).textTheme.bodySmall,
                                                 ),
                                             ],
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Tooltip(
+                                            message:
+                                                record.reference.trim().isEmpty
+                                                    ? 'No remarks'
+                                                    : record.reference.trim(),
+                                            child: Text(
+                                              record.reference.trim().isEmpty
+                                                  ? '—'
+                                                  : record.reference.trim(),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
                                         ),
                                         DataCell(
@@ -1814,6 +1839,30 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                       onPressed:
                           monthFinalized ? null : () => _deleteRecord(record),
                       icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.notes_outlined,
+                      size: 16,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        record.reference.trim().isEmpty
+                            ? 'Remarks: —'
+                            : 'Remarks: ${record.reference.trim()}',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ],
                 ),
