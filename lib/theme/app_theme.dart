@@ -127,11 +127,9 @@ class AppTheme {
         backgroundColor: appBarSurface,
         foregroundColor: colorScheme.onSurface,
         surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        shape: Border(
-          bottom: BorderSide(color: colorScheme.outlineVariant),
-        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: navigationSurface,

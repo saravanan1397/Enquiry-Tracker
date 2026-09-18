@@ -1097,14 +1097,14 @@ class _OwnerBrandLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Tooltip(
-      message: 'Go to dashboard',
-      child: Semantics(
-        label: 'Selvan Steel House — go to dashboard',
-        button: true,
-        child: InkWell(
+    return Semantics(
+      label: 'Selvan Steel House — go to dashboard',
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          behavior: HitTestBehavior.opaque,
           child: SizedBox(
             width: 300,
             height: 76,
