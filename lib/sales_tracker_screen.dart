@@ -711,22 +711,11 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           _filterDateRange == null ? null : salesDateKey(_filterDateRange!.end),
     );
     final personGroups = groupSalesRecordsByPerson(filteredRecords);
+    final monthlyPersonGroups = groupSalesRecordsByPerson(records);
     final orderedRecords =
         personGroups.expand((group) => group.records).toList(growable: false);
     final visibleRecords =
         orderedRecords.take(_visibleRecordCount).toList(growable: false);
-    final visibleRecordIds = visibleRecords.map((record) => record.id).toSet();
-    final visiblePersonGroups = personGroups
-        .map((group) => SalesPersonRecordGroup(
-              personId: group.personId,
-              personName: group.personName,
-              records: group.records
-                  .where((record) => visibleRecordIds.contains(record.id))
-                  .toList(growable: false),
-              totalMilli: group.totalMilli,
-            ))
-        .where((group) => group.records.isNotEmpty)
-        .toList(growable: false);
     final hasMoreRecords = visibleRecords.length < orderedRecords.length;
     final serialByRecordId = <String, int>{
       for (var index = 0; index < orderedRecords.length; index++)
@@ -956,403 +945,668 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+        LayoutBuilder(
+          builder: (context, sectionConstraints) {
+            final recordsPanel = Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Builder(
+                      builder: (context) {
+                        final options = Wrap(
+                          spacing: 12,
+                          runSpacing: 10,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 240,
+                              child: TextField(
+                                controller: _salespersonSearch,
+                                decoration: InputDecoration(
+                                  labelText: 'Search salesperson',
+                                  hintText: 'Enter a name',
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.search),
+                                  suffixIcon: _salespersonSearch.text.isEmpty
+                                      ? null
+                                      : IconButton(
+                                          tooltip: 'Clear search',
+                                          onPressed: () => setState(() {
+                                            _salespersonSearch.clear();
+                                            _visibleRecordCount = 20;
+                                          }),
+                                          icon: const Icon(Icons.close),
+                                        ),
+                                ),
+                                onChanged: (value) => setState(() {
+                                  if (value.trim().isNotEmpty) {
+                                    _filterPersonId = null;
+                                  }
+                                  _visibleRecordCount = 20;
+                                }),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 240,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey(_filterPersonId),
+                                initialValue: _filterPersonId ?? '',
+                                decoration: const InputDecoration(
+                                  labelText: 'Filter by salesperson',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: '',
+                                    child: Text('All salespeople'),
+                                  ),
+                                  ...alphabeticPeople.map(
+                                    (person) => DropdownMenuItem(
+                                      value: person.id,
+                                      child: Text(person.name),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (value) => setState(() {
+                                  _salespersonSearch.clear();
+                                  _filterPersonId =
+                                      value == null || value.isEmpty
+                                          ? null
+                                          : value;
+                                  _visibleRecordCount = 20;
+                                }),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 190,
+                              child: OutlinedButton.icon(
+                                onPressed: _pickFilterDate,
+                                icon: const Icon(Icons.event_outlined),
+                                label: Text(
+                                  _filterDate == null
+                                      ? 'Single date'
+                                      : _displayDate(_filterDate!),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 265,
+                              child: OutlinedButton.icon(
+                                onPressed: _pickFilterDateRange,
+                                icon: const Icon(Icons.date_range_outlined),
+                                label: Text(
+                                  _filterDateRange == null
+                                      ? 'From – To date'
+                                      : '${_displayDate(_filterDateRange!.start)} – ${_displayDate(_filterDateRange!.end)}',
+                                ),
+                              ),
+                            ),
+                            if (_salespersonSearch.text.trim().isNotEmpty ||
+                                _filterPersonId != null ||
+                                _filterDate != null ||
+                                _filterDateRange != null)
+                              TextButton.icon(
+                                onPressed: () => setState(() {
+                                  _salespersonSearch.clear();
+                                  _filterPersonId = null;
+                                  _filterDate = null;
+                                  _filterDateRange = null;
+                                  _visibleRecordCount = 20;
+                                }),
+                                icon: const Icon(Icons.filter_alt_off_outlined),
+                                label: const Text('Clear filters'),
+                              ),
+                            OutlinedButton.icon(
+                              onPressed: () =>
+                                  setState(() => _showRecycleBin = true),
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Sales recycle bin'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _backupBusy ||
+                                      (backupStatus?.isActive ?? false)
+                                  ? null
+                                  : _requestBackup,
+                              icon: _backupBusy ||
+                                      (backupStatus?.isActive ?? false)
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.cloud_upload_outlined),
+                              label: Text(
+                                _backupBusy
+                                    ? 'Requesting'
+                                    : backupStatus?.status == 'pending'
+                                        ? 'Backup queued'
+                                        : backupStatus?.status == 'processing'
+                                            ? 'Backing up'
+                                            : 'Back up now',
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: filteredRecords.isEmpty
+                                  ? null
+                                  : () => _export(filteredRecords),
+                              icon: const Icon(Icons.table_view_outlined),
+                              label: const Text('Export Excel'),
+                            ),
+                            if (!month.finalized)
+                              FilledButton.tonalIcon(
+                                onPressed: records.isEmpty || _busy
+                                    ? null
+                                    : () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text(
+                                              'Finalize incentives?',
+                                            ),
+                                            content: Text(
+                                              'Lock $_monthKey after incentive processing? Data will remain available until you manually delete it.',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    context, false),
+                                                child: const Text('Not yet'),
+                                              ),
+                                              FilledButton(
+                                                onPressed: () => Navigator.pop(
+                                                    context, true),
+                                                child: const Text(
+                                                  'Finalize and lock',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirm == true) {
+                                          await _setFinalized(true);
+                                        }
+                                      },
+                                icon: const Icon(Icons.lock_outline),
+                                label: const Text('Mark incentives completed'),
+                              ),
+                          ],
+                        );
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_displayMonth(_selectedMonth)} records',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 12),
+                            options,
+                          ],
+                        );
+                      },
+                    ),
+                    if (backupStatus != null) ...[
+                      const SizedBox(height: 12),
+                      _backupStatusBanner(backupStatus),
+                    ],
+                    const SizedBox(height: 14),
+                    if (loading) const LinearProgressIndicator(),
+                    if (!loading && filteredRecords.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 28),
+                        child: Center(
+                          child: Text('No sales records match these filters.'),
+                        ),
+                      ),
+                    if (filteredRecords.isNotEmpty)
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (constraints.maxWidth < 720) {
+                            return _mobileRecordsList(
+                              visibleRecords,
+                              serialByRecordId,
+                              people,
+                              monthFinalized: month.finalized,
+                            );
+                          }
+                          final tableWidth = constraints.maxWidth;
+                          final contentWidth = tableWidth - (24 * 2) - (52 * 4);
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(minWidth: tableWidth),
+                              child: DataTable(
+                                horizontalMargin: 24,
+                                columnSpacing: 52,
+                                headingRowColor: WidgetStatePropertyAll(
+                                  Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                      .withValues(alpha: 0.32),
+                                ),
+                                columns: [
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: contentWidth * 0.08,
+                                      child: const Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Text('SNo'),
+                                      ),
+                                    ),
+                                    numeric: true,
+                                  ),
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: contentWidth * 0.32,
+                                      child: const Text('Name'),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: contentWidth * 0.17,
+                                      child: const Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Text('Amount'),
+                                      ),
+                                    ),
+                                    numeric: true,
+                                  ),
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: contentWidth * 0.28,
+                                      child: const Text('Date'),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: contentWidth * 0.15,
+                                      child: const Text('Action buttons'),
+                                    ),
+                                  ),
+                                ],
+                                rows: [
+                                  for (final record in visibleRecords)
+                                    DataRow(
+                                      cells: [
+                                        DataCell(
+                                          Text(
+                                              '${serialByRecordId[record.id]}'),
+                                        ),
+                                        DataCell(
+                                          Tooltip(
+                                            message: record.reference.isEmpty
+                                                ? record.personId
+                                                : '${record.personId}\n${record.reference}',
+                                            child: Text(record.personName),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            '₹${_groupedAmount(record.amountMilli)}',
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _displayDate(record.salesDate),
+                                              ),
+                                              if (record.createdAt != null)
+                                                Text(
+                                                  _displayTime(
+                                                      record.createdAt!),
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                tooltip: 'Edit',
+                                                onPressed: month.finalized
+                                                    ? null
+                                                    : () =>
+                                                        _edit(record, people),
+                                                icon: const Icon(
+                                                  Icons.edit_outlined,
+                                                ),
+                                              ),
+                                              IconButton(
+                                                tooltip: 'Move to recycle bin',
+                                                onPressed: month.finalized
+                                                    ? null
+                                                    : () =>
+                                                        _deleteRecord(record),
+                                                icon: const Icon(
+                                                  Icons.delete_outline,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (hasMoreRecords)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: Align(
+                          alignment: Alignment.center,
+                          child: FilledButton.tonalIcon(
+                            onPressed: () => setState(
+                              () => _visibleRecordCount += 20,
+                            ),
+                            icon: const Icon(Icons.expand_more),
+                            label: Text(
+                              'Load more (${orderedRecords.length - visibleRecords.length} remaining)',
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+            final totalsPanel = _salespersonTotalsPanel(
+              monthlyPersonGroups,
+              monthLabel: _displayMonth(_selectedMonth),
+            );
+            if (sectionConstraints.maxWidth >= 1080) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: recordsPanel),
+                  const SizedBox(width: 16),
+                  SizedBox(width: 320, child: totalsPanel),
+                ],
+              );
+            }
+            return Column(
+              children: [
+                recordsPanel,
+                const SizedBox(height: 16),
+                totalsPanel,
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _salespersonTotalsPanel(
+    List<SalesPersonRecordGroup> groups, {
+    required String monthLabel,
+  }) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.leaderboard_outlined,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Salesperson totals',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(monthLabel, style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.circle,
+                        size: 7,
+                        color: scheme.tertiary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Live totals',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onTertiaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Divider(color: scheme.outlineVariant),
+            if (groups.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                child: Center(
+                  child: Text(
+                    'No salesperson totals for this month.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              )
+            else
+              for (var index = 0; index < groups.length; index++) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: scheme.secondaryContainer,
+                        foregroundColor: scheme.onSecondaryContainer,
+                        child: Text(
+                          groups[index].personName.trim().isEmpty
+                              ? '?'
+                              : groups[index]
+                                  .personName
+                                  .trim()
+                                  .characters
+                                  .first
+                                  .toUpperCase(),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              groups[index].personName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              '${groups[index].records.length} daily ${groups[index].records.length == 1 ? 'entry' : 'entries'}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '₹${_groupedAmount(groups[index].totalMilli)}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (index != groups.length - 1)
+                  Divider(height: 1, color: scheme.outlineVariant),
+              ],
+            const SizedBox(height: 10),
+            Text(
+              'Totals update automatically when a daily entry is saved, edited, recycled or restored.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileRecordsList(
+    List<SalesRecord> records,
+    Map<String, int> serialByRecordId,
+    List<SalesPerson> people, {
+    required bool monthFinalized,
+  }) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Column(
+      children: [
+        for (final record in records)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              border: Border.all(color: scheme.outlineVariant),
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Builder(
-                  builder: (context) {
-                    final options = Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 240,
-                          child: TextField(
-                            controller: _salespersonSearch,
-                            decoration: InputDecoration(
-                              labelText: 'Search salesperson',
-                              hintText: 'Enter a name',
-                              border: const OutlineInputBorder(),
-                              prefixIcon: const Icon(Icons.search),
-                              suffixIcon: _salespersonSearch.text.isEmpty
-                                  ? null
-                                  : IconButton(
-                                      tooltip: 'Clear search',
-                                      onPressed: () => setState(() {
-                                        _salespersonSearch.clear();
-                                        _visibleRecordCount = 20;
-                                      }),
-                                      icon: const Icon(Icons.close),
-                                    ),
-                            ),
-                            onChanged: (value) => setState(() {
-                              if (value.trim().isNotEmpty) {
-                                _filterPersonId = null;
-                              }
-                              _visibleRecordCount = 20;
-                            }),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 240,
-                          child: DropdownButtonFormField<String>(
-                            key: ValueKey(_filterPersonId),
-                            initialValue: _filterPersonId ?? '',
-                            decoration: const InputDecoration(
-                              labelText: 'Filter by salesperson',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [
-                              const DropdownMenuItem(
-                                value: '',
-                                child: Text('All salespeople'),
-                              ),
-                              ...alphabeticPeople.map(
-                                (person) => DropdownMenuItem(
-                                  value: person.id,
-                                  child: Text(person.name),
-                                ),
-                              ),
-                            ],
-                            onChanged: (value) => setState(() {
-                              _salespersonSearch.clear();
-                              _filterPersonId =
-                                  value == null || value.isEmpty ? null : value;
-                              _visibleRecordCount = 20;
-                            }),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 190,
-                          child: OutlinedButton.icon(
-                            onPressed: _pickFilterDate,
-                            icon: const Icon(Icons.event_outlined),
-                            label: Text(
-                              _filterDate == null
-                                  ? 'Single date'
-                                  : _displayDate(_filterDate!),
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 265,
-                          child: OutlinedButton.icon(
-                            onPressed: _pickFilterDateRange,
-                            icon: const Icon(Icons.date_range_outlined),
-                            label: Text(
-                              _filterDateRange == null
-                                  ? 'From – To date'
-                                  : '${_displayDate(_filterDateRange!.start)} – ${_displayDate(_filterDateRange!.end)}',
-                            ),
-                          ),
-                        ),
-                        if (_salespersonSearch.text.trim().isNotEmpty ||
-                            _filterPersonId != null ||
-                            _filterDate != null ||
-                            _filterDateRange != null)
-                          TextButton.icon(
-                            onPressed: () => setState(() {
-                              _salespersonSearch.clear();
-                              _filterPersonId = null;
-                              _filterDate = null;
-                              _filterDateRange = null;
-                              _visibleRecordCount = 20;
-                            }),
-                            icon: const Icon(Icons.filter_alt_off_outlined),
-                            label: const Text('Clear filters'),
-                          ),
-                        OutlinedButton.icon(
-                          onPressed: () =>
-                              setState(() => _showRecycleBin = true),
-                          icon: const Icon(Icons.delete_outline),
-                          label: const Text('Sales recycle bin'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed:
-                              _backupBusy || (backupStatus?.isActive ?? false)
-                                  ? null
-                                  : _requestBackup,
-                          icon: _backupBusy || (backupStatus?.isActive ?? false)
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.cloud_upload_outlined),
-                          label: Text(
-                            _backupBusy
-                                ? 'Requesting'
-                                : backupStatus?.status == 'pending'
-                                    ? 'Backup queued'
-                                    : backupStatus?.status == 'processing'
-                                        ? 'Backing up'
-                                        : 'Back up now',
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: filteredRecords.isEmpty
-                              ? null
-                              : () => _export(filteredRecords),
-                          icon: const Icon(Icons.table_view_outlined),
-                          label: const Text('Export Excel'),
-                        ),
-                        if (!month.finalized)
-                          FilledButton.tonalIcon(
-                            onPressed: records.isEmpty || _busy
-                                ? null
-                                : () async {
-                                    final confirm = await showDialog<bool>(
-                                      context: context,
-                                      builder: (context) => AlertDialog(
-                                        title: const Text(
-                                          'Finalize incentives?',
-                                        ),
-                                        content: Text(
-                                          'Lock $_monthKey after incentive processing? Data will remain available until you manually delete it.',
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context, false),
-                                            child: const Text('Not yet'),
-                                          ),
-                                          FilledButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context, true),
-                                            child: const Text(
-                                              'Finalize and lock',
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                    if (confirm == true) {
-                                      await _setFinalized(true);
-                                    }
-                                  },
-                            icon: const Icon(Icons.lock_outline),
-                            label: const Text('Mark incentives completed'),
-                          ),
-                      ],
-                    );
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${_displayMonth(_selectedMonth)} records',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 12),
-                        options,
-                      ],
-                    );
-                  },
-                ),
-                if (backupStatus != null) ...[
-                  const SizedBox(height: 12),
-                  _backupStatusBanner(backupStatus),
-                ],
-                const SizedBox(height: 14),
-                if (loading) const LinearProgressIndicator(),
-                if (!loading && filteredRecords.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 28),
-                    child: Center(
-                      child: Text('No sales records match these filters.'),
-                    ),
-                  ),
-                if (filteredRecords.isNotEmpty)
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final tableWidth = constraints.maxWidth < 1080
-                          ? 1080.0
-                          : constraints.maxWidth;
-                      final contentWidth = tableWidth - (24 * 2) - (52 * 4);
-                      return SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minWidth: tableWidth),
-                          child: DataTable(
-                            horizontalMargin: 24,
-                            columnSpacing: 52,
-                            headingRowColor: WidgetStatePropertyAll(
-                              Theme.of(context)
-                                  .colorScheme
-                                  .primaryContainer
-                                  .withValues(alpha: 0.32),
-                            ),
-                            columns: [
-                              DataColumn(
-                                label: SizedBox(
-                                  width: contentWidth * 0.08,
-                                  child: const Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Text('SNo'),
-                                  ),
-                                ),
-                                numeric: true,
-                              ),
-                              DataColumn(
-                                label: SizedBox(
-                                  width: contentWidth * 0.32,
-                                  child: const Text('Name'),
-                                ),
-                              ),
-                              DataColumn(
-                                label: SizedBox(
-                                  width: contentWidth * 0.17,
-                                  child: const Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Text('Amount'),
-                                  ),
-                                ),
-                                numeric: true,
-                              ),
-                              DataColumn(
-                                label: SizedBox(
-                                  width: contentWidth * 0.28,
-                                  child: const Text('Date'),
-                                ),
-                              ),
-                              DataColumn(
-                                label: SizedBox(
-                                  width: contentWidth * 0.15,
-                                  child: const Text('Action buttons'),
-                                ),
-                              ),
-                            ],
-                            rows: [
-                              for (final group in visiblePersonGroups) ...[
-                                for (final record in group.records)
-                                  DataRow(
-                                    cells: [
-                                      DataCell(
-                                        Text('${serialByRecordId[record.id]}'),
-                                      ),
-                                      DataCell(
-                                        Tooltip(
-                                          message: record.reference.isEmpty
-                                              ? record.personId
-                                              : '${record.personId}\n${record.reference}',
-                                          child: Text(record.personName),
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Text(
-                                          '₹${_groupedAmount(record.amountMilli)}',
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              _displayDate(record.salesDate),
-                                            ),
-                                            if (record.createdAt != null)
-                                              Text(
-                                                _displayTime(record.createdAt!),
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall,
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              tooltip: 'Edit',
-                                              onPressed: month.finalized
-                                                  ? null
-                                                  : () => _edit(record, people),
-                                              icon: const Icon(
-                                                Icons.edit_outlined,
-                                              ),
-                                            ),
-                                            IconButton(
-                                              tooltip: 'Move to recycle bin',
-                                              onPressed: month.finalized
-                                                  ? null
-                                                  : () => _deleteRecord(record),
-                                              icon: const Icon(
-                                                Icons.delete_outline,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                DataRow(
-                                  color: WidgetStatePropertyAll(
-                                    Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer
-                                        .withValues(alpha: 0.45),
-                                  ),
-                                  cells: [
-                                    const DataCell(SizedBox.shrink()),
-                                    DataCell(
-                                      Text(
-                                        '${group.personName} total',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                    DataCell(
-                                      Text(
-                                        '₹${_groupedAmount(group.totalMilli)}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                    const DataCell(SizedBox.shrink()),
-                                    const DataCell(SizedBox.shrink()),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                if (hasMoreRecords)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 14),
-                    child: Align(
+                Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
                       alignment: Alignment.center,
-                      child: FilledButton.tonalIcon(
-                        onPressed: () => setState(
-                          () => _visibleRecordCount += 20,
-                        ),
-                        icon: const Icon(Icons.expand_more),
-                        label: Text(
-                          'Load more (${orderedRecords.length - visibleRecords.length} remaining)',
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${serialByRecordId[record.id]}',
+                        style: TextStyle(
+                          color: scheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        record.personName,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '₹${_groupedAmount(record.amountMilli)}',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: 16,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        record.createdAt == null
+                            ? _displayDate(record.salesDate)
+                            : '${_displayDate(record.salesDate)} · ${_displayTime(record.createdAt!)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Edit',
+                      visualDensity: VisualDensity.compact,
+                      onPressed:
+                          monthFinalized ? null : () => _edit(record, people),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Move to recycle bin',
+                      visualDensity: VisualDensity.compact,
+                      onPressed:
+                          monthFinalized ? null : () => _deleteRecord(record),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
-        ),
       ],
     );
   }
