@@ -974,11 +974,12 @@ class _LeadloopShellState extends State<LeadloopShell> {
       },
       child: Scaffold(
         appBar: AppBar(
+            toolbarHeight: isAdmin ? 84 : null,
             leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
                 : null,
             title: isAdmin
-                ? const _OwnerBrandLogo()
+                ? _OwnerBrandLogo(onTap: _ownerBack)
                 : const Text('Enquiry Tracker'),
             actions: [
               if (isAdmin && _ownerModuleOpen)
@@ -1089,25 +1090,34 @@ class _LeadloopShellState extends State<LeadloopShell> {
 }
 
 class _OwnerBrandLogo extends StatelessWidget {
-  const _OwnerBrandLogo();
+  const _OwnerBrandLogo({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Semantics(
-      label: 'Selvan Steel House',
-      image: true,
-      child: SizedBox(
-        width: 260,
-        height: 46,
-        child: ClipRect(
-          child: Image.asset(
-            dark
-                ? 'images/selvan_logo_transparent_dark.png'
-                : 'images/selvan_logo_transparent.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-            filterQuality: FilterQuality.high,
+    return Tooltip(
+      message: 'Go to dashboard',
+      child: Semantics(
+        label: 'Selvan Steel House — go to dashboard',
+        button: true,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 300,
+            height: 76,
+            child: ClipRect(
+              child: Image.asset(
+                dark
+                    ? 'images/selvan_logo_transparent_dark.png'
+                    : 'images/selvan_logo_transparent.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
           ),
         ),
       ),
