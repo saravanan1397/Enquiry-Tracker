@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -38,6 +40,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   bool _backupBusy = false;
   bool _showRecycleBin = false;
   int _visibleRecordCount = 20;
+  Timer? _backupSuccessTimer;
+  String? _scheduledBackupSuccessKey;
+  String? _dismissedBackupSuccessKey;
 
   @override
   void initState() {
@@ -49,6 +54,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
 
   @override
   void dispose() {
+    _backupSuccessTimer?.cancel();
     _amount.dispose();
     _reference.dispose();
     _salespersonSearch.dispose();
@@ -614,6 +620,32 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     }
   }
 
+  String _backupSuccessKey(SalesBackupStatus backup) =>
+      '${backup.completedAt?.microsecondsSinceEpoch ?? 0}:'
+      '${backup.assetNames.join('|')}';
+
+  void _scheduleBackupSuccessDismissal(SalesBackupStatus? backup) {
+    if (backup == null || backup.status != 'completed') return;
+    final key = _backupSuccessKey(backup);
+    if (_scheduledBackupSuccessKey == key ||
+        _dismissedBackupSuccessKey == key) {
+      return;
+    }
+    _backupSuccessTimer?.cancel();
+    _scheduledBackupSuccessKey = key;
+    _backupSuccessTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted || _scheduledBackupSuccessKey != key) return;
+      setState(() => _dismissedBackupSuccessKey = key);
+    });
+  }
+
+  SalesBackupStatus? _visibleBackupStatus(SalesBackupStatus? backup) {
+    if (backup == null || backup.status != 'completed') return backup;
+    return _dismissedBackupSuccessKey == _backupSuccessKey(backup)
+        ? null
+        : backup;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_showRecycleBin) {
@@ -637,14 +669,18 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                 final records = recordsSnapshot.data ?? const <SalesRecord>[];
                 return StreamBuilder<SalesBackupStatus?>(
                   stream: widget.backend.watchBackupStatus(),
-                  builder: (context, backupSnapshot) => _body(
-                    people,
-                    month,
-                    records,
-                    backupStatus: backupSnapshot.data,
-                    loading: recordsSnapshot.connectionState ==
-                        ConnectionState.waiting,
-                  ),
+                  builder: (context, backupSnapshot) {
+                    final backupStatus = backupSnapshot.data;
+                    _scheduleBackupSuccessDismissal(backupStatus);
+                    return _body(
+                      people,
+                      month,
+                      records,
+                      backupStatus: _visibleBackupStatus(backupStatus),
+                      loading: recordsSnapshot.connectionState ==
+                          ConnectionState.waiting,
+                    );
+                  },
                 );
               },
             );
