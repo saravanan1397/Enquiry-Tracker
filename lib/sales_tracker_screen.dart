@@ -1166,7 +1166,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                     if (filteredRecords.isNotEmpty)
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          if (constraints.maxWidth < 720) {
+                          if (constraints.maxWidth < 900) {
                             return _mobileRecordsList(
                               visibleRecords,
                               serialByRecordId,
@@ -1175,9 +1175,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             );
                           }
                           final tableWidth = constraints.maxWidth;
-                          const columnSpacing = 24.0;
-                          final contentWidth =
-                              tableWidth - (24 * 2) - (columnSpacing * 5);
+                          const columnSpacing = 20.0;
+                          final columnWidth =
+                              (tableWidth - (24 * 2) - (columnSpacing * 5)) / 6;
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
@@ -1196,45 +1196,37 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 columns: [
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.06,
-                                      child: const Align(
-                                        alignment: Alignment.centerRight,
-                                        child: Text('SNo'),
-                                      ),
+                                      width: columnWidth,
+                                      child: const Text('SNo'),
                                     ),
-                                    numeric: true,
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.18,
+                                      width: columnWidth,
                                       child: const Text('Name'),
                                     ),
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.16,
-                                      child: const Align(
-                                        alignment: Alignment.centerRight,
-                                        child: Text('Amount'),
-                                      ),
+                                      width: columnWidth,
+                                      child: const Text('Amount'),
                                     ),
-                                    numeric: true,
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.16,
+                                      width: columnWidth,
                                       child: const Text('Date'),
                                     ),
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.26,
+                                      width: columnWidth,
                                       child: const Text('Remarks'),
                                     ),
                                   ),
                                   DataColumn(
                                     label: SizedBox(
-                                      width: contentWidth * 0.18,
+                                      width: columnWidth,
                                       child: const Text('Action buttons'),
                                     ),
                                   ),
@@ -1244,83 +1236,113 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                     DataRow(
                                       cells: [
                                         DataCell(
-                                          Text(
-                                              '${serialByRecordId[record.id]}'),
-                                        ),
-                                        DataCell(
-                                          Tooltip(
-                                            message: record.reference.isEmpty
-                                                ? record.personId
-                                                : '${record.personId}\n${record.reference}',
-                                            child: Text(record.personName),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            '₹${_groupedAmount(record.amountMilli)}',
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                _displayDate(record.salesDate),
-                                              ),
-                                              if (record.createdAt != null)
-                                                Text(
-                                                  _displayTime(
-                                                      record.createdAt!),
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.bodySmall,
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Tooltip(
-                                            message:
-                                                record.reference.trim().isEmpty
-                                                    ? 'No remarks'
-                                                    : record.reference.trim(),
+                                          SizedBox(
+                                            width: columnWidth,
                                             child: Text(
-                                              record.reference.trim().isEmpty
-                                                  ? '—'
-                                                  : record.reference.trim(),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
+                                              '${serialByRecordId[record.id]}',
                                             ),
                                           ),
                                         ),
                                         DataCell(
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                tooltip: 'Edit',
-                                                onPressed: month.finalized
-                                                    ? null
-                                                    : () =>
-                                                        _edit(record, people),
-                                                icon: const Icon(
-                                                  Icons.edit_outlined,
-                                                ),
+                                          SizedBox(
+                                            width: columnWidth,
+                                            child: Tooltip(
+                                              message: record.reference.isEmpty
+                                                  ? record.personId
+                                                  : '${record.personId}\n${record.reference}',
+                                              child: Text(
+                                                record.personName,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              IconButton(
-                                                tooltip: 'Move to recycle bin',
-                                                onPressed: month.finalized
-                                                    ? null
-                                                    : () =>
-                                                        _deleteRecord(record),
-                                                icon: const Icon(
-                                                  Icons.delete_outline,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          SizedBox(
+                                            width: columnWidth,
+                                            child: Text(
+                                              '₹${_groupedAmount(record.amountMilli)}',
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          SizedBox(
+                                            width: columnWidth,
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _displayDate(
+                                                      record.salesDate),
                                                 ),
+                                                if (record.createdAt != null)
+                                                  Text(
+                                                    _displayTime(
+                                                        record.createdAt!),
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.bodySmall,
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          SizedBox(
+                                            width: columnWidth,
+                                            child: Tooltip(
+                                              message: record.reference
+                                                      .trim()
+                                                      .isEmpty
+                                                  ? 'No remarks'
+                                                  : record.reference.trim(),
+                                              child: Text(
+                                                record.reference.trim().isEmpty
+                                                    ? '—'
+                                                    : record.reference.trim(),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                            ],
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          SizedBox(
+                                            width: columnWidth,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  tooltip: 'Edit',
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  onPressed: month.finalized
+                                                      ? null
+                                                      : () =>
+                                                          _edit(record, people),
+                                                  icon: const Icon(
+                                                    Icons.edit_outlined,
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  tooltip:
+                                                      'Move to recycle bin',
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  onPressed: month.finalized
+                                                      ? null
+                                                      : () =>
+                                                          _deleteRecord(record),
+                                                  icon: const Icon(
+                                                    Icons.delete_outline,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ],
