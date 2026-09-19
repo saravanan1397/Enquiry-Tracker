@@ -282,31 +282,37 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   }
 
   Future<void> _recycleSalesperson(SalesPerson person) async {
-    final confirmed = await showDialog<bool>(
+    final recycleIndividualSales = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Move salesperson to recycle bin?'),
         content: Text(
-          'Remove ${person.name} from the active salesperson list? The profile can be restored from Recycle Bin. Existing sales records, totals, exports and backups will remain available.',
+          'Remove ${person.name} from the active salesperson list? Their monthly sales totals will remain preserved in either option. Choose whether the individual date-wise sales records should also move to the Sales Tracker recycle bin.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pop(context, false),
+            icon: const Icon(Icons.person_remove_outlined),
+            label: const Text('Keep individual sales'),
           ),
           FilledButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            icon: const Icon(Icons.person_remove_outlined),
-            label: const Text('Move to recycle bin'),
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: const Text('Recycle individual sales'),
           ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (recycleIndividualSales == null) return;
     try {
       await widget.backend.recyclePerson(
         person: person,
         ownerUid: widget.ownerUid,
+        recycleIndividualSales: recycleIndividualSales,
       );
       if (!mounted) return;
       if (_selectedPerson?.id == person.id) {
@@ -316,7 +322,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         });
       }
       _message(
-        '${person.name} moved to Recycle Bin. Historical sales records were preserved.',
+        recycleIndividualSales
+            ? '${person.name} and the individual sales records moved to Recycle Bin. Monthly totals were preserved.'
+            : '${person.name} moved to Recycle Bin. Individual sales records and monthly totals were preserved.',
       );
     } catch (error) {
       if (mounted) _message(_friendlyError(error));
@@ -667,18 +675,28 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
               stream: widget.backend.watchMonth(_monthKey),
               builder: (context, recordsSnapshot) {
                 final records = recordsSnapshot.data ?? const <SalesRecord>[];
-                return StreamBuilder<SalesBackupStatus?>(
-                  stream: widget.backend.watchBackupStatus(),
-                  builder: (context, backupSnapshot) {
-                    final backupStatus = backupSnapshot.data;
-                    _scheduleBackupSuccessDismissal(backupStatus);
-                    return _body(
-                      people,
-                      month,
-                      records,
-                      backupStatus: _visibleBackupStatus(backupStatus),
-                      loading: recordsSnapshot.connectionState ==
-                          ConnectionState.waiting,
+                return StreamBuilder<List<SalesPersonTotalSnapshot>>(
+                  stream: widget.backend.watchPreservedTotals(_monthKey),
+                  builder: (context, totalsSnapshot) {
+                    final preservedTotals = totalsSnapshot.data ??
+                        const <SalesPersonTotalSnapshot>[];
+                    return StreamBuilder<SalesBackupStatus?>(
+                      stream: widget.backend.watchBackupStatus(),
+                      builder: (context, backupSnapshot) {
+                        final backupStatus = backupSnapshot.data;
+                        _scheduleBackupSuccessDismissal(backupStatus);
+                        return _body(
+                          people,
+                          month,
+                          records,
+                          preservedTotals: preservedTotals,
+                          backupStatus: _visibleBackupStatus(backupStatus),
+                          loading: recordsSnapshot.connectionState ==
+                                  ConnectionState.waiting ||
+                              totalsSnapshot.connectionState ==
+                                  ConnectionState.waiting,
+                        );
+                      },
                     );
                   },
                 );
@@ -694,6 +712,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     List<SalesPerson> people,
     SalesMonthState month,
     List<SalesRecord> records, {
+    List<SalesPersonTotalSnapshot> preservedTotals = const [],
     required SalesBackupStatus? backupStatus,
     required bool loading,
   }) {
@@ -711,7 +730,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
           _filterDateRange == null ? null : salesDateKey(_filterDateRange!.end),
     );
     final personGroups = groupSalesRecordsByPerson(filteredRecords);
-    final monthlyPersonGroups = groupSalesRecordsByPerson(records);
+    final monthlyPersonGroups = mergeSalesTotalsWithSnapshots(
+      records,
+      preservedTotals,
+    );
     final orderedRecords =
         personGroups.expand((group) => group.records).toList(growable: false);
     final visibleRecords =
@@ -1531,7 +1553,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                   ),
                                 ),
                                 Text(
-                                  '${groups[index].records.length} daily ${groups[index].records.length == 1 ? 'entry' : 'entries'}',
+                                  '${groups[index].entryCount} daily ${groups[index].entryCount == 1 ? 'entry' : 'entries'}',
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: scheme.onSurfaceVariant,
                                   ),
@@ -1633,7 +1655,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                               ),
                             ),
                             Text(
-                              '${_displayMonth(_selectedMonth)} · ${records.length} ${records.length == 1 ? 'entry' : 'entries'}',
+                              '${_displayMonth(_selectedMonth)} · ${group.entryCount} ${group.entryCount == 1 ? 'entry' : 'entries'}',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: scheme.onSurfaceVariant,
                               ),
@@ -1649,90 +1671,143 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                     ],
                   ),
                 ),
+                if (group.hasPreservedTotal &&
+                    records.length < group.entryCount)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    color: scheme.secondaryContainer,
+                    child: Text(
+                      '${group.entryCount - records.length} individual ${group.entryCount - records.length == 1 ? 'record is' : 'records are'} in the Sales Tracker recycle bin. The total remains preserved.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 Flexible(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: records.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final record = records[index];
-                      return Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerLow,
-                          border: Border.all(color: scheme.outlineVariant),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                  child: records.isEmpty && group.hasPreservedTotal
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(28),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Container(
-                                  width: 32,
-                                  height: 32,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: scheme.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(9),
-                                  ),
-                                  child: Text(
-                                    '${index + 1}',
-                                    style: TextStyle(
-                                      color: scheme.onSecondaryContainer,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
+                                Icon(
+                                  Icons.inventory_2_outlined,
+                                  size: 38,
+                                  color: scheme.onSurfaceVariant,
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _displayDate(record.salesDate),
-                                        style:
-                                            theme.textTheme.bodyLarge?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      if (record.createdAt != null)
-                                        Text(
-                                          'Entered at ${_displayTime(record.createdAt!)}',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: scheme.onSurfaceVariant,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
+                                const SizedBox(height: 12),
                                 Text(
-                                  '₹${_groupedAmount(record.amountMilli)}',
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    color: scheme.primary,
-                                    fontWeight: FontWeight.w900,
+                                  'Individual sales records are in the Sales Tracker recycle bin.',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'The preserved monthly total remains available here.',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],
                             ),
-                            if (record.reference.trim().isNotEmpty) ...[
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: records.length,
+                          separatorBuilder: (context, index) =>
                               const SizedBox(height: 10),
-                              Text(
-                                record.reference.trim(),
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
+                          itemBuilder: (context, index) {
+                            final record = records[index];
+                            return Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: scheme.surfaceContainerLow,
+                                border:
+                                    Border.all(color: scheme.outlineVariant),
+                                borderRadius: BorderRadius.circular(14),
                               ),
-                            ],
-                          ],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 32,
+                                        height: 32,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: scheme.secondaryContainer,
+                                          borderRadius:
+                                              BorderRadius.circular(9),
+                                        ),
+                                        child: Text(
+                                          '${index + 1}',
+                                          style: TextStyle(
+                                            color: scheme.onSecondaryContainer,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _displayDate(record.salesDate),
+                                              style: theme.textTheme.bodyLarge
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            if (record.createdAt != null)
+                                              Text(
+                                                'Entered at ${_displayTime(record.createdAt!)}',
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                  color:
+                                                      scheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        '₹${_groupedAmount(record.amountMilli)}',
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                          color: scheme.primary,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (record.reference.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      record.reference.trim(),
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
                 ),
                 Container(
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),

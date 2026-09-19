@@ -157,17 +157,25 @@ try {
     }, 'mark the owner backup request as processing');
   }
 
-  const [people, personNames, entries, audit, monthState] = await Promise.all([
+  const [
+    people,
+    personNames,
+    entries,
+    audit,
+    monthState,
+    personTotalSnapshots,
+  ] = await Promise.all([
     documents(db.collection('salesPersons')),
     documents(db.collection('salesPersonNames')),
     documents(db.collection('salesEntries')),
     documents(db.collection('salesEntryAudit')),
     documents(db.collection('salesMonths')),
+    documents(db.collection('salesPersonTotalSnapshots')),
   ]);
   const generated = istParts();
   const generatedAtIst = `${generated.year}-${generated.month}-${generated.day}T${generated.hour}:${generated.minute}:${generated.second}+05:30`;
   const encrypted = encrypt({
-    format: 'ENQUIRY_TRACKER_SALES_DATA_V2',
+    format: 'ENQUIRY_TRACKER_SALES_DATA_V3',
     scope: 'all-sales-tracker-data',
     projectId: serviceAccount.project_id,
     generatedAtIst,
@@ -177,6 +185,7 @@ try {
     entries,
     audit,
     monthState,
+    personTotalSnapshots,
   });
   const release = await fullBackupRelease();
   const assetName =

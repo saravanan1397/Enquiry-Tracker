@@ -39,6 +39,8 @@ class FirebaseSalesBackend {
       _database.collection('salesPersonNames');
   CollectionReference<Map<String, dynamic>> get _entries =>
       _database.collection('salesEntries');
+  CollectionReference<Map<String, dynamic>> get _totalSnapshots =>
+      _database.collection('salesPersonTotalSnapshots');
   CollectionReference<Map<String, dynamic>> get _audit =>
       _database.collection('salesEntryAudit');
   CollectionReference<Map<String, dynamic>> get _months =>
@@ -88,6 +90,24 @@ class FirebaseSalesBackend {
             ? date
             : a.personName.toLowerCase().compareTo(b.personName.toLowerCase());
       });
+      return result;
+    });
+  }
+
+  Stream<List<SalesPersonTotalSnapshot>> watchPreservedTotals(
+    String monthKey,
+  ) {
+    if (!isConfigured) return Stream.value(const []);
+    return _totalSnapshots
+        .where('monthKey', isEqualTo: monthKey)
+        .snapshots()
+        .map((snapshot) {
+      final result = snapshot.docs.map(_totalSnapshotFromDocument).toList();
+      result.sort(
+        (a, b) => a.personName.toLowerCase().compareTo(
+              b.personName.toLowerCase(),
+            ),
+      );
       return result;
     });
   }
@@ -272,18 +292,110 @@ class FirebaseSalesBackend {
       }
       await batch.commit();
     }
+    final totals =
+        await _totalSnapshots.where('personId', isEqualTo: person.id).get();
+    for (var offset = 0; offset < totals.docs.length; offset += 400) {
+      final end =
+          offset + 400 < totals.docs.length ? offset + 400 : totals.docs.length;
+      final batch = _database.batch();
+      for (final document in totals.docs.sublist(offset, end)) {
+        batch.update(document.reference, {
+          'personName': cleanName,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
     await _database.waitForPendingWrites();
   }
 
   Future<void> recyclePerson({
     required SalesPerson person,
     required String ownerUid,
+    bool recycleIndividualSales = false,
   }) async {
+    if (recycleIndividualSales) {
+      await _preserveTotalsAndRecyclePersonEntries(
+        person: person,
+        ownerUid: ownerUid,
+      );
+    }
     await _people.doc(person.id).update({
       'active': false,
       'deletedAt': FieldValue.serverTimestamp(),
       'deletedByUid': ownerUid,
+      'individualSalesRecycled': recycleIndividualSales,
     });
+    await _database.waitForPendingWrites();
+  }
+
+  Future<void> _preserveTotalsAndRecyclePersonEntries({
+    required SalesPerson person,
+    required String ownerUid,
+  }) async {
+    final entries =
+        await _entries.where('personId', isEqualTo: person.id).get();
+    final activeEntries = entries.docs
+        .where((document) => document.data()['deletedAt'] == null)
+        .toList(growable: false);
+    final entriesByMonth =
+        <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+    for (final document in activeEntries) {
+      final monthKey = document.data()['monthKey'] as String?;
+      if (monthKey == null || monthKey.isEmpty) continue;
+      entriesByMonth.putIfAbsent(monthKey, () => []).add(document);
+    }
+
+    for (final month in entriesByMonth.entries) {
+      final snapshotReference =
+          _totalSnapshots.doc('${person.id}_${month.key}');
+      final existing = await snapshotReference.get();
+      final existingData = existing.data();
+      final existingIds =
+          (existingData?['recordIds'] as List<dynamic>? ?? const [])
+              .whereType<String>()
+              .toSet();
+      final newEntries = month.value
+          .where((document) => !existingIds.contains(document.id))
+          .toList(growable: false);
+      final totalMilli = (existingData?['totalMilli'] as num?)?.toInt() ?? 0;
+      final entryCount = (existingData?['entryCount'] as num?)?.toInt() ?? 0;
+      await snapshotReference.set({
+        'personId': person.id,
+        'personName': person.name,
+        'monthKey': month.key,
+        'totalMilli': totalMilli +
+            newEntries.fold<int>(
+              0,
+              (total, document) =>
+                  total + (document.data()['amountMilli'] as num).toInt(),
+            ),
+        'entryCount': entryCount + newEntries.length,
+        'recordIds': <String>{
+          ...existingIds,
+          ...newEntries.map((document) => document.id),
+        }.toList(growable: false),
+        'preservedAt': FieldValue.serverTimestamp(),
+        'preservedByUid': ownerUid,
+        'reason': 'salesperson-deletion',
+      }, SetOptions(merge: true));
+    }
+
+    for (var offset = 0; offset < activeEntries.length; offset += 400) {
+      final end = offset + 400 < activeEntries.length
+          ? offset + 400
+          : activeEntries.length;
+      final batch = _database.batch();
+      for (final document in activeEntries.sublist(offset, end)) {
+        batch.update(document.reference, {
+          'deletedAt': FieldValue.serverTimestamp(),
+          'deletedByUid': ownerUid,
+          'deletedAsPartOfMonth': false,
+          'deletedWithPerson': true,
+        });
+      }
+      await batch.commit();
+    }
     await _database.waitForPendingWrites();
   }
 
@@ -339,6 +451,7 @@ class FirebaseSalesBackend {
     final dateKey = salesDateKey(salesDate);
     final monthKey = salesMonthKey(salesDate);
     final entry = _entries.doc('${person.id}_$dateKey');
+    final totalSnapshot = _totalSnapshots.doc('${person.id}_$monthKey');
     final audit = _audit.doc();
     await _database.runTransaction((transaction) async {
       final month = await transaction.get(_months.doc(monthKey));
@@ -348,6 +461,11 @@ class FirebaseSalesBackend {
         );
       }
       final existing = await transaction.get(entry);
+      final preservedTotal = await transaction.get(totalSnapshot);
+      final preservedRecordIds =
+          (preservedTotal.data()?['recordIds'] as List<dynamic>? ?? const [])
+              .whereType<String>()
+              .toSet();
       final existingIsDeleted = existing.data()?['deletedAt'] != null;
       if (existing.exists && !existingIsDeleted && !updateExisting) {
         throw StateError('A daily record already exists for this salesperson.');
@@ -377,6 +495,26 @@ class FirebaseSalesBackend {
           'deletedByUid': null,
           'deletedAsPartOfMonth': false,
         });
+        if (preservedTotal.exists) {
+          final previousAmount = (previous['amountMilli'] as num).toInt();
+          if (preservedRecordIds.contains(entry.id)) {
+            transaction.update(totalSnapshot, {
+              'personName': person.name,
+              'totalMilli': FieldValue.increment(
+                amountMilli - previousAmount,
+              ),
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          } else {
+            transaction.update(totalSnapshot, {
+              'personName': person.name,
+              'totalMilli': FieldValue.increment(amountMilli),
+              'entryCount': FieldValue.increment(1),
+              'recordIds': FieldValue.arrayUnion([entry.id]),
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
+        }
       } else {
         transaction.set(entry, {
           'personId': person.id,
@@ -390,6 +528,15 @@ class FirebaseSalesBackend {
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
+        if (preservedTotal.exists) {
+          transaction.update(totalSnapshot, {
+            'personName': person.name,
+            'totalMilli': FieldValue.increment(amountMilli),
+            'entryCount': FieldValue.increment(1),
+            'recordIds': FieldValue.arrayUnion([entry.id]),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
       }
     });
     await _database.waitForPendingWrites();
@@ -598,6 +745,23 @@ class FirebaseSalesBackend {
       lastEditedByName: data['lastEditedByName'] as String?,
       deletedAt: _dateTime(data['deletedAt']),
       deletedAsPartOfMonth: data['deletedAsPartOfMonth'] as bool? ?? false,
+    );
+  }
+
+  SalesPersonTotalSnapshot _totalSnapshotFromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data();
+    return SalesPersonTotalSnapshot(
+      id: document.id,
+      personId: data['personId'] as String? ?? '',
+      personName: data['personName'] as String? ?? '',
+      monthKey: data['monthKey'] as String? ?? '',
+      totalMilli: (data['totalMilli'] as num?)?.toInt() ?? 0,
+      entryCount: (data['entryCount'] as num?)?.toInt() ?? 0,
+      recordIds: (data['recordIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toSet(),
     );
   }
 

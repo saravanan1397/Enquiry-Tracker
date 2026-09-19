@@ -79,12 +79,36 @@ class SalesPersonRecordGroup {
     required this.personName,
     required this.records,
     required this.totalMilli,
-  });
+    int? entryCount,
+    this.hasPreservedTotal = false,
+  }) : entryCount = entryCount ?? records.length;
 
   final String personId;
   final String personName;
   final List<SalesRecord> records;
   final int totalMilli;
+  final int entryCount;
+  final bool hasPreservedTotal;
+}
+
+class SalesPersonTotalSnapshot {
+  const SalesPersonTotalSnapshot({
+    required this.id,
+    required this.personId,
+    required this.personName,
+    required this.monthKey,
+    required this.totalMilli,
+    required this.entryCount,
+    required this.recordIds,
+  });
+
+  final String id;
+  final String personId;
+  final String personName;
+  final String monthKey;
+  final int totalMilli;
+  final int entryCount;
+  final Set<String> recordIds;
 }
 
 List<SalesPersonRecordGroup> groupSalesRecordsByPerson(
@@ -108,6 +132,51 @@ List<SalesPersonRecordGroup> groupSalesRecordsByPerson(
         0,
         (total, record) => total + record.amountMilli,
       ),
+    );
+  }).toList();
+  result.sort((a, b) {
+    final name = a.personName.toLowerCase().compareTo(
+          b.personName.toLowerCase(),
+        );
+    return name != 0 ? name : a.personId.compareTo(b.personId);
+  });
+  return result;
+}
+
+List<SalesPersonRecordGroup> mergeSalesTotalsWithSnapshots(
+  Iterable<SalesRecord> activeRecords,
+  Iterable<SalesPersonTotalSnapshot> snapshots,
+) {
+  final activeGroups = {
+    for (final group in groupSalesRecordsByPerson(activeRecords))
+      group.personId: group,
+  };
+  final snapshotByPerson = {
+    for (final snapshot in snapshots) snapshot.personId: snapshot,
+  };
+  final personIds = <String>{
+    ...activeGroups.keys,
+    ...snapshotByPerson.keys,
+  };
+  final result = personIds.map((personId) {
+    final active = activeGroups[personId];
+    final snapshot = snapshotByPerson[personId];
+    if (snapshot == null) return active!;
+    final activeRecordsForPerson = active?.records ?? const <SalesRecord>[];
+    final additionalRecords = activeRecordsForPerson
+        .where((record) => !snapshot.recordIds.contains(record.id))
+        .toList(growable: false);
+    return SalesPersonRecordGroup(
+      personId: personId,
+      personName: snapshot.personName,
+      records: activeRecordsForPerson,
+      totalMilli: snapshot.totalMilli +
+          additionalRecords.fold<int>(
+            0,
+            (total, record) => total + record.amountMilli,
+          ),
+      entryCount: snapshot.entryCount + additionalRecords.length,
+      hasPreservedTotal: true,
     );
   }).toList();
   result.sort((a, b) {
