@@ -160,27 +160,23 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     });
   }
 
-  Future<bool> _confirmUpdate(SalesRecord existing) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Update existing entry?'),
-          content: Text(
-            '${existing.personName} already has a sales entry for ${_displayDate(existing.salesDate)}. The previous amount will be retained in the edit history.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Update existing'),
-            ),
-          ],
+  Future<void> _showDuplicateEntryError(SalesRecord existing) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sales entry already exists'),
+        content: Text(
+          '${existing.personName} already has sales data for ${_displayDate(existing.salesDate)}. Use the edit button on the existing record if you need to correct it.',
         ),
-      ) ??
-      false;
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _addSalesperson(List<SalesPerson> people) async {
     final controller = TextEditingController();
@@ -424,10 +420,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         person.id,
         _selectedDate,
       );
-      var updateExisting = existing != null;
+      final updateExisting = existing != null;
       if (existing != null && _editing?.id != existing.id) {
-        updateExisting = await _confirmUpdate(existing);
-        if (!updateExisting) return;
+        await _showDuplicateEntryError(existing);
+        return;
       }
       await widget.backend.saveDailyRecord(
         person: person,
