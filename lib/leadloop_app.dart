@@ -1243,7 +1243,10 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                 letterSpacing: 1.1)),
         if (overdueFollowUp2.isNotEmpty) ...[
           const SizedBox(height: 10),
-          _FollowUp2OverdueBanner(leads: overdueFollowUp2),
+          _FollowUp2OverdueBanner(
+            leads: overdueFollowUp2,
+            promoterSummary: true,
+          ),
         ],
         const SizedBox(height: 17),
         TextField(
@@ -1332,8 +1335,26 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                         child: Text(lead.name.substring(0, 1).toUpperCase(),
                             style: TextStyle(
                                 color: Theme.of(context).colorScheme.primary))),
-                    title: Text(lead.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    title: Wrap(
+                      spacing: 8,
+                      runSpacing: 5,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(lead.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        if (FollowUpDeadlineService.isOverdue(lead))
+                          const _LeadStatusBadge(
+                            label: 'Pending follow-up',
+                            status: _LeadStatus.overdue,
+                          )
+                        else if (lead.outcome == EnquiryOutcome.purchased)
+                          const _LeadStatusBadge(
+                            label: 'Purchased',
+                            status: _LeadStatus.purchased,
+                          ),
+                      ],
+                    ),
                     subtitle: Text(
                         '${lead.phone} · ${lead.isCompleted ? lead.outcomeLabel : 'Follow-up ${lead.followUpNumber}'}\n${FollowUpDeadlineService.isOverdue(lead) ? 'F${lead.followUpNumber + 1} overdue · due ${_formatDateTime(FollowUpDeadlineService.nextDueAt(lead)!)}' : 'Entered ${_formatDateTime(lead.createdAt)}'}'),
                     isThreeLine: true,
@@ -2270,35 +2291,89 @@ class _LeadCommentLayout {
 }
 
 class _FollowUp2OverdueBanner extends StatelessWidget {
-  const _FollowUp2OverdueBanner({required this.leads});
+  const _FollowUp2OverdueBanner({
+    required this.leads,
+    this.promoterSummary = false,
+  });
 
   final List<CustomerLead> leads;
+  final bool promoterSummary;
 
   @override
   Widget build(BuildContext context) {
     final isSingleLead = leads.length == 1;
     final lead = leads.first;
     final dueAt = FollowUpDeadlineService.nextDueAt(lead);
-    final scheme = Theme.of(context).colorScheme;
+    final brightness = Theme.of(context).brightness;
+    final foreground = AppColors.onErrorSurfaceFor(brightness);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: scheme.errorContainer,
+        color: AppColors.errorSurfaceFor(brightness),
+        border: Border.all(color: AppColors.errorFor(brightness)),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(children: [
         Icon(Icons.notification_important_outlined,
-            size: 18, color: scheme.onErrorContainer),
+            size: 18, color: foreground),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            isSingleLead
-                ? 'Follow-up ${lead.followUpNumber + 1} is overdue for ${lead.name}. It was due ${_formatDateTime(dueAt)}.'
-                : 'Follow-ups are overdue for ${leads.length} customers. Review their records now.',
-            style: TextStyle(color: scheme.onErrorContainer, fontSize: 12),
+            promoterSummary
+                ? isSingleLead
+                    ? 'You have 1 follow-up pending. Follow-up ${lead.followUpNumber + 1} for ${lead.name} was due ${_formatDateTime(dueAt)}.'
+                    : 'You have ${leads.length} follow-ups pending. Review their records now.'
+                : isSingleLead
+                    ? 'Follow-up ${lead.followUpNumber + 1} is overdue for ${lead.name}. It was due ${_formatDateTime(dueAt)}.'
+                    : 'Follow-ups are overdue for ${leads.length} customers. Review their records now.',
+            style: TextStyle(
+              color: foreground,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ]),
+    );
+  }
+}
+
+enum _LeadStatus { overdue, purchased }
+
+class _LeadStatusBadge extends StatelessWidget {
+  const _LeadStatusBadge({required this.label, required this.status});
+
+  final String label;
+  final _LeadStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final isOverdue = status == _LeadStatus.overdue;
+    final foreground = isOverdue
+        ? AppColors.onErrorSurfaceFor(brightness)
+        : AppColors.successFor(brightness);
+    final background = isOverdue
+        ? AppColors.errorSurfaceFor(brightness)
+        : AppColors.successSurfaceFor(brightness);
+    return Semantics(
+      label: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: background,
+          border: Border.all(color: foreground.withAlpha(170)),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: foreground,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

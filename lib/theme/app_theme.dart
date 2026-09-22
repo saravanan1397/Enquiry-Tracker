@@ -36,8 +36,22 @@ abstract final class AppColors {
   static Color successFor(Brightness brightness) =>
       brightness == Brightness.dark ? darkSuccess : success;
 
+  static Color successSurfaceFor(Brightness brightness) =>
+      brightness == Brightness.dark ? darkSuccessSurface : successSurface;
+
   static Color warningFor(Brightness brightness) =>
       brightness == Brightness.dark ? darkWarning : warning;
+
+  static Color errorFor(Brightness brightness) =>
+      brightness == Brightness.dark ? darkError : error;
+
+  static Color errorSurfaceFor(Brightness brightness) =>
+      brightness == Brightness.dark ? darkErrorSurface : errorSurface;
+
+  static Color onErrorSurfaceFor(Brightness brightness) =>
+      brightness == Brightness.dark
+          ? const Color(0xFFFFE2DF)
+          : const Color(0xFF6F1D19);
 }
 
 class AppTheme {
