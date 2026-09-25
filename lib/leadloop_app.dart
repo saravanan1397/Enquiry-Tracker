@@ -1957,12 +1957,16 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   Future<void> _deleteFiltered() async {
     final leads = _filterLeads(widget.store.activeLeads());
     if (leads.isEmpty) return;
+    final isFilteredDelete = _hasActiveFilters;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Move ${leads.length} filtered records?'),
-        content: const Text(
-            'Every record currently shown below the filters will move to the recycle bin and can be restored later.'),
+        title: Text(isFilteredDelete
+            ? 'Move ${leads.length} filtered records?'
+            : 'Move all ${leads.length} active records?'),
+        content: Text(isFilteredDelete
+            ? 'Every record matching the current filters will move to the recycle bin and can be restored later.'
+            : 'Every active customer enquiry will move to the recycle bin and can be restored later. Nothing will be permanently deleted.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -2404,16 +2408,17 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
               ],
             ),
           ),
-          if (_hasActiveFilters)
-            IconButton(
-              tooltip: 'Move all filtered records to recycle bin',
-              onPressed: leads.isEmpty ? null : _deleteFiltered,
-              style: IconButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
-                foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
-              ),
-              icon: const Icon(Icons.delete_sweep_outlined),
+          FilledButton.tonalIcon(
+            onPressed: leads.isEmpty ? null : _deleteFiltered,
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
             ),
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: Text(
+              _hasActiveFilters ? 'Move filtered to bin' : 'Move all to bin',
+            ),
+          ),
         ]),
         const SizedBox(height: 8),
         LayoutBuilder(builder: (context, constraints) {
