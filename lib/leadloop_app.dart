@@ -846,6 +846,23 @@ class _LeadloopShellState extends State<LeadloopShell> {
     }
   }
 
+  Future<void> _manualSyncNow() async {
+    try {
+      await _syncNow();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dashboard refreshed.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sync could not complete. Check your connection.'),
+        ),
+      );
+    }
+  }
+
   Future<void> _exportCustomers({required bool email}) async {
     if (_exporting) return;
 
@@ -991,24 +1008,6 @@ class _LeadloopShellState extends State<LeadloopShell> {
   @override
   Widget build(BuildContext context) {
     final isAdmin = widget.role == LeadloopRole.admin;
-    final pages = isAdmin
-        ? <Widget>[
-            LeadloopAdminScreen(
-                store: widget.store,
-                backend: _firebaseBackend,
-                onChanged: _syncService.syncNow),
-            LeadloopPromoterAdminScreen(backend: _firebaseBackend),
-          ]
-        : <Widget>[
-            LeadloopPromoterScreen(
-                store: widget.store,
-                onChanged: _syncService.syncNow,
-                promoterId: widget.session.uid,
-                promoterName: widget.session.displayName,
-                shopId: widget.session.shopId,
-                shopName: widget.session.shopName,
-                syncStatusListenable: _syncService.status)
-          ];
     final destinations = isAdmin
         ? const <NavigationDestination>[
             NavigationDestination(
@@ -1040,6 +1039,24 @@ class _LeadloopShellState extends State<LeadloopShell> {
                   : null,
             );
           }
+          final pages = isAdmin
+              ? <Widget>[
+                  LeadloopAdminScreen(
+                      store: widget.store,
+                      backend: _firebaseBackend,
+                      onChanged: _syncService.syncNow),
+                  LeadloopPromoterAdminScreen(backend: _firebaseBackend),
+                ]
+              : <Widget>[
+                  LeadloopPromoterScreen(
+                      store: widget.store,
+                      onChanged: _syncService.syncNow,
+                      promoterId: widget.session.uid,
+                      promoterName: widget.session.displayName,
+                      shopId: widget.session.shopId,
+                      shopName: widget.session.shopName,
+                      syncStatusListenable: _syncService.status)
+                ];
           return IndexedStack(index: _tab, children: pages);
         },
       );
@@ -1116,7 +1133,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
                   (!isAdmin || _ownerFollowupOpen))
                 IconButton(
                     tooltip: 'Sync now',
-                    onPressed: _syncNow,
+                    onPressed: _manualSyncNow,
                     icon: const Icon(Icons.sync_outlined)),
               IconButton(
                   tooltip: widget.isDarkMode
