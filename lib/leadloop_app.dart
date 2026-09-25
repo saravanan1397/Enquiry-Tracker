@@ -31,6 +31,7 @@ import 'services/local_lead_store.dart';
 import 'services/mobile_number_validator.dart';
 import 'services/notification_service.dart';
 import 'services/sync_service.dart';
+import 'services/workspace_state_store.dart';
 import 'theme/app_theme.dart';
 
 enum LeadloopRole { promoter, admin }
@@ -149,7 +150,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     _profileWatch = FirebaseFirestore.instance
         .collection('promoters')
         .doc(session.uid)
-        .snapshots(includeMetadataChanges: true)
+        .snapshots()
         .listen((snapshot) {
       // Ignore an empty offline cache, but immediately block known disabled data.
       if (_session?.uid != session.uid) return;
@@ -728,14 +729,48 @@ class _LeadloopShellState extends State<LeadloopShell> {
   int _tab = 0;
   bool _ownerFollowupOpen = false;
   bool _ownerSalesOpen = false;
+  bool _ownerViewTouched = false;
+  final WorkspaceStateStore _workspaceState = const WorkspaceStateStore();
+  final ValueNotifier<int> _leadRevision = ValueNotifier(0);
 
   bool get _ownerModuleOpen => _ownerFollowupOpen || _ownerSalesOpen;
 
-  void _ownerBack() => setState(() {
-        _tab = 0;
-        _ownerFollowupOpen = false;
-        _ownerSalesOpen = false;
-      });
+  void _ownerBack() => _openOwnerView(OwnerWorkspaceView.dashboard);
+
+  void _applyOwnerView(OwnerWorkspaceView view) {
+    _tab = view == OwnerWorkspaceView.promoters ? 1 : 0;
+    _ownerFollowupOpen = view == OwnerWorkspaceView.followups ||
+        view == OwnerWorkspaceView.promoters;
+    _ownerSalesOpen = view == OwnerWorkspaceView.sales;
+  }
+
+  void _openOwnerView(OwnerWorkspaceView view) {
+    _ownerViewTouched = true;
+    setState(() => _applyOwnerView(view));
+    unawaited(_workspaceState.writeOwnerView(view));
+    if (view != OwnerWorkspaceView.sales) {
+      unawaited(_workspaceState.writeSalesRecycleBin(false));
+    }
+    if (view != OwnerWorkspaceView.followups) {
+      unawaited(_workspaceState.writeFollowupRecycleBin(false));
+    }
+    if (view != OwnerWorkspaceView.promoters) {
+      unawaited(_workspaceState.writePromoterRecycleBin(false));
+    }
+  }
+
+  Future<void> _restoreOwnerView() async {
+    if (widget.role != LeadloopRole.admin) return;
+    final view = await _workspaceState.readOwnerView();
+    if (!mounted || _ownerViewTouched) return;
+    setState(() => _applyOwnerView(view));
+  }
+
+  void _refreshLeadViews() {
+    if (!mounted) return;
+    _leadRevision.value++;
+  }
+
   late final SyncService _syncService;
   late final FirebaseLeadBackend _firebaseBackend;
   late final FirebaseSalesBackend _salesBackend;
@@ -751,6 +786,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
     _salesBackend = FirebaseSalesBackend();
     _syncService = SyncService();
     _syncService.start(syncPending: _syncNow);
+    unawaited(_restoreOwnerView());
     NotificationService.instance.start(widget.session.uid);
     if (NotificationService.instance.supported) {
       _messages = FirebaseMessaging.onMessage.listen((message) {
@@ -765,7 +801,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
       });
     }
     _deadlineRefresh = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+      _refreshLeadViews();
     });
     if (_firebaseBackend.isConfigured) {
       _leadSubscription = _firebaseBackend.watchLeads(
@@ -773,7 +809,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
           promoterId:
               widget.role == LeadloopRole.promoter ? widget.session.uid : null,
           onChanged: () {
-            if (mounted) setState(() {});
+            _refreshLeadViews();
           });
     }
   }
@@ -786,7 +822,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
       } else {
         await _firebaseBackend.syncPromoter(widget.store, widget.session.uid);
       }
-      if (mounted) setState(() {});
+      _refreshLeadViews();
     } catch (error, stackTrace) {
       // The local store remains usable. The next connectivity event retries.
       debugPrint('Lead sync failed: $error\n$stackTrace');
@@ -930,6 +966,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
     _messages?.cancel();
     NotificationService.instance.stop();
     _syncService.dispose();
+    _leadRevision.dispose();
     super.dispose();
   }
 
@@ -965,6 +1002,30 @@ class _LeadloopShellState extends State<LeadloopShell> {
             NavigationDestination(
                 icon: Icon(Icons.person_outline), label: 'Promoter')
           ];
+    final Widget workspaceBody;
+    if (isAdmin && _ownerSalesOpen) {
+      workspaceBody = SalesTrackerScreen(
+        backend: _salesBackend,
+        ownerUid: widget.session.uid,
+        ownerName: widget.session.displayName,
+      );
+    } else {
+      workspaceBody = ValueListenableBuilder<int>(
+        valueListenable: _leadRevision,
+        builder: (context, _, __) {
+          if (isAdmin && !_ownerModuleOpen) {
+            return OwnerHome(
+              leads: widget.store.activeLeads(),
+              onFollowup: () => _openOwnerView(OwnerWorkspaceView.followups),
+              onSales: kIsWeb
+                  ? () => _openOwnerView(OwnerWorkspaceView.sales)
+                  : null,
+            );
+          }
+          return IndexedStack(index: _tab, children: pages);
+        },
+      );
+    }
     return PopScope(
       canPop: !isAdmin || !_ownerModuleOpen,
       onPopInvokedWithResult: (didPop, _) {
@@ -1053,37 +1114,21 @@ class _LeadloopShellState extends State<LeadloopShell> {
                   icon: Icon(isAdmin ? Icons.logout : Icons.lock_outline))
             ]),
         body: SafeArea(
-          child: isAdmin && !_ownerModuleOpen
-              ? OwnerHome(
-                  leads: widget.store.activeLeads(),
-                  onFollowup: () => setState(() {
-                    _tab = 0;
-                    _ownerFollowupOpen = true;
-                  }),
-                  onSales: kIsWeb
-                      ? () => setState(() {
-                            _ownerFollowupOpen = false;
-                            _ownerSalesOpen = true;
-                          })
-                      : null,
-                )
-              : isAdmin && _ownerSalesOpen
-                  ? SalesTrackerScreen(
-                      backend: _salesBackend,
-                      ownerUid: widget.session.uid,
-                      ownerName: widget.session.displayName,
-                    )
-                  : IndexedStack(index: _tab, children: pages),
+          child: workspaceBody,
         ),
         // Flutter requires NavigationBar to have at least two destinations.
         // Promoters have one screen, so navigation is only shown to owners.
-        bottomNavigationBar: destinations.length < 2 ||
-                (isAdmin && !_ownerFollowupOpen)
-            ? null
-            : NavigationBar(
-                selectedIndex: _tab,
-                onDestinationSelected: (index) => setState(() => _tab = index),
-                destinations: destinations),
+        bottomNavigationBar:
+            destinations.length < 2 || (isAdmin && !_ownerFollowupOpen)
+                ? null
+                : NavigationBar(
+                    selectedIndex: _tab,
+                    onDestinationSelected: (index) => _openOwnerView(
+                          index == 0
+                              ? OwnerWorkspaceView.followups
+                              : OwnerWorkspaceView.promoters,
+                        ),
+                    destinations: destinations),
       ),
     );
   }
@@ -1734,12 +1779,32 @@ class LeadloopAdminScreen extends StatefulWidget {
 
 class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   final Map<String, _LeadCommentLayout> _commentLayouts = {};
+  final WorkspaceStateStore _workspaceState = const WorkspaceStateStore();
   bool _showRecycleBin = false;
+  bool _recycleBinTouched = false;
   String? _shop;
   String? _promoter;
   FollowUpStage? _stage;
   DateTimeRange? _dateRange;
   LeadStatusFilter? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreRecycleBin());
+  }
+
+  Future<void> _restoreRecycleBin() async {
+    final visible = await _workspaceState.readFollowupRecycleBin();
+    if (!mounted || _recycleBinTouched || !visible) return;
+    setState(() => _showRecycleBin = true);
+  }
+
+  void _setRecycleBinVisible(bool visible) {
+    _recycleBinTouched = true;
+    setState(() => _showRecycleBin = visible);
+    unawaited(_workspaceState.writeFollowupRecycleBin(visible));
+  }
 
   List<CustomerLead> _filterLeads(Iterable<CustomerLead> source) {
     final start = _dateRange == null
@@ -1915,7 +1980,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
         store: widget.store,
         backend: widget.backend,
         onChanged: widget.onChanged,
-        onBack: () => setState(() => _showRecycleBin = false),
+        onBack: () => _setRecycleBinVisible(false),
       );
     }
     final all = widget.store.activeLeads();
@@ -1971,7 +2036,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
             ),
             IconButton(
               tooltip: 'Customer follow-ups recycle bin',
-              onPressed: () => setState(() => _showRecycleBin = true),
+              onPressed: () => _setRecycleBinVisible(true),
               icon: const Icon(Icons.delete_outline),
             ),
             const SizedBox(width: 6),
@@ -2429,8 +2494,10 @@ class LeadloopPromoterAdminScreen extends StatefulWidget {
 
 class _LeadloopPromoterAdminScreenState
     extends State<LeadloopPromoterAdminScreen> {
+  final WorkspaceStateStore _workspaceState = const WorkspaceStateStore();
   List<LeadloopPromoterProfile> _promoters = const [];
   bool _showRecycleBin = false;
+  bool _recycleBinTouched = false;
   bool _loading = true;
   String? _error;
   bool _changing = false;
@@ -2478,6 +2545,19 @@ class _LeadloopPromoterAdminScreenState
   void initState() {
     super.initState();
     _load();
+    unawaited(_restoreRecycleBin());
+  }
+
+  Future<void> _restoreRecycleBin() async {
+    final visible = await _workspaceState.readPromoterRecycleBin();
+    if (!mounted || _recycleBinTouched || !visible) return;
+    setState(() => _showRecycleBin = true);
+  }
+
+  void _setRecycleBinVisible(bool visible) {
+    _recycleBinTouched = true;
+    setState(() => _showRecycleBin = visible);
+    unawaited(_workspaceState.writePromoterRecycleBin(visible));
   }
 
   Future<void> _load() async {
@@ -2548,7 +2628,7 @@ class _LeadloopPromoterAdminScreenState
     if (_showRecycleBin) {
       return _PromoterRecycleBinView(
         backend: widget.backend,
-        onBack: () => setState(() => _showRecycleBin = false),
+        onBack: () => _setRecycleBinVisible(false),
       );
     }
     final pending = _promoters.where((promoter) => !promoter.active).length;
@@ -2575,7 +2655,7 @@ class _LeadloopPromoterAdminScreenState
               icon: const Icon(Icons.refresh_outlined)),
           IconButton(
               tooltip: 'Promoter accounts recycle bin',
-              onPressed: () => setState(() => _showRecycleBin = true),
+              onPressed: () => _setRecycleBinVisible(true),
               icon: const Icon(Icons.delete_outline)),
         ]),
         const SizedBox(height: 8),

@@ -241,7 +241,7 @@ class FirebaseLeadBackend {
     final query = promoterId == null
         ? _leads
         : _leads.where('promoterId', isEqualTo: promoterId);
-    return query.snapshots(includeMetadataChanges: true).listen((snapshot) {
+    return query.snapshots().listen((snapshot) {
       _snapshotQueue = _snapshotQueue
           .then((_) =>
               _applyLeadSnapshot(snapshot, localStore, onChanged, promoterId))

@@ -7,6 +7,7 @@ import 'models/sales_record.dart';
 import 'services/export_file_downloader.dart';
 import 'services/firebase_sales_backend.dart';
 import 'services/sales_export_service.dart';
+import 'services/workspace_state_store.dart';
 
 class SalesTrackerScreen extends StatefulWidget {
   const SalesTrackerScreen({
@@ -36,9 +37,18 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   DateTimeRange? _filterDateRange;
   late DateTime _selectedDate;
   late DateTime _selectedMonth;
+  late final Stream<List<SalesPerson>> _peopleStream;
+  late final Stream<SalesBackupStatus?> _backupStatusStream;
+  late Stream<SalesMonthState> _monthStateStream;
+  late Stream<List<SalesRecord>> _recordsStream;
+  late Stream<List<SalesPersonTotalSnapshot>> _preservedTotalsStream;
+  final WorkspaceStateStore _workspaceState = const WorkspaceStateStore();
   bool _busy = false;
   bool _backupBusy = false;
   bool _showRecycleBin = false;
+  bool _viewStateTouched = false;
+  bool _backupTriggeredThisVisit = false;
+  bool _backupWasActiveThisVisit = false;
   int _visibleRecordCount = 20;
   Timer? _backupSuccessTimer;
   String? _scheduledBackupSuccessKey;
@@ -50,6 +60,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     final now = indiaNow();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _selectedMonth = DateTime(now.year, now.month);
+    _peopleStream = widget.backend.watchPeople();
+    _backupStatusStream = widget.backend.watchBackupStatus();
+    _bindMonthStreams();
+    unawaited(_restoreWorkspaceState());
   }
 
   @override
@@ -63,10 +77,61 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
 
   String get _monthKey => salesMonthKey(_selectedMonth);
 
+  void _bindMonthStreams() {
+    final monthKey = _monthKey;
+    _monthStateStream = widget.backend.watchMonthState(monthKey);
+    _recordsStream = widget.backend.watchMonth(monthKey);
+    _preservedTotalsStream = widget.backend.watchPreservedTotals(monthKey);
+  }
+
+  Future<void> _restoreWorkspaceState() async {
+    final restored = await Future.wait<Object?>([
+      _workspaceState.readSalesMonth(),
+      _workspaceState.readSalesRecycleBin(),
+    ]);
+    final monthKey = restored[0] as String?;
+    final showRecycleBin = restored[1] as bool;
+    if (!mounted || _viewStateTouched) return;
+    DateTime? restoredMonth;
+    final match = monthKey == null
+        ? null
+        : RegExp(r'^(\d{4})-(\d{2})$').firstMatch(monthKey);
+    if (match != null) {
+      final candidate = DateTime(
+        int.parse(match.group(1)!),
+        int.parse(match.group(2)!),
+      );
+      final now = indiaNow();
+      final currentMonth = DateTime(now.year, now.month);
+      if (candidate.year >= 2020 && !candidate.isAfter(currentMonth)) {
+        restoredMonth = candidate;
+      }
+    }
+    setState(() {
+      if (restoredMonth != null) {
+        _selectedMonth = restoredMonth;
+        final now = indiaNow();
+        _selectedDate =
+            restoredMonth.year == now.year && restoredMonth.month == now.month
+                ? DateTime(now.year, now.month, now.day)
+                : DateTime(restoredMonth.year, restoredMonth.month, 1);
+        _bindMonthStreams();
+      }
+      _showRecycleBin = showRecycleBin;
+    });
+  }
+
+  void _setRecycleBinVisible(bool visible) {
+    _viewStateTouched = true;
+    setState(() => _showRecycleBin = visible);
+    unawaited(_workspaceState.writeSalesRecycleBin(visible));
+  }
+
   void _changeMonth(int offset) {
     final next = DateTime(_selectedMonth.year, _selectedMonth.month + offset);
     final now = indiaNow();
     if (next.isAfter(DateTime(now.year, now.month))) return;
+    _viewStateTouched = true;
     setState(() {
       _selectedMonth = next;
       _selectedDate = next.year == now.year && next.month == now.month
@@ -78,7 +143,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       _filterDate = null;
       _filterDateRange = null;
       _visibleRecordCount = 20;
+      _bindMonthStreams();
     });
+    unawaited(_workspaceState.writeSalesMonth(_monthKey));
   }
 
   Future<void> _pickFilterDate() async {
@@ -154,10 +221,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       lastDate: DateTime(now.year, now.month, now.day),
     );
     if (picked == null || !mounted) return;
+    _viewStateTouched = true;
     setState(() {
       _selectedDate = picked;
       _selectedMonth = DateTime(picked.year, picked.month);
+      _bindMonthStreams();
     });
+    unawaited(_workspaceState.writeSalesMonth(_monthKey));
   }
 
   Future<void> _showDuplicateEntryError(SalesRecord existing) async {
@@ -643,7 +713,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
 
   Future<void> _requestBackup() async {
     if (_backupBusy) return;
-    setState(() => _backupBusy = true);
+    setState(() {
+      _backupBusy = true;
+      _backupTriggeredThisVisit = true;
+      _dismissedBackupSuccessKey = null;
+      _scheduledBackupSuccessKey = null;
+    });
     try {
       await widget.backend.requestBackup(
         monthKey: _monthKey,
@@ -656,7 +731,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         );
       }
     } catch (error) {
-      if (mounted) _message(_friendlyError(error));
+      if (mounted) {
+        _backupTriggeredThisVisit = false;
+        _message(_friendlyError(error));
+      }
     } finally {
       if (mounted) setState(() => _backupBusy = false);
     }
@@ -675,14 +753,20 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     }
     _backupSuccessTimer?.cancel();
     _scheduledBackupSuccessKey = key;
-    _backupSuccessTimer = Timer(const Duration(seconds: 8), () {
+    _backupSuccessTimer = Timer(const Duration(seconds: 10), () {
       if (!mounted || _scheduledBackupSuccessKey != key) return;
       setState(() => _dismissedBackupSuccessKey = key);
     });
   }
 
   SalesBackupStatus? _visibleBackupStatus(SalesBackupStatus? backup) {
-    if (backup == null || backup.status != 'completed') return backup;
+    if (backup == null) return null;
+    if (backup.isActive) {
+      _backupWasActiveThisVisit = true;
+      return backup;
+    }
+    if (backup.status != 'completed') return backup;
+    if (!_backupTriggeredThisVisit && !_backupWasActiveThisVisit) return null;
     return _dismissedBackupSuccessKey == _backupSuccessKey(backup)
         ? null
         : backup;
@@ -693,38 +777,40 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     if (_showRecycleBin) {
       return SalesTrackerRecycleBinScreen(
         backend: widget.backend,
-        onBack: () => setState(() => _showRecycleBin = false),
+        onBack: () => _setRecycleBinVisible(false),
       );
     }
     return StreamBuilder<List<SalesPerson>>(
-      stream: widget.backend.watchPeople(),
+      stream: _peopleStream,
       builder: (context, peopleSnapshot) {
         final people = peopleSnapshot.data ?? const <SalesPerson>[];
         return StreamBuilder<SalesMonthState>(
-          stream: widget.backend.watchMonthState(_monthKey),
+          stream: _monthStateStream,
           builder: (context, monthSnapshot) {
             final month =
                 monthSnapshot.data ?? SalesMonthState(monthKey: _monthKey);
             return StreamBuilder<List<SalesRecord>>(
-              stream: widget.backend.watchMonth(_monthKey),
+              stream: _recordsStream,
               builder: (context, recordsSnapshot) {
                 final records = recordsSnapshot.data ?? const <SalesRecord>[];
                 return StreamBuilder<List<SalesPersonTotalSnapshot>>(
-                  stream: widget.backend.watchPreservedTotals(_monthKey),
+                  stream: _preservedTotalsStream,
                   builder: (context, totalsSnapshot) {
                     final preservedTotals = totalsSnapshot.data ??
                         const <SalesPersonTotalSnapshot>[];
                     return StreamBuilder<SalesBackupStatus?>(
-                      stream: widget.backend.watchBackupStatus(),
+                      stream: _backupStatusStream,
                       builder: (context, backupSnapshot) {
                         final backupStatus = backupSnapshot.data;
-                        _scheduleBackupSuccessDismissal(backupStatus);
+                        final visibleBackupStatus =
+                            _visibleBackupStatus(backupStatus);
+                        _scheduleBackupSuccessDismissal(visibleBackupStatus);
                         return _body(
                           people,
                           month,
                           records,
                           preservedTotals: preservedTotals,
-                          backupStatus: _visibleBackupStatus(backupStatus),
+                          backupStatus: visibleBackupStatus,
                           loading: recordsSnapshot.connectionState ==
                                   ConnectionState.waiting ||
                               totalsSnapshot.connectionState ==
@@ -1051,6 +1137,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                             SizedBox(
                               width: 240,
                               child: DropdownButtonFormField<String>(
+                                isExpanded: true,
                                 key: ValueKey(_filterPersonId),
                                 initialValue: _filterPersonId ?? '',
                                 decoration: const InputDecoration(
@@ -1119,8 +1206,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                 label: const Text('Clear filters'),
                               ),
                             OutlinedButton.icon(
-                              onPressed: () =>
-                                  setState(() => _showRecycleBin = true),
+                              onPressed: () => _setRecycleBinVisible(true),
                               icon: const Icon(Icons.delete_outline),
                               label: const Text('Sales recycle bin'),
                             ),

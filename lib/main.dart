@@ -9,11 +9,7 @@ import 'services/local_lead_store.dart';
 import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Firebase is optional until `flutterfire configure` is completed. This
-  // fallback keeps the app usable offline while the project is being set up.
+Future<void> _initializeFirebase() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -21,9 +17,18 @@ void main() async {
   } catch (error) {
     debugPrint('Firebase is not configured yet: $error');
   }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
   final store = LocalLeadStore();
-  await store.open();
+  await Future.wait([
+    // Firebase and the local encrypted store are independent startup tasks.
+    // Running them together shortens both fresh launches and browser reloads.
+    _initializeFirebase(),
+    store.open(),
+  ]);
   runApp(LeadloopV2(store: store));
 }
 
