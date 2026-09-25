@@ -2111,10 +2111,8 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                             ),
                             child: Text(
                               '${summary.leads.length} overdue',
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onErrorContainer,
+                              style: const TextStyle(
+                                color: Colors.white,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
