@@ -776,6 +776,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
   late final FirebaseSalesBackend _salesBackend;
   StreamSubscription? _leadSubscription;
   bool _exporting = false;
+  bool _salesRetentionSweepComplete = false;
   Timer? _deadlineRefresh;
   StreamSubscription<RemoteMessage>? _messages;
 
@@ -819,6 +820,10 @@ class _LeadloopShellState extends State<LeadloopShell> {
     try {
       if (widget.role == LeadloopRole.admin) {
         await _firebaseBackend.syncAdmin(widget.store);
+        if (!_salesRetentionSweepComplete) {
+          await _salesBackend.permanentlyDeleteExpiredRecycledData();
+          _salesRetentionSweepComplete = true;
+        }
       } else {
         await _firebaseBackend.syncPromoter(widget.store, widget.session.uid);
       }

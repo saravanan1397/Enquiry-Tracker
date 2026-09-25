@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/customer_lead.dart';
 import 'local_lead_store.dart';
+import 'recycle_retention_policy.dart';
 
 class LeadloopPromoterProfile {
   const LeadloopPromoterProfile({
@@ -34,11 +36,17 @@ class LeadloopPromoterProfile {
 /// Hive remains the source used by the screens. This service only uploads
 /// pending local changes and, for an admin device, downloads the central list.
 class FirebaseLeadBackend {
-  FirebaseLeadBackend({FirebaseFirestore? firestore}) : _firestore = firestore;
+  FirebaseLeadBackend({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+  })  : _firestore = firestore,
+        _functions = functions;
 
   final FirebaseFirestore? _firestore;
+  final FirebaseFunctions? _functions;
   static const _writeBatchSize = 400;
   Future<void> _snapshotQueue = Future.value();
+  bool _retentionSweepComplete = false;
 
   bool get isConfigured => Firebase.apps.isNotEmpty;
 
@@ -46,6 +54,8 @@ class FirebaseLeadBackend {
       _database.collection('leads');
 
   FirebaseFirestore get _database => _firestore ?? FirebaseFirestore.instance;
+  FirebaseFunctions get _cloudFunctions =>
+      _functions ?? FirebaseFunctions.instanceFor(region: 'asia-south1');
 
   Future<void> syncPromoter(
       LocalLeadStore localStore, String promoterId) async {
@@ -62,6 +72,7 @@ class FirebaseLeadBackend {
         await _leads.where('promoterId', isEqualTo: promoterId).get();
     final serverLeads = snapshot.docs.map(_fromDocument).toList();
     await localStore.reconcilePromoterLeads(promoterId, serverLeads);
+    await _recycleExpiredPurchases(localStore);
   }
 
   Future<void> syncAdmin(LocalLeadStore localStore) async {
@@ -72,8 +83,51 @@ class FirebaseLeadBackend {
     await _uploadLeads(pending);
     await localStore.markManySynced(pending.map((lead) => lead.id));
 
+    if (!_retentionSweepComplete) {
+      await _purgeExpiredRecycleBin(localStore);
+      _retentionSweepComplete = true;
+    }
+
     final snapshot = await _leads.get();
     await localStore.reconcileAdminLeads(snapshot.docs.map(_fromDocument));
+    await _recycleExpiredPurchases(localStore);
+  }
+
+  Future<void> _recycleExpiredPurchases(LocalLeadStore localStore) async {
+    final recycledIds = await localStore.recycleExpiredPurchases();
+    if (recycledIds.isEmpty) return;
+
+    final recycledIdSet = recycledIds.toSet();
+    final recycled = localStore
+        .pendingLeads()
+        .where((lead) => recycledIdSet.contains(lead.id))
+        .toList(growable: false);
+    await _uploadLeads(recycled);
+    await localStore.markManySynced(recycledIds);
+  }
+
+  Future<void> _purgeExpiredRecycleBin(LocalLeadStore localStore) async {
+    final cutoff = Timestamp.fromDate(recycleBinCutoff(DateTime.now()).toUtc());
+    final expiredLeads =
+        await _leads.where('deletedAt', isLessThanOrEqualTo: cutoff).get();
+    final leadIds = expiredLeads.docs
+        .map((document) => document.id)
+        .toList(growable: false);
+    await deleteLeads(leadIds);
+    await localStore.permanentlyDeleteMany(leadIds);
+
+    final expiredPromoters = await _database
+        .collection('promoters')
+        .where('deletedAt', isLessThanOrEqualTo: cutoff)
+        .get();
+    for (final promoter in expiredPromoters.docs) {
+      await _cloudFunctions
+          .httpsCallable(
+        'deletePromoterPermanently',
+        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+      )
+          .call({'uid': promoter.id, 'confirmation': 'DELETE'});
+    }
   }
 
   Future<List<LeadloopPromoterProfile>> listPromoters() async {

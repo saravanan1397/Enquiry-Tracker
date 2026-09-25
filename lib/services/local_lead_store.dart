@@ -8,6 +8,15 @@ import '../models/customer_lead.dart';
 class LocalLeadStore {
   static const _boxName = 'leadloop_leads';
   static const _keyName = 'leadloop_hive_key';
+  static const purchasedRetention = Duration(days: 10);
+
+  static bool shouldRecyclePurchased(CustomerLead lead, DateTime now) {
+    final completedAt = lead.completedAt;
+    return lead.deletedAt == null &&
+        lead.outcome == EnquiryOutcome.purchased &&
+        completedAt != null &&
+        !completedAt.isAfter(now.subtract(purchasedRetention));
+  }
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final Map<String, CustomerLead> _cache = {};
@@ -108,6 +117,22 @@ class LocalLeadStore {
         .whereType<CustomerLead>()
         .map((lead) => lead.copyWith(deletedAt: deletedAt, isSynced: false));
     await _saveAll(updates);
+  }
+
+  /// Moves purchased enquiries to the recycle bin after their retention
+  /// period. They remain recoverable until an owner permanently deletes them.
+  Future<List<String>> recycleExpiredPurchases({DateTime? now}) async {
+    final recycledAt = now ?? DateTime.now();
+    final expired = _cache.values
+        .where((lead) => shouldRecyclePurchased(lead, recycledAt))
+        .toList(growable: false);
+    if (expired.isEmpty) return const [];
+
+    await _saveAll(expired.map((lead) => lead.copyWith(
+          deletedAt: recycledAt,
+          isSynced: false,
+        )));
+    return expired.map((lead) => lead.id).toList(growable: false);
   }
 
   Future<void> restore(String id) async {

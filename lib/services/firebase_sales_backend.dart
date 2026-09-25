@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import '../models/sales_record.dart';
+import 'recycle_retention_policy.dart';
 
 class SalesBackupStatus {
   const SalesBackupStatus({
@@ -806,6 +807,33 @@ class FirebaseSalesBackend {
     }
     await _database.waitForPendingWrites();
     return deletedMonths.length + deletedEntries.length + deletedPeople.length;
+  }
+
+  Future<int> permanentlyDeleteExpiredRecycledData({DateTime? now}) async {
+    final cutoff = Timestamp.fromDate(
+      recycleBinCutoff(now ?? DateTime.now()).toUtc(),
+    );
+
+    final expiredMonths =
+        await _months.where('deletedAt', isLessThanOrEqualTo: cutoff).get();
+    for (final month in expiredMonths.docs) {
+      await permanentlyDeleteMonth(month.id);
+    }
+
+    final expiredEntries =
+        await _entries.where('deletedAt', isLessThanOrEqualTo: cutoff).get();
+    for (final entry in expiredEntries.docs) {
+      await permanentlyDeleteRecord(entry.id);
+    }
+
+    final expiredPeople =
+        await _people.where('deletedAt', isLessThanOrEqualTo: cutoff).get();
+    for (final person in expiredPeople.docs) {
+      await permanentlyDeletePerson(_personFromDocument(person));
+    }
+
+    await _database.waitForPendingWrites();
+    return expiredMonths.size + expiredEntries.size + expiredPeople.size;
   }
 
   SalesPerson _personFromDocument(
