@@ -2035,6 +2035,161 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
         SnackBar(content: Text('Lead passed to ${selected.name}.')));
   }
 
+  Future<void> _showOverdueSummary(List<CustomerLead> overdueLeads) async {
+    final grouped = <String, List<CustomerLead>>{};
+    for (final lead in overdueLeads) {
+      final key = lead.promoterId.trim().isNotEmpty
+          ? lead.promoterId
+          : lead.promoterName.trim().toLowerCase();
+      grouped.putIfAbsent(key, () => []).add(lead);
+    }
+    final summaries = grouped.values.map((leads) {
+      leads.sort((a, b) {
+        final aDue = FollowUpDeadlineService.nextDueAt(a);
+        final bDue = FollowUpDeadlineService.nextDueAt(b);
+        if (aDue == null && bDue == null) return 0;
+        if (aDue == null) return 1;
+        if (bDue == null) return -1;
+        return aDue.compareTo(bDue);
+      });
+      return _PromoterOverdueSummary(
+        promoterName: leads.first.promoterName,
+        shopName: leads.first.shopName,
+        leads: leads,
+      );
+    }).toList()
+      ..sort((a, b) =>
+          a.promoterName.toLowerCase().compareTo(b.promoterName.toLowerCase()));
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Overdue follow-ups by promoter'),
+        content: SizedBox(
+          width: 620,
+          child: summaries.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'No promoters currently have overdue follow-ups.',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: summaries.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final summary = summaries[index];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 6,
+                      ),
+                      leading: CircleAvatar(
+                        child: Text(summary.promoterName.isEmpty
+                            ? '?'
+                            : summary.promoterName[0].toUpperCase()),
+                      ),
+                      title: Text(
+                        summary.promoterName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: Text(summary.shopName),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  Theme.of(context).colorScheme.errorContainer,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${summary.leads.length} overdue',
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onErrorContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
+                      onTap: () {
+                        Navigator.pop(dialogContext);
+                        unawaited(_showPromoterOverdue(summary));
+                      },
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPromoterOverdue(
+    _PromoterOverdueSummary summary,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title:
+            Text('${summary.promoterName} · ${summary.leads.length} overdue'),
+        content: SizedBox(
+          width: 680,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: summary.leads.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final lead = summary.leads[index];
+              final dueAt = FollowUpDeadlineService.nextDueAt(lead);
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 5,
+                ),
+                title: Text(
+                  lead.name,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '${lead.phone}\nFollow-up ${lead.followUpNumber + 1} due ${dueAt == null ? '—' : _formatDateTime(dueAt)}',
+                ),
+                isThreeLine: true,
+                trailing: const Icon(Icons.edit_outlined),
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  unawaited(_edit(lead));
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_showRecycleBin) {
@@ -2140,7 +2295,8 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                 child: _LeadloopMetric(
                     label: 'Overdue',
                     value: '${overdueFollowUp2.length}',
-                    tone: 3)),
+                    tone: 3,
+                    onTap: () => _showOverdueSummary(overdueFollowUp2))),
           ]);
         }),
         if (overdueFollowUp2.isNotEmpty) ...[
@@ -3215,11 +3371,13 @@ class _LeadloopMetric extends StatelessWidget {
     required this.label,
     required this.value,
     required this.tone,
+    this.onTap,
   });
 
   final String label;
   final String value;
   final int tone;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3235,38 +3393,65 @@ class _LeadloopMetric extends StatelessWidget {
           .withAlpha(Theme.of(context).brightness == Brightness.dark ? 34 : 18),
       scheme.surface,
     );
-    return Container(
-      padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
-      decoration: BoxDecoration(
-        color: cardColor,
-        border: Border.all(
+    return Material(
+      color: cardColor,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
             color: accent.withAlpha(
                 Theme.of(context).brightness == Brightness.dark ? 74 : 52)),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(children: [
-        Container(
-          width: 3,
-          height: 30,
-          decoration: BoxDecoration(
-              color: accent, borderRadius: BorderRadius.circular(4)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+          child: Row(children: [
+            Container(
+              width: 3,
+              height: 30,
+              decoration: BoxDecoration(
+                  color: accent, borderRadius: BorderRadius.circular(4)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label.toUpperCase(),
+                        style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.7)),
+                    const SizedBox(height: 3),
+                    Text(value,
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w700)),
+                  ]),
+            ),
+            if (onTap != null)
+              Icon(Icons.chevron_right, size: 20, color: accent),
+          ]),
         ),
-        const SizedBox(width: 10),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label.toUpperCase(),
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.7)),
-          const SizedBox(height: 3),
-          Text(value,
-              style: TextStyle(
-                  color: accent, fontSize: 21, fontWeight: FontWeight.w700)),
-        ]),
-      ]),
+      ),
     );
   }
+}
+
+class _PromoterOverdueSummary {
+  const _PromoterOverdueSummary({
+    required this.promoterName,
+    required this.shopName,
+    required this.leads,
+  });
+
+  final String promoterName;
+  final String shopName;
+  final List<CustomerLead> leads;
 }
 
 class _LeadloopFilter<T> extends StatelessWidget {
