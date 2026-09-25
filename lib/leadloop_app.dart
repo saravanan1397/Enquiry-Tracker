@@ -2412,7 +2412,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
             onPressed: leads.isEmpty ? null : _deleteFiltered,
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.errorContainer,
-              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+              foregroundColor: Colors.white,
             ),
             icon: const Icon(Icons.delete_sweep_outlined),
             label: Text(
