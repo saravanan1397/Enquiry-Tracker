@@ -503,6 +503,44 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     }
   }
 
+  Future<void> _deleteFilteredRecords(List<SalesRecord> records) async {
+    if (_busy || records.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Move ${records.length} filtered sales records?'),
+        content: const Text(
+          'Every sales record currently matched by the filters will move to the Sales Tracker recycle bin. Nothing will be removed from Firebase until it is permanently deleted from that recycle bin.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: const Text('Move records'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.backend.recycleRecords(
+        records: records,
+        ownerUid: widget.ownerUid,
+      );
+      if (!mounted) return;
+      _message('${records.length} sales records moved to Recycle Bin.');
+    } catch (error) {
+      if (mounted) _message(_friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _setFinalized(bool value) async {
     await widget.backend.setFinalized(
       monthKey: _monthKey,
@@ -653,7 +691,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   @override
   Widget build(BuildContext context) {
     if (_showRecycleBin) {
-      return _SalesTrackerRecycleBin(
+      return SalesTrackerRecycleBinScreen(
         backend: widget.backend,
         onBack: () => setState(() => _showRecycleBin = false),
       );
@@ -725,6 +763,10 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       toDateKey:
           _filterDateRange == null ? null : salesDateKey(_filterDateRange!.end),
     );
+    final hasActiveRecordFilters = _salespersonSearch.text.trim().isNotEmpty ||
+        _filterPersonId != null ||
+        _filterDate != null ||
+        _filterDateRange != null;
     final personGroups = groupSalesRecordsByPerson(filteredRecords);
     final monthlyPersonGroups = mergeSalesTotalsWithSnapshots(
       records,
@@ -1082,6 +1124,28 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                               icon: const Icon(Icons.delete_outline),
                               label: const Text('Sales recycle bin'),
                             ),
+                            if (hasActiveRecordFilters)
+                              OutlinedButton.icon(
+                                onPressed: filteredRecords.isEmpty ||
+                                        _busy ||
+                                        month.finalized
+                                    ? null
+                                    : () => _deleteFilteredRecords(
+                                          filteredRecords,
+                                        ),
+                                icon: const Icon(Icons.delete_sweep_outlined),
+                                label: Text(
+                                  'Move filtered (${filteredRecords.length})',
+                                ),
+                              )
+                            else if (!month.finalized)
+                              OutlinedButton.icon(
+                                onPressed: records.isEmpty || _busy
+                                    ? null
+                                    : _deleteMonth,
+                                icon: const Icon(Icons.delete_sweep_outlined),
+                                label: const Text('Move month to Recycle Bin'),
+                              ),
                             OutlinedButton.icon(
                               onPressed: _backupBusy ||
                                       (backupStatus?.isActive ?? false)
@@ -2108,14 +2172,57 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 }
 
-class _SalesTrackerRecycleBin extends StatelessWidget {
-  const _SalesTrackerRecycleBin({
+class SalesTrackerRecycleBinScreen extends StatefulWidget {
+  const SalesTrackerRecycleBinScreen({
+    super.key,
     required this.backend,
     required this.onBack,
   });
 
   final FirebaseSalesBackend backend;
   final VoidCallback onBack;
+
+  @override
+  State<SalesTrackerRecycleBinScreen> createState() =>
+      _SalesTrackerRecycleBinScreenState();
+}
+
+class _SalesTrackerRecycleBinScreenState
+    extends State<SalesTrackerRecycleBinScreen> {
+  bool _deletingAll = false;
+
+  FirebaseSalesBackend get backend => widget.backend;
+  VoidCallback get onBack => widget.onBack;
+
+  Future<void> _deleteAllForever() async {
+    if (_deletingAll) return;
+    final confirmed = await _confirm(
+      context,
+      'Delete all Sales Tracker recycle-bin data permanently?',
+      'Every salesperson profile, individual sales entry and complete month currently in this recycle bin will be removed from Firebase. Related edit history and preserved totals for deleted months will also be removed. Active Sales Tracker data and GitHub backups are unchanged.',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _deletingAll = true);
+    try {
+      final deletedCount = await backend.permanentlyDeleteAllRecycledData();
+      if (!mounted) return;
+      _message(
+        context,
+        deletedCount == 0
+            ? 'The Sales Tracker recycle bin is already empty.'
+            : '$deletedCount Sales Tracker items permanently deleted from Firebase.',
+      );
+    } catch (error) {
+      if (mounted) {
+        _message(
+          context,
+          'Could not permanently delete all Sales Tracker data: ${error.toString().replaceFirst('Bad state: ', '')}',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingAll = false);
+    }
+  }
 
   Future<bool> _confirm(
           BuildContext context, String title, String message) async =>
@@ -2299,6 +2406,24 @@ class _SalesTrackerRecycleBin extends StatelessWidget {
           const SizedBox(height: 8),
           const Text(
               'Only Sales Tracker records are displayed here. Permanent deletion removes Firebase data; GitHub backups remain.'),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: _deletingAll ? null : _deleteAllForever,
+              icon: _deletingAll
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_sweep_outlined),
+              label: Text(
+                _deletingAll
+                    ? 'Deleting…'
+                    : 'Delete all Sales Tracker data permanently',
+              ),
+            ),
+          ),
           _salespeople(context),
           _entries(context),
           _months(context),

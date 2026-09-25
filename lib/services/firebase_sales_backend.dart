@@ -561,6 +561,37 @@ class FirebaseSalesBackend {
     await _database.waitForPendingWrites();
   }
 
+  Future<void> recycleRecords({
+    required Iterable<SalesRecord> records,
+    required String ownerUid,
+  }) async {
+    final selected = records.toList(growable: false);
+    if (selected.isEmpty) return;
+    final monthKeys = selected.map((record) => record.monthKey).toSet();
+    for (final monthKey in monthKeys) {
+      final month = await _months.doc(monthKey).get();
+      if (month.data()?['finalized'] == true) {
+        throw StateError(
+          'Month $monthKey is locked. Reopen it before deleting records.',
+        );
+      }
+    }
+    for (var offset = 0; offset < selected.length; offset += 400) {
+      final end =
+          offset + 400 < selected.length ? offset + 400 : selected.length;
+      final batch = _database.batch();
+      for (final record in selected.sublist(offset, end)) {
+        batch.update(_entries.doc(record.id), {
+          'deletedAt': FieldValue.serverTimestamp(),
+          'deletedByUid': ownerUid,
+          'deletedAsPartOfMonth': false,
+        });
+      }
+      await batch.commit();
+    }
+    await _database.waitForPendingWrites();
+  }
+
   Future<void> restoreRecord(String entryId) async {
     await _entries.doc(entryId).update({
       'deletedAt': null,
@@ -572,10 +603,40 @@ class FirebaseSalesBackend {
   }
 
   Future<void> permanentlyDeleteRecord(String entryId) async {
+    final entry = await _entries.doc(entryId).get();
     final audits = await _audit.where('entryId', isEqualTo: entryId).get();
     final batch = _database.batch()..delete(_entries.doc(entryId));
     for (final document in audits.docs) {
       batch.delete(document.reference);
+    }
+    final entryData = entry.data();
+    final personId = entryData?['personId'] as String?;
+    final monthKey = entryData?['monthKey'] as String?;
+    if (personId != null && monthKey != null) {
+      final snapshotReference = _totalSnapshots.doc('${personId}_$monthKey');
+      final snapshot = await snapshotReference.get();
+      final snapshotData = snapshot.data();
+      final recordIds =
+          (snapshotData?['recordIds'] as List<dynamic>? ?? const [])
+              .whereType<String>()
+              .toList(growable: true);
+      if (snapshot.exists && recordIds.remove(entryId)) {
+        final nextCount =
+            ((snapshotData?['entryCount'] as num?)?.toInt() ?? 1) - 1;
+        if (nextCount <= 0 || recordIds.isEmpty) {
+          batch.delete(snapshotReference);
+        } else {
+          final amountMilli = (entryData?['amountMilli'] as num?)?.toInt() ?? 0;
+          final currentTotal =
+              (snapshotData?['totalMilli'] as num?)?.toInt() ?? 0;
+          batch.update(snapshotReference, {
+            'totalMilli': currentTotal - amountMilli,
+            'entryCount': nextCount,
+            'recordIds': recordIds,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
     }
     await batch.commit();
     await _database.waitForPendingWrites();
@@ -678,9 +739,12 @@ class FirebaseSalesBackend {
   Future<void> permanentlyDeleteMonth(String monthKey) async {
     final entries = await _entries.where('monthKey', isEqualTo: monthKey).get();
     final audits = await _audit.where('monthKey', isEqualTo: monthKey).get();
+    final totals =
+        await _totalSnapshots.where('monthKey', isEqualTo: monthKey).get();
     final references = <DocumentReference<Map<String, dynamic>>>[
       ...entries.docs.map((document) => document.reference),
       ...audits.docs.map((document) => document.reference),
+      ...totals.docs.map((document) => document.reference),
       _months.doc(monthKey),
     ];
     for (var offset = 0; offset < references.length; offset += 400) {
@@ -693,6 +757,55 @@ class FirebaseSalesBackend {
       await batch.commit();
     }
     await _database.waitForPendingWrites();
+  }
+
+  Future<int> permanentlyDeleteAllRecycledData() async {
+    final monthsSnapshot = await _months.get();
+    final deletedMonths = monthsSnapshot.docs
+        .where((document) => document.data()['deletedAt'] != null)
+        .map((document) => document.id)
+        .toList(growable: false);
+    for (final monthKey in deletedMonths) {
+      await permanentlyDeleteMonth(monthKey);
+    }
+
+    final entriesSnapshot = await _entries.get();
+    final deletedEntries = entriesSnapshot.docs
+        .where((document) => document.data()['deletedAt'] != null)
+        .toList(growable: false);
+    for (final entry in deletedEntries) {
+      await permanentlyDeleteRecord(entry.id);
+    }
+
+    final peopleSnapshot = await _people.get();
+    final deletedPeople = peopleSnapshot.docs
+        .where((document) =>
+            document.data()['active'] == false ||
+            document.data()['deletedAt'] != null)
+        .toList(growable: false);
+    final deletedPersonIds =
+        deletedPeople.map((document) => document.id).toSet();
+    final reservationsSnapshot = await _nameReservations.get();
+    final relatedReservations = reservationsSnapshot.docs
+        .where((document) =>
+            deletedPersonIds.contains(document.data()['personId']))
+        .toList(growable: false);
+
+    final references = <DocumentReference<Map<String, dynamic>>>[
+      ...deletedPeople.map((document) => document.reference),
+      ...relatedReservations.map((document) => document.reference),
+    ];
+    for (var offset = 0; offset < references.length; offset += 400) {
+      final end =
+          offset + 400 < references.length ? offset + 400 : references.length;
+      final batch = _database.batch();
+      for (final reference in references.sublist(offset, end)) {
+        batch.delete(reference);
+      }
+      await batch.commit();
+    }
+    await _database.waitForPendingWrites();
+    return deletedMonths.length + deletedEntries.length + deletedPeople.length;
   }
 
   SalesPerson _personFromDocument(
