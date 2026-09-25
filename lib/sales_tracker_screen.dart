@@ -49,7 +49,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   bool _viewStateTouched = false;
   bool _backupTriggeredThisVisit = false;
   bool _backupWasActiveThisVisit = false;
-  int _visibleRecordCount = 20;
+  int _visibleRecordCount = 15;
   Timer? _backupSuccessTimer;
   String? _scheduledBackupSuccessKey;
   String? _dismissedBackupSuccessKey;
@@ -142,7 +142,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       _salespersonSearch.clear();
       _filterDate = null;
       _filterDateRange = null;
-      _visibleRecordCount = 20;
+      _visibleRecordCount = 15;
       _bindMonthStreams();
     });
     unawaited(_workspaceState.writeSalesMonth(_monthKey));
@@ -164,7 +164,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       setState(() {
         _filterDate = picked;
         _filterDateRange = null;
-        _visibleRecordCount = 20;
+        _visibleRecordCount = 15;
       });
     }
   }
@@ -196,7 +196,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
       setState(() {
         _filterDateRange = DateTimeRange(start: fromDate, end: toDate);
         _filterDate = null;
-        _visibleRecordCount = 20;
+        _visibleRecordCount = 15;
       });
     }
   }
@@ -1121,7 +1121,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                           tooltip: 'Clear search',
                                           onPressed: () => setState(() {
                                             _salespersonSearch.clear();
-                                            _visibleRecordCount = 20;
+                                            _visibleRecordCount = 15;
                                           }),
                                           icon: const Icon(Icons.close),
                                         ),
@@ -1130,7 +1130,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                   if (value.trim().isNotEmpty) {
                                     _filterPersonId = null;
                                   }
-                                  _visibleRecordCount = 20;
+                                  _visibleRecordCount = 15;
                                 }),
                               ),
                             ),
@@ -1162,7 +1162,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                       value == null || value.isEmpty
                                           ? null
                                           : value;
-                                  _visibleRecordCount = 20;
+                                  _visibleRecordCount = 15;
                                 }),
                               ),
                             ),
@@ -1200,7 +1200,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                                   _filterPersonId = null;
                                   _filterDate = null;
                                   _filterDateRange = null;
-                                  _visibleRecordCount = 20;
+                                  _visibleRecordCount = 15;
                                 }),
                                 icon: const Icon(Icons.filter_alt_off_outlined),
                                 label: const Text('Clear filters'),
@@ -1528,7 +1528,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                           alignment: Alignment.center,
                           child: FilledButton.tonalIcon(
                             onPressed: () => setState(
-                              () => _visibleRecordCount += 20,
+                              () => _visibleRecordCount += 15,
                             ),
                             icon: const Icon(Icons.expand_more),
                             label: Text(

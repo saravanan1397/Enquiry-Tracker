@@ -37,6 +37,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // A minimal transfer event lets an offline promoter remove a reassigned
+    // lead from the encrypted local cache without rereading all enquiries.
+    match /leadAssignmentEvents/{eventId} {
+      allow read: if isAdmin()
+        || (isPromoter()
+          && resource.data.previousPromoterId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /leadDeletionEvents/{eventId} {
+      allow read: if isAdmin() || isPromoter();
+      allow create, update, delete: if isAdmin();
+    }
+
     // The app may create only its own pending registration. Only an admin can
     // approve, assign, disable, or otherwise modify a promoter profile.
     match /promoters/{promoterId} {

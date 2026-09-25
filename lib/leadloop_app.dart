@@ -774,7 +774,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
   late final SyncService _syncService;
   late final FirebaseLeadBackend _firebaseBackend;
   late final FirebaseSalesBackend _salesBackend;
-  StreamSubscription? _leadSubscription;
+  final List<StreamSubscription> _leadSubscriptions = [];
   bool _exporting = false;
   bool _salesRetentionSweepComplete = false;
   Timer? _deadlineRefresh;
@@ -805,14 +805,25 @@ class _LeadloopShellState extends State<LeadloopShell> {
       _refreshLeadViews();
     });
     if (_firebaseBackend.isConfigured) {
-      _leadSubscription = _firebaseBackend.watchLeads(
-          localStore: widget.store,
-          promoterId:
-              widget.role == LeadloopRole.promoter ? widget.session.uid : null,
-          onChanged: () {
-            _refreshLeadViews();
-          });
+      unawaited(_startLeadWatch());
     }
+  }
+
+  Future<void> _startLeadWatch() async {
+    final subscriptions = await _firebaseBackend.watchLeads(
+      localStore: widget.store,
+      userId: widget.session.uid,
+      promoterId:
+          widget.role == LeadloopRole.promoter ? widget.session.uid : null,
+      onChanged: _refreshLeadViews,
+    );
+    if (!mounted) {
+      for (final subscription in subscriptions) {
+        await subscription.cancel();
+      }
+      return;
+    }
+    _leadSubscriptions.addAll(subscriptions);
   }
 
   Future<void> _syncNow() async {
@@ -966,7 +977,9 @@ class _LeadloopShellState extends State<LeadloopShell> {
 
   @override
   void dispose() {
-    _leadSubscription?.cancel();
+    for (final subscription in _leadSubscriptions) {
+      subscription.cancel();
+    }
     _deadlineRefresh?.cancel();
     _messages?.cancel();
     NotificationService.instance.stop();
@@ -1204,6 +1217,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
   final _comment = TextEditingController();
   final _search = TextEditingController();
   FollowUpStage? _stage;
+  int _visibleRecordCount = 15;
 
   @override
   void dispose() {
@@ -1283,6 +1297,8 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
             query.isNotEmpty || _stage == null || lead.currentStage == _stage)
         .where((lead) => LeadSearchService.matches(lead, query))
         .toList();
+    final visibleLeads =
+        leads.take(_visibleRecordCount).toList(growable: false);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
       children: [
@@ -1330,7 +1346,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _search,
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) => setState(() => _visibleRecordCount = 15),
           textInputAction: TextInputAction.search,
           decoration: InputDecoration(
             labelText: 'Search customers and comments',
@@ -1342,7 +1358,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                     tooltip: 'Clear search',
                     onPressed: () {
                       _search.clear();
-                      setState(() {});
+                      setState(() => _visibleRecordCount = 15);
                     },
                     icon: const Icon(Icons.close),
                   ),
@@ -1353,7 +1369,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
           const Text('Recent customers',
               style: TextStyle(fontWeight: FontWeight.w600)),
           const Spacer(),
-          Text('${leads.length} shown · ${allLeads.length} total',
+          Text('${visibleLeads.length} shown · ${allLeads.length} total',
               style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 12))
@@ -1361,7 +1377,10 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         const SizedBox(height: 10),
         _FollowUpStageButtons(
           selected: _stage,
-          onSelected: (stage) => setState(() => _stage = stage),
+          onSelected: (stage) => setState(() {
+            _stage = stage;
+            _visibleRecordCount = 15;
+          }),
         ),
         const SizedBox(height: 8),
         if (leads.isEmpty)
@@ -1373,7 +1392,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                       : 'No customers are currently in this follow-up stage.',
                   textAlign: TextAlign.center))
         else
-          ...leads.map((lead) => Padding(
+          ...visibleLeads.map((lead) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Card(
                   margin: EdgeInsets.zero,
@@ -1423,6 +1442,19 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
                   ),
                 ),
               )),
+        if (visibleLeads.length < leads.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Center(
+              child: FilledButton.tonalIcon(
+                onPressed: () => setState(() => _visibleRecordCount += 15),
+                icon: const Icon(Icons.expand_more),
+                label: Text(
+                  'Load more (${leads.length - visibleLeads.length} remaining)',
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1529,6 +1561,27 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     if (_addingFollowUp && next.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Enter the next follow-up comment before saving.')));
+      return;
+    }
+    final commentsUnchanged =
+        _extraComments.length == _lead.additionalFollowUps.length &&
+            List.generate(
+              _extraComments.length,
+              (index) =>
+                  _extraComments[index].text.trim() ==
+                  _lead.additionalFollowUps[index].comment,
+            ).every((unchanged) => unchanged);
+    final unchanged = !_addingFollowUp &&
+        name == _lead.name &&
+        phone == _lead.phone &&
+        first == (_lead.followUp1 ?? '') &&
+        second == (_lead.followUp2 ?? '') &&
+        third == (_lead.followUp3 ?? '') &&
+        _outcome == _lead.outcome &&
+        commentsUnchanged;
+    if (unchanged) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('No changes to save.')));
       return;
     }
     setState(() => _saving = true);
@@ -1792,6 +1845,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
   FollowUpStage? _stage;
   DateTimeRange? _dateRange;
   LeadStatusFilter? _status;
+  int _visibleRecordCount = 15;
 
   @override
   void initState() {
@@ -1855,7 +1909,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
       helpText: 'FILTER BY ENTRY DATE',
     );
     if (selected != null && mounted) {
-      setState(() => _dateRange = selected);
+      setState(() {
+        _dateRange = selected;
+        _visibleRecordCount = 15;
+      });
     }
   }
 
@@ -1990,6 +2047,8 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     }
     final all = widget.store.activeLeads();
     final leads = _filterLeads(all);
+    final visibleLeads =
+        leads.take(_visibleRecordCount).toList(growable: false);
     final overdueFollowUp2 =
         all.where(FollowUpDeadlineService.isOverdue).toList();
     final shops = all.map((lead) => lead.shopName).toSet().toList()..sort();
@@ -2116,7 +2175,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                   child: _LeadloopDateFilter(
                     value: _dateRange,
                     onTap: _selectDateRange,
-                    onClear: () => setState(() => _dateRange = null),
+                    onClear: () => setState(() {
+                      _dateRange = null;
+                      _visibleRecordCount = 15;
+                    }),
                   ),
                 ),
                 SizedBox(
@@ -2125,7 +2187,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                       label: 'Promoter',
                       value: _promoter,
                       values: promoters,
-                      onChanged: (value) => setState(() => _promoter = value)),
+                      onChanged: (value) => setState(() {
+                            _promoter = value;
+                            _visibleRecordCount = 15;
+                          })),
                 ),
                 SizedBox(
                   width: itemWidth,
@@ -2133,7 +2198,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                       label: 'Shop',
                       value: _shop,
                       values: shops,
-                      onChanged: (value) => setState(() => _shop = value)),
+                      onChanged: (value) => setState(() {
+                            _shop = value;
+                            _visibleRecordCount = 15;
+                          })),
                 ),
                 SizedBox(
                   width: itemWidth,
@@ -2145,7 +2213,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                       LeadStatusFilter.active => 'Active',
                       LeadStatusFilter.completed => 'Completed',
                     },
-                    onChanged: (value) => setState(() => _status = value),
+                    onChanged: (value) => setState(() {
+                      _status = value;
+                      _visibleRecordCount = 15;
+                    }),
                   ),
                 ),
               ]);
@@ -2153,7 +2224,10 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
             const SizedBox(height: 10),
             _FollowUpStageButtons(
               selected: _stage,
-              onSelected: (stage) => setState(() => _stage = stage),
+              onSelected: (stage) => setState(() {
+                _stage = stage;
+                _visibleRecordCount = 15;
+              }),
             ),
           ]),
         ),
@@ -2219,7 +2293,7 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
                     DataColumn(label: _OwnerColumnLabel('Sync')),
                     DataColumn(label: _OwnerColumnLabel('Action'))
                   ],
-                  rows: leads.map((lead) {
+                  rows: visibleLeads.map((lead) {
                     final commentLayout = _commentLayout(lead);
                     return DataRow(cells: [
                       DataCell(Text('${lead.name}\n${lead.phone}')),
@@ -2297,6 +2371,19 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
               padding: EdgeInsets.all(24),
               child: Text('No customers match these filters.',
                   textAlign: TextAlign.center)),
+        if (visibleLeads.length < leads.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Center(
+              child: FilledButton.tonalIcon(
+                onPressed: () => setState(() => _visibleRecordCount += 15),
+                icon: const Icon(Icons.expand_more),
+                label: Text(
+                  'Load more (${leads.length - visibleLeads.length} remaining)',
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -2855,11 +2942,23 @@ class LeadloopRecycleBinScreen extends StatefulWidget {
 
 class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
   bool _deletingAll = false;
+  int _visibleRecordCount = 15;
 
   Future<void> _restore(CustomerLead lead) async {
-    await widget.store.restore(lead.id);
-    await widget.onChanged?.call();
-    if (mounted) setState(() {});
+    try {
+      await widget.store.restore(lead.id);
+      await widget.onChanged?.call();
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${lead.name} restored.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Restore could not sync. Please try again.'),
+      ));
+    }
   }
 
   Future<void> _deleteForever(CustomerLead lead) async {
@@ -2952,6 +3051,8 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
   @override
   Widget build(BuildContext context) {
     final deleted = widget.store.recycleBin();
+    final visibleDeleted =
+        deleted.take(_visibleRecordCount).toList(growable: false);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
       children: [
@@ -2999,7 +3100,7 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
         ],
         const SizedBox(height: 22),
         if (deleted.isNotEmpty)
-          ...deleted.map(
+          ...visibleDeleted.map(
             (lead) => Card(
               child: ListTile(
                 title: Text(lead.name),
@@ -3017,6 +3118,19 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
                       icon: const Icon(Icons.delete_forever_outlined),
                     ),
                   ],
+                ),
+              ),
+            ),
+          ),
+        if (visibleDeleted.length < deleted.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Center(
+              child: FilledButton.tonalIcon(
+                onPressed: () => setState(() => _visibleRecordCount += 15),
+                icon: const Icon(Icons.expand_more),
+                label: Text(
+                  'Load more (${deleted.length - visibleDeleted.length} remaining)',
                 ),
               ),
             ),

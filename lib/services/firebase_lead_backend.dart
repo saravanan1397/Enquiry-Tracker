@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/customer_lead.dart';
+import 'follow_up_deadline_service.dart';
 import 'local_lead_store.dart';
 import 'recycle_retention_policy.dart';
 
@@ -44,7 +46,8 @@ class FirebaseLeadBackend {
 
   final FirebaseFirestore? _firestore;
   final FirebaseFunctions? _functions;
-  static const _writeBatchSize = 400;
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  static const _writeBatchSize = 240;
   Future<void> _snapshotQueue = Future.value();
   bool _retentionSweepComplete = false;
 
@@ -52,6 +55,10 @@ class FirebaseLeadBackend {
 
   CollectionReference<Map<String, dynamic>> get _leads =>
       _database.collection('leads');
+  CollectionReference<Map<String, dynamic>> get _assignmentEvents =>
+      _database.collection('leadAssignmentEvents');
+  CollectionReference<Map<String, dynamic>> get _deletionEvents =>
+      _database.collection('leadDeletionEvents');
 
   FirebaseFirestore get _database => _firestore ?? FirebaseFirestore.instance;
   FirebaseFunctions get _cloudFunctions =>
@@ -67,12 +74,6 @@ class FirebaseLeadBackend {
         .toList();
     await _uploadLeads(pending);
     await localStore.markManySynced(pending.map((lead) => lead.id));
-
-    final snapshot =
-        await _leads.where('promoterId', isEqualTo: promoterId).get();
-    final serverLeads = snapshot.docs.map(_fromDocument).toList();
-    await localStore.reconcilePromoterLeads(promoterId, serverLeads);
-    await _recycleExpiredPurchases(localStore);
   }
 
   Future<void> syncAdmin(LocalLeadStore localStore) async {
@@ -87,10 +88,6 @@ class FirebaseLeadBackend {
       await _purgeExpiredRecycleBin(localStore);
       _retentionSweepComplete = true;
     }
-
-    final snapshot = await _leads.get();
-    await localStore.reconcileAdminLeads(snapshot.docs.map(_fromDocument));
-    await _recycleExpiredPurchases(localStore);
   }
 
   Future<void> _recycleExpiredPurchases(LocalLeadStore localStore) async {
@@ -241,13 +238,22 @@ class FirebaseLeadBackend {
     required LeadloopPromoterProfile promoter,
   }) async {
     if (!isConfigured) return;
-    await _leads.doc(lead.id).update({
+    final batch = _database.batch();
+    batch.update(_leads.doc(lead.id), {
       'promoterId': promoter.uid,
       'promoterName': promoter.name,
       'shopId': promoter.shopId,
       'shopName': promoter.shopName,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    batch.delete(_assignmentEvents.doc('${promoter.uid}_${lead.id}'));
+    batch.set(_assignmentEvents.doc('${lead.promoterId}_${lead.id}'), {
+      'leadId': lead.id,
+      'previousPromoterId': lead.promoterId,
+      'nextPromoterId': promoter.uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
     await (_firestore ?? FirebaseFirestore.instance).waitForPendingWrites();
   }
 
@@ -267,6 +273,10 @@ class FirebaseLeadBackend {
       final batch = _database.batch();
       for (final id in ids.sublist(offset, end)) {
         batch.delete(_leads.doc(id));
+        batch.set(_deletionEvents.doc(id), {
+          'leadId': id,
+          'deletedAt': FieldValue.serverTimestamp(),
+        });
       }
       await batch.commit();
     }
@@ -287,65 +297,203 @@ class FirebaseLeadBackend {
     await _database.waitForPendingWrites();
   }
 
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>> watchLeads({
+  Future<List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>>
+      watchLeads({
     required LocalLeadStore localStore,
     required void Function() onChanged,
+    required String userId,
     String? promoterId,
-  }) {
-    final query = promoterId == null
+  }) async {
+    final scope = promoterId ?? 'admin-$userId';
+    final cursorKey = 'leadloop_lead_cursor_$scope';
+    final storedCursor = await _readCursor(cursorKey);
+    Query<Map<String, dynamic>> query = promoterId == null
         ? _leads
         : _leads.where('promoterId', isEqualTo: promoterId);
-    return query.snapshots().listen((snapshot) {
+    var canResume = storedCursor != null &&
+        localStore.hasSyncedLeads(promoterId: promoterId);
+    if (canResume) {
+      try {
+        final serverCount = (await query.count().get()).count;
+        canResume =
+            serverCount == localStore.syncedLeadCount(promoterId: promoterId);
+      } catch (_) {
+        canResume = false;
+      }
+    }
+    final incremental = canResume;
+    if (canResume) {
+      query = query.where(
+        'updatedAt',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(storedCursor!.toUtc()),
+      );
+    }
+
+    final subscriptions =
+        <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+    subscriptions.add(query.snapshots().listen((snapshot) {
       _snapshotQueue = _snapshotQueue
-          .then((_) =>
-              _applyLeadSnapshot(snapshot, localStore, onChanged, promoterId))
+          .then((_) => _applyLeadSnapshot(
+                snapshot,
+                localStore,
+                onChanged,
+                promoterId,
+                reconcile: !incremental,
+              ))
+          .then((_) => _storeLatestCursor(
+                cursorKey,
+                snapshot,
+                allowEmptyWatermark: !incremental,
+              ))
           .catchError((Object error, StackTrace stackTrace) {
         debugPrint('Lead snapshot processing failed: $error');
       });
-    });
+    }));
+
+    if (promoterId != null) {
+      final eventCursorKey = 'leadloop_assignment_cursor_$promoterId';
+      final eventCursor = await _readCursor(eventCursorKey);
+      Query<Map<String, dynamic>> events = _assignmentEvents.where(
+        'previousPromoterId',
+        isEqualTo: promoterId,
+      );
+      if (eventCursor != null) {
+        events = events.where(
+          'updatedAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(eventCursor.toUtc()),
+        );
+      }
+      subscriptions.add(events.snapshots().listen((snapshot) {
+        _snapshotQueue = _snapshotQueue.then((_) async {
+          for (final event in snapshot.docs) {
+            final leadId = event.data()['leadId'] as String?;
+            if (leadId != null) {
+              await localStore.removeSyncedLead(leadId);
+            }
+          }
+          await _storeLatestCursor(
+            eventCursorKey,
+            snapshot,
+            allowEmptyWatermark: true,
+          );
+          onChanged();
+        }).catchError((Object error, StackTrace stackTrace) {
+          debugPrint('Lead assignment processing failed: $error');
+        });
+      }));
+    }
+
+    final deletionCursorKey = 'leadloop_deletion_cursor_$scope';
+    final deletionCursor = await _readCursor(deletionCursorKey);
+    final deletionStart = deletionCursor ??
+        DateTime.now().toUtc().subtract(const Duration(minutes: 5));
+    final deletions = _deletionEvents.where(
+      'deletedAt',
+      isGreaterThanOrEqualTo: Timestamp.fromDate(deletionStart),
+    );
+    subscriptions.add(deletions.snapshots().listen((snapshot) {
+      _snapshotQueue = _snapshotQueue.then((_) async {
+        for (final event in snapshot.docs) {
+          final leadId = event.data()['leadId'] as String?;
+          if (leadId != null) await localStore.removeSyncedLead(leadId);
+        }
+        await _storeLatestCursor(
+          deletionCursorKey,
+          snapshot,
+          allowEmptyWatermark: true,
+          timestampField: 'deletedAt',
+        );
+        onChanged();
+      }).catchError((Object error, StackTrace stackTrace) {
+        debugPrint('Lead deletion processing failed: $error');
+      });
+    }));
+    return subscriptions;
   }
 
-  Future<void> _applyLeadSnapshot(
-    QuerySnapshot<Map<String, dynamic>> snapshot,
-    LocalLeadStore localStore,
-    void Function() onChanged,
-    String? promoterId,
-  ) async {
+  Future<void> _applyLeadSnapshot(QuerySnapshot<Map<String, dynamic>> snapshot,
+      LocalLeadStore localStore, void Function() onChanged, String? promoterId,
+      {required bool reconcile}) async {
     final serverLeads = snapshot.docs
         .where((document) => !document.metadata.hasPendingWrites)
         .map(_fromDocument)
         .toList();
-    if (promoterId == null) {
-      await localStore.reconcileAdminLeads(serverLeads);
+    if (reconcile && !snapshot.metadata.isFromCache) {
+      if (promoterId == null) {
+        await localStore.reconcileAdminLeads(serverLeads);
+      } else {
+        await localStore.reconcilePromoterLeads(promoterId, serverLeads);
+      }
     } else {
-      await localStore.reconcilePromoterLeads(promoterId, serverLeads);
+      for (final lead in serverLeads) {
+        await localStore.saveFromServer(lead);
+      }
     }
+    await _recycleExpiredPurchases(localStore);
     onChanged();
   }
 
-  Map<String, dynamic> _toMap(CustomerLead lead) => {
-        'id': lead.id,
-        'name': lead.name,
-        'phone': lead.phone,
-        'shopName': lead.shopName,
-        'promoterName': lead.promoterName,
-        'shopId': lead.shopId,
-        'promoterId': lead.promoterId,
-        'createdAt': Timestamp.fromDate(lead.createdAt.toUtc()),
-        'followUp1': lead.followUp1,
-        'followUp1At': _toTimestamp(lead.followUp1At),
-        'followUp2': lead.followUp2,
-        'followUp2At': _toTimestamp(lead.followUp2At),
-        'followUp3': lead.followUp3,
-        'additionalFollowUps':
-            lead.additionalFollowUps.map((entry) => entry.toMap()).toList(),
-        'outcome': lead.outcome.name,
-        'completedAt': lead.completedAt?.toUtc().toIso8601String(),
-        'followUp3At': _toTimestamp(lead.followUp3At),
-        'isSynced': true,
-        'deletedAt': _toTimestamp(lead.deletedAt),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
+  Future<DateTime?> _readCursor(String key) async {
+    try {
+      final value = await _storage.read(key: key);
+      return value == null ? null : DateTime.tryParse(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _storeLatestCursor(
+    String key,
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    bool allowEmptyWatermark = false,
+    String timestampField = 'updatedAt',
+  }) async {
+    if (snapshot.metadata.isFromCache) return;
+    DateTime? latest;
+    for (final document in snapshot.docs) {
+      final updatedAt = _dateTime(document.data()[timestampField]);
+      if (updatedAt != null && (latest == null || updatedAt.isAfter(latest))) {
+        latest = updatedAt;
+      }
+    }
+    if (latest == null && allowEmptyWatermark) {
+      latest = DateTime.now().toUtc().subtract(const Duration(minutes: 5));
+    }
+    if (latest == null) return;
+    try {
+      await _storage.write(key: key, value: latest.toUtc().toIso8601String());
+    } catch (_) {
+      // A missing cursor only causes a safe full refresh next time.
+    }
+  }
+
+  Map<String, dynamic> _toMap(CustomerLead lead) {
+    final nextFollowUpAt = FollowUpDeadlineService.nextDueAt(lead);
+    return {
+      'id': lead.id,
+      'name': lead.name,
+      'phone': lead.phone,
+      'shopName': lead.shopName,
+      'promoterName': lead.promoterName,
+      'shopId': lead.shopId,
+      'promoterId': lead.promoterId,
+      'createdAt': Timestamp.fromDate(lead.createdAt.toUtc()),
+      'followUp1': lead.followUp1,
+      'followUp1At': _toTimestamp(lead.followUp1At),
+      'followUp2': lead.followUp2,
+      'followUp2At': _toTimestamp(lead.followUp2At),
+      'followUp3': lead.followUp3,
+      'additionalFollowUps':
+          lead.additionalFollowUps.map((entry) => entry.toMap()).toList(),
+      'outcome': lead.outcome.name,
+      'completedAt': lead.completedAt?.toUtc().toIso8601String(),
+      'followUp3At': _toTimestamp(lead.followUp3At),
+      'isSynced': true,
+      'deletedAt': _toTimestamp(lead.deletedAt),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'nextFollowUpAt': _toTimestamp(nextFollowUpAt),
+    };
+  }
 
   CustomerLead _fromMap(Map<String, dynamic> map) => CustomerLead(
         id: map['id'] as String,

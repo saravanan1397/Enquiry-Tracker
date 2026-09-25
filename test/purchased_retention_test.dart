@@ -54,4 +54,27 @@ void main() {
     ).copyWith(outcome: EnquiryOutcome.active);
     expect(LocalLeadStore.shouldRecyclePurchased(lead, now), isFalse);
   });
+
+  test('restoring a purchased enquiry restarts its ten-day retention period',
+      () {
+    final restoredAt = DateTime.utc(2026, 9, 25, 8);
+    final restored = LocalLeadStore.restoredLead(
+      purchasedLead(
+        id: 'restored',
+        completedAt: DateTime.utc(2026, 9, 1),
+      ),
+      now: restoredAt,
+    );
+
+    expect(restored.deletedAt, isNull);
+    expect(restored.isSynced, isFalse);
+    expect(restored.completedAt, restoredAt);
+    expect(
+      LocalLeadStore.shouldRecyclePurchased(
+        restored,
+        restoredAt.add(const Duration(days: 9)),
+      ),
+      isFalse,
+    );
+  });
 }

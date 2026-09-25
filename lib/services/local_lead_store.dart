@@ -18,6 +18,17 @@ class LocalLeadStore {
         !completedAt.isAfter(now.subtract(purchasedRetention));
   }
 
+  static CustomerLead restoredLead(CustomerLead lead, {DateTime? now}) {
+    final restoredAt = now ?? DateTime.now();
+    return lead.copyWith(
+      clearDeletedAt: true,
+      isSynced: false,
+      completedAt: lead.outcome == EnquiryOutcome.purchased
+          ? restoredAt
+          : lead.completedAt,
+    );
+  }
+
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final Map<String, CustomerLead> _cache = {};
   late Box<String> _box;
@@ -66,8 +77,28 @@ class LocalLeadStore {
 
   /// Stores a record downloaded from the central Firebase database.
   Future<void> saveFromServer(CustomerLead lead) async {
+    final local = find(lead.id);
+    if (local != null && !local.isSynced) return;
     await save(lead.copyWith(isSynced: true));
   }
+
+  Future<void> removeSyncedLead(String id) async {
+    final lead = find(id);
+    if (lead == null || !lead.isSynced) return;
+    await _deleteAll([id]);
+  }
+
+  bool hasSyncedLeads({String? promoterId}) => _cache.values.any(
+        (lead) =>
+            lead.isSynced &&
+            (promoterId == null || lead.promoterId == promoterId),
+      );
+
+  int syncedLeadCount({String? promoterId}) => _cache.values
+      .where((lead) =>
+          lead.isSynced &&
+          (promoterId == null || lead.promoterId == promoterId))
+      .length;
 
   /// Removes records that were previously assigned to a promoter but are no
   /// longer returned by the server, such as a lead transferred to somebody
@@ -86,7 +117,7 @@ class LocalLeadStore {
         .map((lead) => lead.id)
         .toList();
     await _deleteAll(localIdsToDelete);
-    await _saveAll(syncedServerLeads);
+    await _saveServerLeads(syncedServerLeads);
   }
 
   Future<void> reconcileAdminLeads(Iterable<CustomerLead> serverLeads) async {
@@ -99,7 +130,7 @@ class LocalLeadStore {
         .map((lead) => lead.id)
         .toList();
     await _deleteAll(localIdsToDelete);
-    await _saveAll(syncedServerLeads);
+    await _saveServerLeads(syncedServerLeads);
   }
 
   CustomerLead? find(String id) => _cache[id];
@@ -138,7 +169,7 @@ class LocalLeadStore {
   Future<void> restore(String id) async {
     final lead = find(id);
     if (lead == null) return;
-    await save(lead.copyWith(clearDeletedAt: true, isSynced: false));
+    await save(restoredLead(lead));
   }
 
   Future<void> permanentlyDelete(String id) async {
@@ -169,6 +200,13 @@ class LocalLeadStore {
         entry.key: jsonEncode(_toMap(entry.value)),
     });
     _cache.addAll(updates);
+  }
+
+  Future<void> _saveServerLeads(Iterable<CustomerLead> leads) async {
+    await _saveAll(leads.where((lead) {
+      final local = find(lead.id);
+      return local == null || local.isSynced;
+    }));
   }
 
   Future<void> _deleteAll(Iterable<String> ids) async {

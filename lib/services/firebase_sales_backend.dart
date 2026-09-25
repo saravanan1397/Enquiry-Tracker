@@ -473,6 +473,13 @@ class FirebaseSalesBackend {
       }
       if (existing.exists) {
         final previous = existing.data()!;
+        final previousAmount = (previous['amountMilli'] as num).toInt();
+        final previousReference = previous['reference'] as String? ?? '';
+        if (!existingIsDeleted &&
+            previousAmount == amountMilli &&
+            previousReference == reference.trim()) {
+          return;
+        }
         transaction.set(audit, {
           'entryId': entry.id,
           'monthKey': monthKey,
@@ -497,7 +504,6 @@ class FirebaseSalesBackend {
           'deletedAsPartOfMonth': false,
         });
         if (preservedTotal.exists) {
-          final previousAmount = (previous['amountMilli'] as num).toInt();
           if (preservedRecordIds.contains(entry.id)) {
             transaction.update(totalSnapshot, {
               'personName': person.name,
