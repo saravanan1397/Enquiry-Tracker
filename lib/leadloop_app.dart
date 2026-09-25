@@ -403,15 +403,28 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     }
     final session = _session;
     if (session != null) {
-      return LeadloopShell(
-        role: session.role == 'admin'
-            ? LeadloopRole.admin
-            : LeadloopRole.promoter,
-        store: widget.store,
-        session: session,
-        onLogout: _logout,
-        isDarkMode: widget.isDarkMode,
-        onToggleTheme: widget.onToggleTheme,
+      return TweenAnimationBuilder<double>(
+        key: ValueKey('signed-in-${session.uid}'),
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+        child: LeadloopShell(
+          role: session.role == 'admin'
+              ? LeadloopRole.admin
+              : LeadloopRole.promoter,
+          store: widget.store,
+          session: session,
+          onLogout: _logout,
+          isDarkMode: widget.isDarkMode,
+          onToggleTheme: widget.onToggleTheme,
+        ),
+        builder: (context, value, child) => Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 12 * (1 - value)),
+            child: child,
+          ),
+        ),
       );
     }
     return PopScope(
@@ -1061,6 +1074,13 @@ class _LeadloopShellState extends State<LeadloopShell> {
         },
       );
     }
+    final workspaceKey = !isAdmin
+        ? 'promoter'
+        : _ownerSalesOpen
+            ? 'sales'
+            : !_ownerModuleOpen
+                ? 'dashboard'
+                : 'followup-workspace';
     return PopScope(
       canPop: !isAdmin || !_ownerModuleOpen,
       onPopInvokedWithResult: (didPop, _) {
@@ -1149,7 +1169,26 @@ class _LeadloopShellState extends State<LeadloopShell> {
                   icon: Icon(isAdmin ? Icons.logout : Icons.lock_outline))
             ]),
         body: SafeArea(
-          child: workspaceBody,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 240),
+            reverseDuration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.018, 0),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: KeyedSubtree(
+              key: ValueKey(workspaceKey),
+              child: workspaceBody,
+            ),
+          ),
         ),
         // Flutter requires NavigationBar to have at least two destinations.
         // Promoters have one screen, so navigation is only shown to owners.

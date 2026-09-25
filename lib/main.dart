@@ -24,17 +24,81 @@ Future<void> _initializeFirebase() async {
   }
 }
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(const _LeadloopBootstrap());
+}
 
-  final store = LocalLeadStore();
-  await Future.wait([
-    // Firebase and the local encrypted store are independent startup tasks.
-    // Running them together shortens both fresh launches and browser reloads.
-    _initializeFirebase(),
-    store.open(),
-  ]);
-  runApp(LeadloopV2(store: store));
+class _LeadloopBootstrap extends StatefulWidget {
+  const _LeadloopBootstrap();
+
+  @override
+  State<_LeadloopBootstrap> createState() => _LeadloopBootstrapState();
+}
+
+class _LeadloopBootstrapState extends State<_LeadloopBootstrap> {
+  late final Future<LocalLeadStore> _startup = _initialize();
+
+  Future<LocalLeadStore> _initialize() async {
+    final store = LocalLeadStore();
+    await Future.wait([
+      // Firebase and the local encrypted store are independent startup tasks.
+      // Running them together shortens both fresh launches and browser reloads.
+      _initializeFirebase(),
+      store.open(),
+    ]);
+    return store;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<LocalLeadStore>(
+      future: _startup,
+      builder: (context, snapshot) {
+        final store = snapshot.data;
+        if (store != null) return LeadloopV2(store: store);
+
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: ThemeMode.system,
+          home: Scaffold(
+            body: Center(
+              child: snapshot.hasError
+                  ? const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'The app could not start. Close it and try again.',
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  : Builder(
+                      builder: (context) => Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            Theme.of(context).brightness == Brightness.dark
+                                ? 'images/selvan_logo_transparent_dark.png'
+                                : 'images/selvan_logo_transparent.png',
+                            width: 230,
+                            fit: BoxFit.contain,
+                          ),
+                          const SizedBox(height: 24),
+                          const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class LeadloopApp extends StatelessWidget {

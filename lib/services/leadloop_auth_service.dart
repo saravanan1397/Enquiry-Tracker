@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -222,13 +223,17 @@ class LeadloopAuthService {
   Future<LeadloopAuthSession?> restoreSession() async {
     if (Firebase.apps.isEmpty || _auth.currentUser == null) return null;
 
-    final encoded = await _storage.read(key: _sessionKey);
+    final storedValues = await Future.wait<String?>([
+      _storage.read(key: _sessionKey),
+      _storage.read(key: _activityKey),
+    ]);
+    final encoded = storedValues[0];
     if (encoded == null) return null;
     final map = jsonDecode(encoded) as Map<String, dynamic>;
     final user = _auth.currentUser!;
     if (map['uid'] != user.uid) return null;
 
-    final lastActivityValue = await _storage.read(key: _activityKey);
+    final lastActivityValue = storedValues[1];
     final lastActivity =
         lastActivityValue == null ? null : DateTime.tryParse(lastActivityValue);
     if (lastActivity != null &&
@@ -244,7 +249,7 @@ class LeadloopAuthService {
       shopId: map['shopId'] as String? ?? '',
       shopName: map['shopName'] as String? ?? '',
     );
-    await touchActivity();
+    unawaited(touchActivity().catchError((_) {}));
     return session;
   }
 
@@ -258,8 +263,10 @@ class LeadloopAuthService {
   Future<void> signOut() async {
     await NotificationService.instance.disable();
     await _auth.signOut();
-    await _storage.delete(key: _sessionKey);
-    await _storage.delete(key: _activityKey);
+    await Future.wait([
+      _storage.delete(key: _sessionKey),
+      _storage.delete(key: _activityKey),
+    ]);
   }
 
   Future<void> clearBlockedSession() async {
@@ -276,16 +283,19 @@ class LeadloopAuthService {
   }
 
   Future<void> _rememberSession(LeadloopAuthSession session) async {
-    await _storage.write(
-        key: _sessionKey,
-        value: jsonEncode({
-          'uid': session.uid,
-          'role': session.role,
-          'displayName': session.displayName,
-          'shopId': session.shopId,
-          'shopName': session.shopName,
-        }));
-    await touchActivity();
+    final now = DateTime.now().toIso8601String();
+    await Future.wait([
+      _storage.write(
+          key: _sessionKey,
+          value: jsonEncode({
+            'uid': session.uid,
+            'role': session.role,
+            'displayName': session.displayName,
+            'shopId': session.shopId,
+            'shopName': session.shopName,
+          })),
+      _storage.write(key: _activityKey, value: now),
+    ]);
   }
 
   String _normalizeMobile(String mobile) {
