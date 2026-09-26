@@ -450,11 +450,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const _LoginBrandHeader(),
-                          const SizedBox(height: 20),
-                          const Text('Welcome to Enquiry Tracker',
-                              style: TextStyle(
-                                  fontSize: 26, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 12),
                           Text(
                               _registering
                                   ? 'Create your promoter account.'
@@ -1321,13 +1317,13 @@ class _LoginBrandHeader extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.hasBoundedWidth
-            ? constraints.maxWidth.clamp(0.0, 300.0)
-            : 300.0;
+            ? constraints.maxWidth.clamp(0.0, 330.0)
+            : 330.0;
         return SizedBox(
           width: width,
-          height: 96,
+          height: 132,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: Image.asset(
@@ -1335,19 +1331,20 @@ class _LoginBrandHeader extends StatelessWidget {
                       ? 'images/selvan_logo_transparent_dark.png'
                       : 'images/selvan_logo_transparent.png',
                   fit: BoxFit.contain,
-                  alignment: Alignment.centerLeft,
+                  alignment: Alignment.center,
                   filterQuality: FilterQuality.high,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               const FittedBox(
                 fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
+                alignment: Alignment.center,
                 child: Text(
                   'Enquiry Tracker',
                   maxLines: 1,
                   softWrap: false,
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
