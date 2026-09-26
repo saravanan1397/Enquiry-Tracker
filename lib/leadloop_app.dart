@@ -56,7 +56,10 @@ class LeadloopV2 extends StatefulWidget {
 class _LeadloopV2State extends State<LeadloopV2> {
   static const _themeKey = 'enquiry_tracker_theme_mode';
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final ThemeData _lightTheme = AppTheme.light();
+  final ThemeData _darkTheme = AppTheme.dark();
   ThemeMode _themeMode = ThemeMode.light;
+  bool _brandAssetsCached = false;
 
   bool get _isDarkMode => _themeMode == ThemeMode.dark;
 
@@ -64,6 +67,19 @@ class _LeadloopV2State extends State<LeadloopV2> {
   void initState() {
     super.initState();
     _restoreTheme();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_brandAssetsCached) return;
+    _brandAssetsCached = true;
+    unawaited(Future.wait([
+      precacheImage(
+          const AssetImage('images/selvan_logo_transparent.png'), context),
+      precacheImage(
+          const AssetImage('images/selvan_logo_transparent_dark.png'), context),
+    ]));
   }
 
   Future<void> _restoreTheme() async {
@@ -78,9 +94,15 @@ class _LeadloopV2State extends State<LeadloopV2> {
     }
   }
 
-  Future<void> _toggleTheme() async {
+  void _toggleTheme() {
     final nextMode = _isDarkMode ? ThemeMode.light : ThemeMode.dark;
     setState(() => _themeMode = nextMode);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_persistTheme(nextMode));
+    });
+  }
+
+  Future<void> _persistTheme(ThemeMode nextMode) async {
     try {
       await _storage.write(
         key: _themeKey,
@@ -97,9 +119,10 @@ class _LeadloopV2State extends State<LeadloopV2> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Enquiry Tracker',
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: _lightTheme,
+      darkTheme: _darkTheme,
       themeMode: _themeMode,
+      themeAnimationDuration: Duration.zero,
       home: emailAction ??
           LeadloopAccessGate(
             store: widget.store,
