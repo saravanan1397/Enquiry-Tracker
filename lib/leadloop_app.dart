@@ -19,7 +19,6 @@ import 'promoter_deletion_dialog.dart';
 import 'sales_tracker_screen.dart';
 import 'services/export_email_service.dart';
 import 'services/export_file_downloader.dart';
-import 'services/firebase_export_email_service.dart';
 import 'services/firebase_lead_backend.dart';
 import 'services/firebase_sales_backend.dart';
 import 'services/follow_up_deadline_service.dart';
@@ -37,6 +36,8 @@ import 'theme/app_theme.dart';
 enum LeadloopRole { promoter, admin }
 
 enum LeadStatusFilter { active, completed }
+
+enum _OwnerHeaderAction { home, export, email, sync, theme, logout }
 
 class LeadloopV2 extends StatefulWidget {
   const LeadloopV2({
@@ -876,6 +877,29 @@ class _LeadloopShellState extends State<LeadloopShell> {
     }
   }
 
+  Future<void> _handleOwnerHeaderAction(_OwnerHeaderAction action) async {
+    switch (action) {
+      case _OwnerHeaderAction.home:
+        _ownerBack();
+        return;
+      case _OwnerHeaderAction.export:
+        await _exportCustomers(email: false);
+        return;
+      case _OwnerHeaderAction.email:
+        await _exportCustomers(email: true);
+        return;
+      case _OwnerHeaderAction.sync:
+        await _manualSyncNow();
+        return;
+      case _OwnerHeaderAction.theme:
+        widget.onToggleTheme();
+        return;
+      case _OwnerHeaderAction.logout:
+        widget.onLogout();
+        return;
+    }
+  }
+
   Future<void> _exportCustomers({required bool email}) async {
     if (_exporting) return;
 
@@ -899,31 +923,60 @@ class _LeadloopShellState extends State<LeadloopShell> {
       );
 
       if (email) {
-        if (!kIsWeb) {
-          final opened = await ExportEmailService.composeAndroidEmail(
+        const subject = 'Enquiry Tracker customer follow-ups';
+        if (kIsWeb) {
+          await downloadExcelExport(bytes, fileName);
+          final opened = await ExportEmailService.composeWebEmail(
             recipient: recipient!,
-            subject: 'Enquiry Tracker customer follow-ups',
-            body: 'Attached is the latest Enquiry Tracker customer export.',
-            fileName: fileName,
-            bytes: bytes,
+            subject: subject,
+            body: 'The Excel export has been downloaded as “$fileName”.\n\n'
+                'Please attach that file to this email before sending.',
           );
-          if (opened) {
-            if (mounted) {
-              _showExportMessage(
-                  'Email draft opened with the Excel export attached.');
-            }
-            return;
+          if (mounted) {
+            _showExportMessage(opened
+                ? 'Excel downloaded and email draft opened. Attach $fileName before sending.'
+                : 'Excel downloaded as $fileName. Open your email and attach it before sending.');
           }
+          return;
         }
 
-        await FirebaseExportEmailService().sendExport(
+        final opened = await ExportEmailService.composeAndroidEmail(
           recipient: recipient!,
+          subject: subject,
+          body: 'Attached is the latest Enquiry Tracker customer export.',
           fileName: fileName,
           bytes: bytes,
         );
+        if (opened) {
+          if (mounted) {
+            _showExportMessage(
+                'Email draft opened with the Excel export attached.');
+          }
+          return;
+        }
+
+        final result = await SharePlus.instance.share(
+          ShareParams(
+            title: 'Email customer export',
+            subject: subject,
+            text: 'Send this Excel export to $recipient.',
+            files: [
+              XFile.fromData(
+                bytes,
+                name: fileName,
+                mimeType:
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              ),
+            ],
+            fileNameOverrides: [fileName],
+            downloadFallbackEnabled: true,
+            mailToFallbackEnabled: true,
+          ),
+        );
         if (mounted) {
-          _showExportMessage(
-              'Excel export emailed successfully to $recipient.');
+          _showExportMessage(result.status == ShareResultStatus.dismissed
+              ? 'Email export was cancelled.'
+              : 'Choose your email app to send the attached Excel export.');
         }
         return;
       }
@@ -995,7 +1048,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
       ),
     );
     controller.dispose();
-    if (email == null || !email.contains('@')) {
+    if (email == null || !RecoveryValidation.email(email)) {
       if (email != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Enter a valid email address.')));
@@ -1021,6 +1074,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
   @override
   Widget build(BuildContext context) {
     final isAdmin = widget.role == LeadloopRole.admin;
+    final compactHeader = MediaQuery.sizeOf(context).width < 720;
     final destinations = isAdmin
         ? const <NavigationDestination>[
             NavigationDestination(
@@ -1098,75 +1152,130 @@ class _LeadloopShellState extends State<LeadloopShell> {
                 ? _OwnerBrandLogo(onTap: _ownerBack)
                 : const Text('Enquiry Tracker'),
             actions: [
-              if (isAdmin && _ownerModuleOpen)
-                IconButton(
-                  tooltip: 'Home',
-                  onPressed: _ownerBack,
-                  icon: const Icon(Icons.home_outlined),
-                ),
-              if (isAdmin && _ownerFollowupOpen) ...[
-                IconButton(
-                    tooltip: 'Export to Excel',
-                    onPressed: _exporting
-                        ? null
-                        : () => _exportCustomers(email: false),
-                    icon: const Icon(Icons.table_view_outlined)),
-                IconButton(
-                    tooltip: 'Send Excel by email',
-                    onPressed:
-                        _exporting ? null : () => _exportCustomers(email: true),
-                    icon: const Icon(Icons.email_outlined)),
-              ],
-              if (!isAdmin)
-                ValueListenableBuilder<LeadloopSyncStatus>(
-                  valueListenable: _syncService.status,
-                  builder: (context, status, _) {
-                    final synced = status == LeadloopSyncStatus.synced;
-                    return Tooltip(
-                      message: synced ? 'Synced to Firebase' : 'Saved locally',
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Icon(
-                          synced
-                              ? Icons.cloud_done_outlined
-                              : Icons.cloud_off_outlined,
-                          color: synced
-                              ? AppColors.successFor(
-                                  Theme.of(context).brightness)
-                              : Theme.of(context).colorScheme.error,
-                        ),
+              if (isAdmin && compactHeader)
+                PopupMenuButton<_OwnerHeaderAction>(
+                  tooltip: 'More actions',
+                  onSelected: (action) =>
+                      unawaited(_handleOwnerHeaderAction(action)),
+                  itemBuilder: (context) => [
+                    if (_ownerModuleOpen)
+                      const PopupMenuItem(
+                        value: _OwnerHeaderAction.home,
+                        child: _HeaderMenuItem(
+                            icon: Icons.home_outlined, label: 'Home'),
                       ),
-                    );
-                  },
-                ),
-              if (!isAdmin)
-                IconButton(
-                  tooltip: 'Set up recovery email',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const RecoveryEmailScreen(),
+                    if (_ownerFollowupOpen)
+                      PopupMenuItem(
+                        value: _OwnerHeaderAction.export,
+                        enabled: !_exporting,
+                        child: const _HeaderMenuItem(
+                            icon: Icons.table_view_outlined,
+                            label: 'Export to Excel'),
+                      ),
+                    if (_ownerFollowupOpen)
+                      PopupMenuItem(
+                        value: _OwnerHeaderAction.email,
+                        enabled: !_exporting,
+                        child: const _HeaderMenuItem(
+                            icon: Icons.email_outlined,
+                            label: 'Email Excel export'),
+                      ),
+                    if (_firebaseBackend.isConfigured && _ownerFollowupOpen)
+                      const PopupMenuItem(
+                        value: _OwnerHeaderAction.sync,
+                        child: _HeaderMenuItem(
+                            icon: Icons.sync_outlined, label: 'Sync now'),
+                      ),
+                    PopupMenuItem(
+                      value: _OwnerHeaderAction.theme,
+                      child: _HeaderMenuItem(
+                        icon: widget.isDarkMode
+                            ? Icons.light_mode_outlined
+                            : Icons.dark_mode_outlined,
+                        label: widget.isDarkMode ? 'Light theme' : 'Dark theme',
+                      ),
                     ),
+                    const PopupMenuItem(
+                      value: _OwnerHeaderAction.logout,
+                      child:
+                          _HeaderMenuItem(icon: Icons.logout, label: 'Logout'),
+                    ),
+                  ],
+                  icon: const Icon(Icons.more_vert),
+                )
+              else ...[
+                if (isAdmin && _ownerModuleOpen)
+                  IconButton(
+                    tooltip: 'Home',
+                    onPressed: _ownerBack,
+                    icon: const Icon(Icons.home_outlined),
                   ),
-                  icon: const Icon(Icons.mark_email_read_outlined),
-                ),
-              if (_firebaseBackend.isConfigured &&
-                  (!isAdmin || _ownerFollowupOpen))
+                if (isAdmin && _ownerFollowupOpen) ...[
+                  IconButton(
+                      tooltip: 'Export to Excel',
+                      onPressed: _exporting
+                          ? null
+                          : () => _exportCustomers(email: false),
+                      icon: const Icon(Icons.table_view_outlined)),
+                  IconButton(
+                      tooltip: 'Send Excel by email',
+                      onPressed: _exporting
+                          ? null
+                          : () => _exportCustomers(email: true),
+                      icon: const Icon(Icons.email_outlined)),
+                ],
+                if (!isAdmin)
+                  ValueListenableBuilder<LeadloopSyncStatus>(
+                    valueListenable: _syncService.status,
+                    builder: (context, status, _) {
+                      final synced = status == LeadloopSyncStatus.synced;
+                      return Tooltip(
+                        message:
+                            synced ? 'Synced to Firebase' : 'Saved locally',
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Icon(
+                            synced
+                                ? Icons.cloud_done_outlined
+                                : Icons.cloud_off_outlined,
+                            color: synced
+                                ? AppColors.successFor(
+                                    Theme.of(context).brightness)
+                                : Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                if (!isAdmin)
+                  IconButton(
+                    tooltip: 'Set up recovery email',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const RecoveryEmailScreen(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.mark_email_read_outlined),
+                  ),
+                if (_firebaseBackend.isConfigured &&
+                    (!isAdmin || _ownerFollowupOpen))
+                  IconButton(
+                      tooltip: 'Sync now',
+                      onPressed: _manualSyncNow,
+                      icon: const Icon(Icons.sync_outlined)),
                 IconButton(
-                    tooltip: 'Sync now',
-                    onPressed: _manualSyncNow,
-                    icon: const Icon(Icons.sync_outlined)),
-              IconButton(
-                  tooltip: widget.isDarkMode
-                      ? 'Switch to light theme'
-                      : 'Switch to dark theme',
-                  onPressed: widget.onToggleTheme,
-                  icon: Icon(widget.isDarkMode
-                      ? Icons.light_mode_outlined
-                      : Icons.dark_mode_outlined)),
-              IconButton(
-                  tooltip: isAdmin ? 'Logout' : 'Lock app',
-                  onPressed: widget.onLogout,
-                  icon: Icon(isAdmin ? Icons.logout : Icons.lock_outline))
+                    tooltip: widget.isDarkMode
+                        ? 'Switch to light theme'
+                        : 'Switch to dark theme',
+                    onPressed: widget.onToggleTheme,
+                    icon: Icon(widget.isDarkMode
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined)),
+                IconButton(
+                    tooltip: isAdmin ? 'Logout' : 'Lock app',
+                    onPressed: widget.onLogout,
+                    icon: Icon(isAdmin ? Icons.logout : Icons.lock_outline)),
+              ],
             ]),
         body: SafeArea(
           child: AnimatedSwitcher(
@@ -1224,24 +1333,45 @@ class _OwnerBrandLogo extends StatelessWidget {
         child: GestureDetector(
           onTap: onTap,
           behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            width: 300,
-            height: 76,
-            child: ClipRect(
-              child: Image.asset(
-                dark
-                    ? 'images/selvan_logo_transparent_dark.png'
-                    : 'images/selvan_logo_transparent.png',
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-                filterQuality: FilterQuality.high,
-              ),
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.hasBoundedWidth
+                  ? constraints.maxWidth.clamp(0.0, 300.0)
+                  : 300.0;
+              return SizedBox(
+                width: width,
+                height: 76,
+                child: Image.asset(
+                  dark
+                      ? 'images/selvan_logo_transparent_dark.png'
+                      : 'images/selvan_logo_transparent.png',
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
+                  filterQuality: FilterQuality.high,
+                ),
+              );
+            },
           ),
         ),
       ),
     );
   }
+}
+
+class _HeaderMenuItem extends StatelessWidget {
+  const _HeaderMenuItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Text(label),
+        ],
+      );
 }
 
 class LeadloopPromoterScreen extends StatefulWidget {

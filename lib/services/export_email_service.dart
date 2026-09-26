@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ExportEmailService {
   static const _channel = MethodChannel('enquiry_tracker/export_email');
@@ -16,13 +17,39 @@ class ExportEmailService {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return false;
     }
-    return await _channel.invokeMethod<bool>('composeWithAttachment', {
-          'recipient': recipient,
+    try {
+      return await _channel.invokeMethod<bool>('composeWithAttachment', {
+            'recipient': recipient,
+            'subject': subject,
+            'body': body,
+            'fileName': fileName,
+            'bytes': bytes,
+          }) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Opens a pre-addressed web email draft. Browsers do not permit websites
+  /// to attach a generated local file, so the caller downloads it first.
+  static Future<bool> composeWebEmail({
+    required String recipient,
+    required String subject,
+    required String body,
+  }) async {
+    if (!kIsWeb) return false;
+    return launchUrl(
+      Uri(
+        scheme: 'mailto',
+        path: recipient,
+        queryParameters: {
           'subject': subject,
           'body': body,
-          'fileName': fileName,
-          'bytes': bytes,
-        }) ??
-        false;
+        },
+      ),
+    );
   }
 }
