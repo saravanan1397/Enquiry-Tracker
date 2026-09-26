@@ -29,6 +29,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   final _amount = TextEditingController();
   final _reference = TextEditingController();
   final _salespersonSearch = TextEditingController();
+  final _totalsSearch = TextEditingController();
   TextEditingController? _name;
   SalesPerson? _selectedPerson;
   SalesRecord? _editing;
@@ -72,6 +73,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     _amount.dispose();
     _reference.dispose();
     _salespersonSearch.dispose();
+    _totalsSearch.dispose();
     super.dispose();
   }
 
@@ -1638,97 +1640,137 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _totalsSearch,
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search salespersons',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
             Divider(color: scheme.outlineVariant),
-            if (groups.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 28),
-                child: Center(
-                  child: Text(
-                    'No salesperson totals for this month.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              )
-            else
-              for (var index = 0; index < groups.length; index++) ...[
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _showSalespersonRecords(groups[index]),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 11,
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _totalsSearch,
+              builder: (context, searchValue, _) {
+                final query = searchValue.text.trim().toLowerCase();
+                final visibleGroups = query.isEmpty
+                    ? groups
+                    : groups
+                        .where(
+                          (group) =>
+                              group.personName.toLowerCase().contains(query),
+                        )
+                        .toList(growable: false);
+                if (groups.isEmpty || visibleGroups.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 28),
+                    child: Center(
+                      child: Text(
+                        groups.isEmpty
+                            ? 'No salesperson totals for this month.'
+                            : 'No salesperson totals match your search.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundColor: scheme.secondaryContainer,
-                            foregroundColor: scheme.onSecondaryContainer,
-                            child: Text(
-                              groups[index].personName.trim().isEmpty
-                                  ? '?'
-                                  : groups[index]
-                                      .personName
-                                      .trim()
-                                      .characters
-                                      .first
-                                      .toUpperCase(),
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (var index = 0;
+                        index < visibleGroups.length;
+                        index++) ...[
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () =>
+                              _showSalespersonRecords(visibleGroups[index]),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 11,
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Text(
-                                  groups[index].personName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: scheme.secondaryContainer,
+                                  foregroundColor: scheme.onSecondaryContainer,
+                                  child: Text(
+                                    visibleGroups[index]
+                                            .personName
+                                            .trim()
+                                            .isEmpty
+                                        ? '?'
+                                        : visibleGroups[index]
+                                            .personName
+                                            .trim()
+                                            .characters
+                                            .first
+                                            .toUpperCase(),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
                                 ),
-                                Text(
-                                  '${groups[index].entryCount} daily ${groups[index].entryCount == 1 ? 'entry' : 'entries'}',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: scheme.onSurfaceVariant,
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        visibleGroups[index].personName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${visibleGroups[index].entryCount} daily ${visibleGroups[index].entryCount == 1 ? 'entry' : 'entries'}',
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '₹${_groupedAmount(visibleGroups[index].totalMilli)}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: scheme.primary,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                Icon(
+                                  Icons.chevron_right,
+                                  size: 20,
+                                  color: scheme.onSurfaceVariant,
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '₹${_groupedAmount(groups[index].totalMilli)}',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.primary,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          Icon(
-                            Icons.chevron_right,
-                            size: 20,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-                if (index != groups.length - 1)
-                  Divider(height: 1, color: scheme.outlineVariant),
-              ],
+                      if (index != visibleGroups.length - 1)
+                        Divider(height: 1, color: scheme.outlineVariant),
+                    ],
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 10),
             Text(
               'Totals update automatically when a daily entry is saved, edited, recycled or restored.',

@@ -8,9 +8,13 @@ import 'package:leadloop/sales_tracker_screen.dart';
 import 'package:leadloop/services/firebase_sales_backend.dart';
 
 class _BackupStatusBackend extends FirebaseSalesBackend {
-  _BackupStatusBackend(this.statuses);
+  _BackupStatusBackend(
+    this.statuses, {
+    this.records = const [],
+  });
 
   final Stream<SalesBackupStatus?> statuses;
+  final List<SalesRecord> records;
 
   @override
   Stream<List<SalesPerson>> watchPeople() => Stream.value(const []);
@@ -21,7 +25,7 @@ class _BackupStatusBackend extends FirebaseSalesBackend {
 
   @override
   Stream<List<SalesRecord>> watchMonth(String monthKey) =>
-      Stream.value(const []);
+      Stream.value(records);
 
   @override
   Stream<List<SalesPersonTotalSnapshot>> watchPreservedTotals(
@@ -37,6 +41,18 @@ SalesBackupStatus _status(String status) => SalesBackupStatus(
       completedAt: status == 'completed' ? DateTime(2026, 9, 25, 12) : null,
       assetNames:
           status == 'completed' ? const ['sales-backup.etbackup'] : const [],
+    );
+
+SalesRecord _record(String id, String personId, String personName) =>
+    SalesRecord(
+      id: id,
+      personId: personId,
+      personName: personName,
+      salesDateKey: '2026-09-25',
+      monthKey: '2026-09',
+      amountMilli: 10000000,
+      enteredByUid: 'owner-1',
+      enteredByName: 'Admin',
     );
 
 Future<void> _pumpTracker(
@@ -95,5 +111,43 @@ void main() {
     expect(find.text('Manual backup successful'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('Manual backup successful'), findsNothing);
+  });
+
+  testWidgets('salesperson totals search filters only the totals panel',
+      (tester) async {
+    final backend = _BackupStatusBackend(
+      Stream.value(null),
+      records: [
+        _record('record-a', 'person-a', 'Alice'),
+        _record('record-b', 'person-b', 'Bob'),
+      ],
+    );
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SalesTrackerScreen(
+            backend: backend,
+            ownerUid: 'owner-1',
+            ownerName: 'Admin',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Bob'), findsNWidgets(2));
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Search salespersons'),
+      'Alice',
+    );
+    await tester.pump();
+
+    expect(find.text('Alice'), findsNWidgets(3));
+    expect(find.text('Bob'), findsOneWidget);
   });
 }
