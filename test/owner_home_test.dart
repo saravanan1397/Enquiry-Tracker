@@ -5,7 +5,7 @@ import 'package:leadloop/owner_home.dart';
 void main() {
   for (final width in [360.0, 1280.0]) {
     for (final brightness in Brightness.values) {
-      testWidgets('Owner cards at $width in $brightness open their modules',
+      testWidgets('Admin cards at $width in $brightness open their modules',
           (tester) async {
         tester.view.physicalSize = Size(width, 1200);
         tester.view.devicePixelRatio = 1;
@@ -28,8 +28,15 @@ void main() {
         expect(find.text('Sales tracker'), findsOneWidget);
         expect(find.text('Open follow-ups'), findsOneWidget);
         expect(find.text('Open sales tracker'), findsOneWidget);
-        expect(tester.getTopLeft(find.text('Sales tracker')).dy,
-            greaterThan(tester.getTopLeft(find.text('Followup widget')).dy));
+        final followupPosition =
+            tester.getTopLeft(find.text('Followup widget'));
+        final salesPosition = tester.getTopLeft(find.text('Sales tracker'));
+        if (width < 920) {
+          expect(salesPosition.dy, greaterThan(followupPosition.dy));
+        } else {
+          expect(salesPosition.dy, closeTo(followupPosition.dy, 1));
+          expect(salesPosition.dx, greaterThan(followupPosition.dx));
+        }
         expect(tester.takeException(), isNull);
 
         await tester.tap(find.text('Open follow-ups'));

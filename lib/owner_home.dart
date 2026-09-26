@@ -16,50 +16,101 @@ class OwnerHome extends StatelessWidget {
   final VoidCallback? onSales;
 
   @override
-  Widget build(BuildContext context) => ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          _ModuleCard(
-            title: 'Followup widget',
-            eyebrow: 'CUSTOMER ENQUIRIES',
-            description: 'Customer follow-ups at a glance',
-            footer: 'Open records, filters, exports and follow-up management',
-            icon: Icons.forum_outlined,
-            actionLabel: 'Open follow-ups',
-            lightAccent: const Color(0xFF1F5E9C),
-            darkAccent: const Color(0xFF82B7E8),
-            lightGradient: const [Color(0xFFF4F8FC), Color(0xFFE2ECF6)],
-            darkGradient: const [Color(0xFF0D1722), Color(0xFF142B40)],
-            onTap: onFollowup,
-            metrics: [
-              ('TOTAL ENQUIRIES', '${leads.length}'),
-              ('ACTIVE', '${leads.where((lead) => !lead.isCompleted).length}'),
-              (
-                'COMPLETED',
-                '${leads.where((lead) => lead.isCompleted).length}'
-              ),
-              (
-                'OVERDUE',
-                '${leads.where((lead) => FollowUpDeadlineService.isOverdue(lead)).length}'
-              ),
-            ],
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, viewport) => ListView(
+          padding: EdgeInsets.symmetric(
+            horizontal: viewport.maxWidth < 600 ? 12 : 24,
+            vertical: viewport.maxWidth < 600 ? 12 : 20,
           ),
-          const SizedBox(height: 18),
-          _ModuleCard(
-            title: 'Sales tracker',
-            eyebrow: 'SALES',
-            description: 'Your sales workspace',
-            footer: 'Daily entries, monthly totals, Excel exports and backups',
-            icon: Icons.insights_outlined,
-            lightAccent: const Color(0xFF14735F),
-            darkAccent: const Color(0xFF7AC7B2),
-            lightGradient: const [Color(0xFFF3F8F6), Color(0xFFE0EEE9)],
-            darkGradient: const [Color(0xFF0C1917), Color(0xFF17332D)],
-            actionLabel: onSales == null ? 'Web only' : 'Open sales tracker',
-            metrics: const [('SCHEDULE', 'Daily'), ('CURRENCY', 'INR')],
-            onTap: onSales,
-          ),
-        ],
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1280),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final followupCard = _ModuleCard(
+                      title: 'Followup widget',
+                      eyebrow: 'CUSTOMER ENQUIRIES',
+                      description: 'Customer follow-ups at a glance',
+                      footer:
+                          'Open records, filters, exports and follow-up management',
+                      icon: Icons.forum_outlined,
+                      actionLabel: 'Open follow-ups',
+                      lightAccent: const Color(0xFF1F5E9C),
+                      darkAccent: const Color(0xFF82B7E8),
+                      lightGradient: const [
+                        Color(0xFFF4F8FC),
+                        Color(0xFFE2ECF6)
+                      ],
+                      darkGradient: const [
+                        Color(0xFF0D1722),
+                        Color(0xFF142B40)
+                      ],
+                      onTap: onFollowup,
+                      metrics: [
+                        ('TOTAL ENQUIRIES', '${leads.length}'),
+                        (
+                          'ACTIVE',
+                          '${leads.where((lead) => !lead.isCompleted).length}'
+                        ),
+                        (
+                          'COMPLETED',
+                          '${leads.where((lead) => lead.isCompleted).length}'
+                        ),
+                        (
+                          'OVERDUE',
+                          '${leads.where((lead) => FollowUpDeadlineService.isOverdue(lead)).length}'
+                        ),
+                      ],
+                    );
+                    final salesCard = _ModuleCard(
+                      title: 'Sales tracker',
+                      eyebrow: 'SALES',
+                      description: 'Your sales workspace',
+                      footer:
+                          'Daily entries, monthly totals, Excel exports and backups',
+                      icon: Icons.insights_outlined,
+                      lightAccent: const Color(0xFF14735F),
+                      darkAccent: const Color(0xFF7AC7B2),
+                      lightGradient: const [
+                        Color(0xFFF3F8F6),
+                        Color(0xFFE0EEE9)
+                      ],
+                      darkGradient: const [
+                        Color(0xFF0C1917),
+                        Color(0xFF17332D)
+                      ],
+                      actionLabel:
+                          onSales == null ? 'Web only' : 'Open sales tracker',
+                      metrics: const [
+                        ('SCHEDULE', 'Daily'),
+                        ('CURRENCY', 'INR')
+                      ],
+                      onTap: onSales,
+                    );
+                    if (constraints.maxWidth < 920) {
+                      return Column(
+                        children: [
+                          followupCard,
+                          const SizedBox(height: 16),
+                          salesCard,
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: followupCard),
+                        const SizedBox(width: 18),
+                        Expanded(child: salesCard),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
       );
 }
 
@@ -116,16 +167,16 @@ class _ModuleCard extends StatelessWidget {
                 child: Container(width: 6, color: accent),
               ),
               Positioned(
-                right: -12,
-                top: 28,
+                right: -8,
+                top: 24,
                 child: Transform.rotate(
                   angle: -0.22,
                   child: Icon(icon,
-                      size: 220, color: accent.withValues(alpha: 0.07)),
+                      size: 170, color: accent.withValues(alpha: 0.07)),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -147,16 +198,16 @@ class _ModuleCard extends StatelessWidget {
                       else
                         Icon(Icons.insights_outlined, color: muted, size: 24),
                     ]),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 14),
                     Text(title,
                         style: TextStyle(
                             color: foreground,
-                            fontSize: 24,
+                            fontSize: 22,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
                     Text(description,
                         style: TextStyle(color: muted, fontSize: 13)),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 18),
                     Container(
                       decoration: BoxDecoration(
                         color: (dark ? Colors.black : Colors.white)
@@ -167,15 +218,16 @@ class _ModuleCard extends StatelessWidget {
                       child: LayoutBuilder(builder: (context, constraints) {
                         final columns = metrics.length == 1
                             ? 1
-                            : constraints.maxWidth < 560
+                            : constraints.maxWidth < 520
                                 ? 2
-                                : 4;
+                                : metrics.length;
                         return Wrap(children: [
                           for (var index = 0; index < metrics.length; index++)
                             SizedBox(
                               width: constraints.maxWidth / columns,
                               child: Container(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
                                 decoration: BoxDecoration(
                                     border: Border(
                                   left: index % columns == 0
@@ -194,7 +246,7 @@ class _ModuleCard extends StatelessWidget {
                                               color: muted,
                                               fontSize: 10,
                                               letterSpacing: 0.4)),
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 6),
                                       Text(metrics[index].$2,
                                           style: TextStyle(
                                               color: accent,
@@ -206,7 +258,7 @@ class _ModuleCard extends StatelessWidget {
                         ]);
                       }),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 18),
                     LayoutBuilder(builder: (context, constraints) {
                       final action = FilledButton.icon(
                         onPressed: onTap,
@@ -218,7 +270,7 @@ class _ModuleCard extends StatelessWidget {
                           disabledForegroundColor:
                               foreground.withValues(alpha: 0.72),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 16),
+                              horizontal: 18, vertical: 12),
                         ),
                         icon: Icon(onTap == null
                             ? Icons.schedule_outlined
