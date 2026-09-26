@@ -7,17 +7,18 @@ import 'firebase_options.dart';
 import 'models/customer_lead.dart';
 import 'leadloop_app.dart';
 import 'services/local_lead_store.dart';
+import 'services/device_performance_profile.dart';
 import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 
-Future<void> _initializeFirebase() async {
+Future<void> _initializeFirebase(DevicePerformanceProfile profile) async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    FirebaseFirestore.instance.settings = const Settings(
+    FirebaseFirestore.instance.settings = Settings(
       persistenceEnabled: true,
-      cacheSizeBytes: 50 * 1024 * 1024,
+      cacheSizeBytes: profile.firestoreCacheSizeBytes,
     );
   } catch (error) {
     debugPrint('Firebase is not configured yet: $error');
@@ -37,23 +38,37 @@ class _LeadloopBootstrap extends StatefulWidget {
 }
 
 class _LeadloopBootstrapState extends State<_LeadloopBootstrap> {
-  late final Future<LocalLeadStore> _startup = _initialize();
+  late final Future<_StartupResult> _startup = _initialize();
 
-  Future<LocalLeadStore> _initialize() async {
+  Future<_StartupResult> _initialize() async {
+    final performanceProfile = await DevicePerformanceProfile.detect();
+    final imageCache = PaintingBinding.instance.imageCache;
+    imageCache.maximumSize = performanceProfile.imageCacheEntries;
+    imageCache.maximumSizeBytes = performanceProfile.imageCacheSizeBytes;
+
     final store = LocalLeadStore();
     // Avoid parallel native initialization spikes on entry-level phones.
     await store.open();
-    await _initializeFirebase();
-    return store;
+    await _initializeFirebase(performanceProfile);
+    debugPrint(
+      'Device performance: ${performanceProfile.tier.name} '
+      '(${performanceProfile.nominalMemoryGb} GB class)',
+    );
+    return _StartupResult(store, performanceProfile);
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<LocalLeadStore>(
+    return FutureBuilder<_StartupResult>(
       future: _startup,
       builder: (context, snapshot) {
-        final store = snapshot.data;
-        if (store != null) return LeadloopV2(store: store);
+        final startup = snapshot.data;
+        if (startup != null) {
+          return LeadloopV2(
+            store: startup.store,
+            performanceProfile: startup.performanceProfile,
+          );
+        }
 
         return MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -96,6 +111,13 @@ class _LeadloopBootstrapState extends State<_LeadloopBootstrap> {
       },
     );
   }
+}
+
+class _StartupResult {
+  const _StartupResult(this.store, this.performanceProfile);
+
+  final LocalLeadStore store;
+  final DevicePerformanceProfile performanceProfile;
 }
 
 class LeadloopApp extends StatelessWidget {

@@ -55,7 +55,10 @@ abstract final class AppColors {
 }
 
 class AppTheme {
-  static ThemeData light() {
+  static ThemeData light({
+    bool reducedMotion = false,
+    bool lightweightMotion = false,
+  }) {
     const colorScheme = ColorScheme.light(
       primary: AppColors.primary,
       onPrimary: AppColors.onPrimary,
@@ -82,10 +85,15 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackground: AppColors.background,
       mutedSurface: AppColors.surfaceMuted,
+      reducedMotion: reducedMotion,
+      lightweightMotion: lightweightMotion,
     );
   }
 
-  static ThemeData dark() {
+  static ThemeData dark({
+    bool reducedMotion = false,
+    bool lightweightMotion = false,
+  }) {
     const colorScheme = ColorScheme.dark(
       primary: Color(0xFFAFC8D2),
       onPrimary: Color(0xFF19333E),
@@ -112,6 +120,8 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackground: AppColors.darkBackground,
       mutedSurface: AppColors.darkSurfaceMuted,
+      reducedMotion: reducedMotion,
+      lightweightMotion: lightweightMotion,
     );
   }
 
@@ -119,6 +129,8 @@ class AppTheme {
     required ColorScheme colorScheme,
     required Color scaffoldBackground,
     required Color mutedSurface,
+    required bool reducedMotion,
+    required bool lightweightMotion,
   }) {
     final isDark = colorScheme.brightness == Brightness.dark;
     final appBarSurface = Color.alphaBlend(
@@ -137,14 +149,14 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: scaffoldBackground,
-      pageTransitionsTheme: const PageTransitionsTheme(
+      pageTransitionsTheme: PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: _SmoothPageTransitionsBuilder(),
-          TargetPlatform.iOS: _SmoothPageTransitionsBuilder(),
-          TargetPlatform.macOS: _SmoothPageTransitionsBuilder(),
-          TargetPlatform.windows: _SmoothPageTransitionsBuilder(),
-          TargetPlatform.linux: _SmoothPageTransitionsBuilder(),
-          TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
+          for (final platform in TargetPlatform.values)
+            platform: reducedMotion
+                ? const _NoPageTransitionsBuilder()
+                : lightweightMotion
+                    ? const _FadePageTransitionsBuilder()
+                    : const _SmoothPageTransitionsBuilder(),
         },
       ),
       appBarTheme: AppBarTheme(
@@ -252,6 +264,34 @@ class AppTheme {
       ),
     );
   }
+}
+
+class _NoPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _NoPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) =>
+      child;
+}
+
+class _FadePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _FadePageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) =>
+      FadeTransition(opacity: animation, child: child);
 }
 
 class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {

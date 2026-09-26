@@ -27,6 +27,7 @@ import 'services/leadloop_auth_service.dart';
 import 'services/lead_export_service.dart';
 import 'services/lead_search_service.dart';
 import 'services/local_lead_store.dart';
+import 'services/device_performance_profile.dart';
 import 'services/mobile_number_validator.dart';
 import 'services/notification_service.dart';
 import 'services/sync_service.dart';
@@ -46,10 +47,12 @@ class LeadloopV2 extends StatefulWidget {
     super.key,
     required this.store,
     this.ownerAccessEnabled,
+    this.performanceProfile = DevicePerformanceProfile.medium,
   });
 
   final LocalLeadStore store;
   final bool? ownerAccessEnabled;
+  final DevicePerformanceProfile performanceProfile;
 
   @override
   State<LeadloopV2> createState() => _LeadloopV2State();
@@ -58,8 +61,8 @@ class LeadloopV2 extends StatefulWidget {
 class _LeadloopV2State extends State<LeadloopV2> {
   static const _themeKey = 'enquiry_tracker_theme_mode';
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
-  final ThemeData _lightTheme = AppTheme.light();
-  final ThemeData _darkTheme = AppTheme.dark();
+  late final ThemeData _lightTheme;
+  late final ThemeData _darkTheme;
   ThemeMode _themeMode = ThemeMode.light;
   bool _brandAssetsCached = false;
 
@@ -68,6 +71,14 @@ class _LeadloopV2State extends State<LeadloopV2> {
   @override
   void initState() {
     super.initState();
+    _lightTheme = AppTheme.light(
+      reducedMotion: widget.performanceProfile.isLow,
+      lightweightMotion: !widget.performanceProfile.isPeak,
+    );
+    _darkTheme = AppTheme.dark(
+      reducedMotion: widget.performanceProfile.isLow,
+      lightweightMotion: !widget.performanceProfile.isPeak,
+    );
     _restoreTheme();
   }
 
@@ -76,12 +87,20 @@ class _LeadloopV2State extends State<LeadloopV2> {
     super.didChangeDependencies();
     if (_brandAssetsCached) return;
     _brandAssetsCached = true;
-    unawaited(Future.wait([
-      precacheImage(
-          const AssetImage('images/selvan_logo_transparent.png'), context),
-      precacheImage(
-          const AssetImage('images/selvan_logo_transparent_dark.png'), context),
-    ]));
+    if (widget.performanceProfile.isPeak) {
+      unawaited(Future.wait([
+        precacheImage(
+            const AssetImage('images/selvan_logo_transparent.png'), context),
+        precacheImage(
+            const AssetImage('images/selvan_logo_transparent_dark.png'),
+            context),
+      ]));
+    } else {
+      final logo = _isDarkMode
+          ? 'images/selvan_logo_transparent_dark.png'
+          : 'images/selvan_logo_transparent.png';
+      unawaited(precacheImage(AssetImage(logo), context));
+    }
   }
 
   Future<void> _restoreTheme() async {
@@ -125,6 +144,15 @@ class _LeadloopV2State extends State<LeadloopV2> {
       darkTheme: _darkTheme,
       themeMode: _themeMode,
       themeAnimationDuration: Duration.zero,
+      builder: (context, child) {
+        if (child == null) return const SizedBox.shrink();
+        if (!widget.performanceProfile.isLow) return child;
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(disableAnimations: true),
+          child: child,
+        );
+      },
       home: emailAction ??
           LeadloopAccessGate(
             store: widget.store,

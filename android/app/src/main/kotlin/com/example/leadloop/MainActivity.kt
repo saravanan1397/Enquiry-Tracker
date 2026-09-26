@@ -1,15 +1,30 @@
 package com.example.leadloop
 
+import android.app.ActivityManager
+import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterShellArgs
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val exportChannel = "enquiry_tracker/export_email"
+    private val deviceProfileChannel = "enquiry_tracker/device_profile"
+
+    @Suppress("DEPRECATION")
+    override fun getFlutterShellArgs(): FlutterShellArgs {
+        val args = super.getFlutterShellArgs()
+        if (nominalMemoryGb() < 6) {
+            // Skia has a lower startup and GPU-memory cost on entry-level and
+            // mid-range Android devices. High-memory devices retain Impeller.
+            args.add(FlutterShellArgs.ARG_DISABLE_IMPELLER)
+        }
+        return args
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -21,7 +36,26 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deviceProfileChannel)
+            .setMethodCallHandler { call, result ->
+                if (call.method == "totalMemoryMb") {
+                    result.success(totalMemoryMb())
+                } else {
+                    result.notImplemented()
+                }
+            }
     }
+
+    private fun totalMemoryMb(): Long {
+        val activityManager =
+            getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        return memoryInfo.totalMem / (1024L * 1024L)
+    }
+
+    private fun nominalMemoryGb(): Long =
+        ((totalMemoryMb() + 512L) / 1024L).coerceIn(1L, 64L)
 
     private fun composeEmailWithAttachment(call: MethodCall, result: MethodChannel.Result) {
         val recipient = call.argument<String>("recipient")?.trim()
