@@ -449,13 +449,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          CircleAvatar(
-                            radius: 22,
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primary,
-                            child: Icon(Icons.layers_outlined,
-                                color: Theme.of(context).colorScheme.onPrimary),
-                          ),
+                          const _LoginBrandHeader(),
                           const SizedBox(height: 20),
                           const Text('Welcome to Enquiry Tracker',
                               style: TextStyle(
@@ -1314,6 +1308,52 @@ class _LeadloopShellState extends State<LeadloopShell> {
                         ),
                     destinations: destinations),
       ),
+    );
+  }
+}
+
+class _LoginBrandHeader extends StatelessWidget {
+  const _LoginBrandHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.hasBoundedWidth
+            ? constraints.maxWidth.clamp(0.0, 300.0)
+            : 300.0;
+        return SizedBox(
+          width: width,
+          height: 96,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Image.asset(
+                  dark
+                      ? 'images/selvan_logo_transparent_dark.png'
+                      : 'images/selvan_logo_transparent.png',
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Enquiry Tracker',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
