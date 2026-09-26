@@ -363,6 +363,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
   }
 
   Future<void> _logout() async {
+    final wasAdmin = _session?.role == 'admin';
     try {
       await _authService?.signOut();
     } catch (_) {
@@ -372,6 +373,9 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                 'Could not sign out safely. Check your connection and try again.')));
       }
       return;
+    }
+    if (wasAdmin) {
+      await const WorkspaceStateStore().resetAdminWorkspace();
     }
     if (!mounted) return;
     _watchPromoter(null);

@@ -36,6 +36,15 @@ class WorkspaceStateStore {
     }
   }
 
+  Future<void> resetAdminWorkspace() async {
+    await Future.wait([
+      writeOwnerView(OwnerWorkspaceView.dashboard),
+      writeSalesRecycleBin(false),
+      writeFollowupRecycleBin(false),
+      writePromoterRecycleBin(false),
+    ]);
+  }
+
   Future<String?> readSalesMonth() async {
     try {
       return await _storage.read(key: _salesMonthKey);
