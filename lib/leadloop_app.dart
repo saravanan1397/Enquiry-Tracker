@@ -1144,13 +1144,14 @@ class _LeadloopShellState extends State<LeadloopShell> {
       },
       child: Scaffold(
         appBar: AppBar(
-            toolbarHeight: isAdmin ? 84 : null,
+            toolbarHeight: 84,
+            titleSpacing: isAdmin ? null : 12,
             leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
                 : null,
             title: isAdmin
                 ? _OwnerBrandLogo(onTap: _ownerBack)
-                : const Text('Enquiry Tracker'),
+                : const _PromoterBrandHeader(),
             actions: [
               if (isAdmin && compactHeader)
                 PopupMenuButton<_OwnerHeaderAction>(
@@ -1354,6 +1355,53 @@ class _OwnerBrandLogo extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PromoterBrandHeader extends StatelessWidget {
+  const _PromoterBrandHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth.clamp(0.0, 180.0)
+            : 180.0;
+        return SizedBox(
+          width: availableWidth,
+          height: 72,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Image.asset(
+                  dark
+                      ? 'images/selvan_logo_transparent_dark.png'
+                      : 'images/selvan_logo_transparent.png',
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
+              const SizedBox(height: 2),
+              const FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Enquiry Tracker',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
