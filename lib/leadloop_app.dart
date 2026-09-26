@@ -2906,6 +2906,24 @@ class _PromoterLeadCard extends StatelessWidget {
             .where((comment) => comment.isNotEmpty),
       ];
 
+  _LeadStatus get _status {
+    if (FollowUpDeadlineService.isOverdue(lead)) {
+      return _LeadStatus.overdue;
+    }
+    return switch (lead.outcome) {
+      EnquiryOutcome.active => _LeadStatus.active,
+      EnquiryOutcome.purchased => _LeadStatus.purchased,
+      EnquiryOutcome.closedWithoutPurchase => _LeadStatus.closed,
+    };
+  }
+
+  String get _statusLabel => switch (_status) {
+        _LeadStatus.overdue => 'Due',
+        _LeadStatus.purchased => 'Purchased',
+        _LeadStatus.closed => 'Closed',
+        _LeadStatus.active => 'Follow-up ${lead.followUpNumber}',
+      };
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -2923,14 +2941,6 @@ class _PromoterLeadCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    backgroundColor: scheme.primaryContainer,
-                    child: Text(
-                      lead.name.substring(0, 1).toUpperCase(),
-                      style: TextStyle(color: scheme.primary),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.only(top: 3),
@@ -2946,16 +2956,10 @@ class _PromoterLeadCard extends StatelessWidget {
                           Text('|',
                               style: TextStyle(color: scheme.onSurfaceVariant)),
                           Text(lead.phone),
-                          if (FollowUpDeadlineService.isOverdue(lead))
-                            const _LeadStatusBadge(
-                              label: 'Pending follow-up',
-                              status: _LeadStatus.overdue,
-                            )
-                          else if (lead.outcome == EnquiryOutcome.purchased)
-                            const _LeadStatusBadge(
-                              label: 'Purchased',
-                              status: _LeadStatus.purchased,
-                            ),
+                          _LeadStatusBadge(
+                            label: _statusLabel,
+                            status: _status,
+                          ),
                         ],
                       ),
                     ),
@@ -2974,7 +2978,7 @@ class _PromoterLeadCard extends StatelessWidget {
                 ],
               ),
               Padding(
-                padding: const EdgeInsets.only(left: 52, right: 8, top: 6),
+                padding: const EdgeInsets.only(right: 8, top: 6),
                 child: comments.isEmpty
                     ? Text(
                         'No follow-up comments yet',
@@ -3007,7 +3011,7 @@ class _PromoterLeadCard extends StatelessWidget {
   }
 }
 
-enum _LeadStatus { overdue, purchased }
+enum _LeadStatus { active, overdue, purchased, closed }
 
 class _LeadStatusBadge extends StatelessWidget {
   const _LeadStatusBadge({required this.label, required this.status});
@@ -3018,13 +3022,19 @@ class _LeadStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
-    final isOverdue = status == _LeadStatus.overdue;
-    final foreground = isOverdue
-        ? AppColors.onErrorSurfaceFor(brightness)
-        : AppColors.successFor(brightness);
-    final background = isOverdue
-        ? AppColors.errorSurfaceFor(brightness)
-        : AppColors.successSurfaceFor(brightness);
+    final scheme = Theme.of(context).colorScheme;
+    final foreground = switch (status) {
+      _LeadStatus.overdue => AppColors.onErrorSurfaceFor(brightness),
+      _LeadStatus.purchased => AppColors.successFor(brightness),
+      _LeadStatus.active => scheme.primary,
+      _LeadStatus.closed => scheme.onSurfaceVariant,
+    };
+    final background = switch (status) {
+      _LeadStatus.overdue => AppColors.errorSurfaceFor(brightness),
+      _LeadStatus.purchased => AppColors.successSurfaceFor(brightness),
+      _LeadStatus.active => scheme.primaryContainer,
+      _LeadStatus.closed => scheme.surfaceContainerHighest,
+    };
     return Semantics(
       label: label,
       child: Container(
