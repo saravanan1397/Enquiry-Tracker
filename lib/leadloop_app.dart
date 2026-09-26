@@ -1628,52 +1628,10 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         else
           ...visibleLeads.map((lead) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Card(
-                  margin: EdgeInsets.zero,
-                  child: ListTile(
-                    onTap: () => _openLead(lead),
-                    leading: CircleAvatar(
-                        backgroundColor:
-                            Theme.of(context).colorScheme.primaryContainer,
-                        child: Text(lead.name.substring(0, 1).toUpperCase(),
-                            style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary))),
-                    title: Wrap(
-                      spacing: 8,
-                      runSpacing: 5,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(lead.name,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600)),
-                        if (FollowUpDeadlineService.isOverdue(lead))
-                          const _LeadStatusBadge(
-                            label: 'Pending follow-up',
-                            status: _LeadStatus.overdue,
-                          )
-                        else if (lead.outcome == EnquiryOutcome.purchased)
-                          const _LeadStatusBadge(
-                            label: 'Purchased',
-                            status: _LeadStatus.purchased,
-                          ),
-                      ],
-                    ),
-                    subtitle: Text(
-                        '${lead.phone} · ${lead.isCompleted ? lead.outcomeLabel : 'Follow-up ${lead.followUpNumber}'}\n${FollowUpDeadlineService.isOverdue(lead) ? 'F${lead.followUpNumber + 1} overdue · due ${_formatDateTime(FollowUpDeadlineService.nextDueAt(lead)!)}' : 'Entered ${_formatDateTime(lead.createdAt)}'}'),
-                    isThreeLine: true,
-                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                      IconButton(
-                          tooltip: 'Edit customer',
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => _openLead(lead)),
-                      IconButton(
-                          tooltip: 'Call customer',
-                          icon: const Icon(Icons.phone_outlined),
-                          color: AppColors.successFor(
-                              Theme.of(context).brightness),
-                          onPressed: () => _call(lead.phone)),
-                    ]),
-                  ),
+                child: _PromoterLeadCard(
+                  lead: lead,
+                  onOpen: () => _openLead(lead),
+                  onCall: () => _call(lead.phone),
                 ),
               )),
         if (visibleLeads.length < leads.length)
@@ -2884,6 +2842,127 @@ class _FollowUp2OverdueBanner extends StatelessWidget {
           ),
         ),
       ]),
+    );
+  }
+}
+
+class _PromoterLeadCard extends StatelessWidget {
+  const _PromoterLeadCard({
+    required this.lead,
+    required this.onOpen,
+    required this.onCall,
+  });
+
+  final CustomerLead lead;
+  final VoidCallback onOpen;
+  final VoidCallback onCall;
+
+  List<String> get _comments => [
+        if (lead.followUp1?.trim().isNotEmpty == true) lead.followUp1!.trim(),
+        if (lead.followUp2?.trim().isNotEmpty == true) lead.followUp2!.trim(),
+        if (lead.followUp3?.trim().isNotEmpty == true) lead.followUp3!.trim(),
+        ...lead.additionalFollowUps
+            .map((entry) => entry.comment.trim())
+            .where((comment) => comment.isNotEmpty),
+      ];
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final comments = _comments;
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    backgroundColor: scheme.primaryContainer,
+                    child: Text(
+                      lead.name.substring(0, 1).toUpperCase(),
+                      style: TextStyle(color: scheme.primary),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 5,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            lead.name,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          Text('|',
+                              style: TextStyle(color: scheme.onSurfaceVariant)),
+                          Text(lead.phone),
+                          if (FollowUpDeadlineService.isOverdue(lead))
+                            const _LeadStatusBadge(
+                              label: 'Pending follow-up',
+                              status: _LeadStatus.overdue,
+                            )
+                          else if (lead.outcome == EnquiryOutcome.purchased)
+                            const _LeadStatusBadge(
+                              label: 'Purchased',
+                              status: _LeadStatus.purchased,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Edit customer',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: onOpen,
+                  ),
+                  IconButton(
+                    tooltip: 'Call customer',
+                    icon: const Icon(Icons.phone_outlined),
+                    color: AppColors.successFor(Theme.of(context).brightness),
+                    onPressed: onCall,
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 52, right: 8, top: 6),
+                child: comments.isEmpty
+                    ? Text(
+                        'No follow-up comments yet',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var index = 0; index < comments.length; index++)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                  bottom: index == comments.length - 1 ? 0 : 5),
+                              child: Text(
+                                '${index + 1}. ${comments[index]}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
