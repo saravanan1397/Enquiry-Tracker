@@ -485,8 +485,6 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                     ? 'Admin Panel'
                                     : 'Enquiry Tracker',
                                 titleFontSize: _ownerMode ? 22 : 26,
-                                backgroundColor:
-                                    _ownerMode ? _brandHeaderBackground : null,
                               ),
                               const SizedBox(height: 12),
                               if (!_ownerMode)
@@ -1365,12 +1363,10 @@ class _LoginBrandHeader extends StatelessWidget {
   const _LoginBrandHeader({
     required this.title,
     required this.titleFontSize,
-    this.backgroundColor,
   });
 
   final String title;
   final double titleFontSize;
-  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1380,24 +1376,17 @@ class _LoginBrandHeader extends StatelessWidget {
         final width = constraints.hasBoundedWidth
             ? constraints.maxWidth.clamp(0.0, 330.0)
             : 330.0;
-        return Container(
+        return SizedBox(
           width: width,
           height: 132,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(12),
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: Image.asset(
-                  backgroundColor != null
-                      ? 'images/selvan_logo_transparent.png'
-                      : dark
-                          ? 'images/selvan_logo_transparent_dark.png'
-                          : 'images/selvan_logo_transparent.png',
+                  dark
+                      ? 'images/selvan_logo_transparent_dark.png'
+                      : 'images/selvan_logo_transparent.png',
                   fit: BoxFit.contain,
                   alignment: Alignment.center,
                   filterQuality: FilterQuality.high,
