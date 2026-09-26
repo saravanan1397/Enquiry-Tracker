@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -8,6 +9,8 @@ import '../models/customer_lead.dart';
 class LocalLeadStore {
   static const _boxName = 'leadloop_leads';
   static const _keyName = 'leadloop_hive_key';
+  static const _recoveryBoxName = 'leadloop_leads_device_cache';
+  static const _recoveryKeyName = 'leadloop_hive_device_key';
   static const purchasedRetention = Duration(days: 10);
 
   static bool shouldRecyclePurchased(CustomerLead lead, DateTime now) {
@@ -29,25 +32,51 @@ class LocalLeadStore {
     );
   }
 
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  LocalLeadStore({FlutterSecureStorage? secureStorage})
+      : _secureStorage = secureStorage ??
+            const FlutterSecureStorage(
+              aOptions: AndroidOptions(resetOnError: true),
+            );
+
+  final FlutterSecureStorage _secureStorage;
   final Map<String, CustomerLead> _cache = {};
   late Box<String> _box;
 
   Future<void> open() async {
     await Hive.initFlutter();
-    var key = await _secureStorage.read(key: _keyName);
-    if (key == null) {
-      key = base64UrlEncode(Hive.generateSecureKey());
-      await _secureStorage.write(key: _keyName, value: key);
+    try {
+      _box = await _openEncryptedBox(_boxName, _keyName);
+    } catch (error, stackTrace) {
+      // Android may restore the encrypted Hive file onto a new phone without
+      // its device-bound Keystore key. Preserve that original cache untouched
+      // and use a fresh encrypted cache that Firebase can repopulate.
+      debugPrint('Opening a new device-local cache: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _box = await _openEncryptedBox(_recoveryBoxName, _recoveryKeyName);
     }
-    _box = await Hive.openBox<String>(
-      _boxName,
-      encryptionCipher: HiveAesCipher(base64Url.decode(key)),
-    );
     _cache
       ..clear()
       ..addEntries(
           _box.values.map(_decode).map((lead) => MapEntry(lead.id, lead)));
+  }
+
+  Future<Box<String>> _openEncryptedBox(
+    String boxName,
+    String keyName,
+  ) async {
+    var encodedKey = await _secureStorage.read(key: keyName);
+    if (encodedKey == null) {
+      encodedKey = base64UrlEncode(Hive.generateSecureKey());
+      await _secureStorage.write(key: keyName, value: encodedKey);
+    }
+    final key = base64Url.decode(encodedKey);
+    if (key.length != 32) {
+      throw const FormatException('Invalid local encryption key');
+    }
+    return Hive.openBox<String>(
+      boxName,
+      encryptionCipher: HiveAesCipher(key),
+    );
   }
 
   Future<void> save(CustomerLead lead) async {

@@ -17,7 +17,7 @@ Future<void> _initializeFirebase() async {
     );
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      cacheSizeBytes: 50 * 1024 * 1024,
     );
   } catch (error) {
     debugPrint('Firebase is not configured yet: $error');
@@ -41,12 +41,9 @@ class _LeadloopBootstrapState extends State<_LeadloopBootstrap> {
 
   Future<LocalLeadStore> _initialize() async {
     final store = LocalLeadStore();
-    await Future.wait([
-      // Firebase and the local encrypted store are independent startup tasks.
-      // Running them together shortens both fresh launches and browser reloads.
-      _initializeFirebase(),
-      store.open(),
-    ]);
+    // Avoid parallel native initialization spikes on entry-level phones.
+    await store.open();
+    await _initializeFirebase();
     return store;
   }
 

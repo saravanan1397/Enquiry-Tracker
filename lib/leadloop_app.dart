@@ -1445,7 +1445,7 @@ class _OwnerBrandLogo extends StatelessWidget {
                     dark
                         ? 'images/selvan_logo_transparent_dark.png'
                         : 'images/selvan_logo_transparent.png',
-                    fit: BoxFit.cover,
+                    fit: BoxFit.fitWidth,
                     alignment: Alignment.centerLeft,
                     filterQuality: FilterQuality.high,
                   ),
@@ -1485,7 +1485,7 @@ class _PromoterBrandHeader extends StatelessWidget {
                     dark
                         ? 'images/selvan_logo_transparent_dark.png'
                         : 'images/selvan_logo_transparent.png',
-                    fit: BoxFit.cover,
+                    fit: BoxFit.fitWidth,
                     alignment: Alignment.centerLeft,
                     filterQuality: FilterQuality.high,
                   ),
