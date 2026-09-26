@@ -70,7 +70,7 @@ class _OwnerForgotPasswordScreenState extends State<OwnerForgotPasswordScreen> {
       );
       if (mounted) {
         setState(() => _message =
-            'If this owner email is registered, a password reset link has been sent. Check the inbox and spam folder.');
+            'If this admin email is registered, a password reset link has been sent. Check the inbox and spam folder.');
       }
     } catch (error) {
       if (mounted) setState(() => _message = recoveryMessage(error));
@@ -81,7 +81,7 @@ class _OwnerForgotPasswordScreenState extends State<OwnerForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Reset owner password')),
+        appBar: AppBar(title: const Text('Reset admin password')),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
@@ -94,7 +94,7 @@ class _OwnerForgotPasswordScreenState extends State<OwnerForgotPasswordScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Enter the email address registered to the owner account.',
+                      'Enter the email address registered to the admin account.',
                     ),
                     const SizedBox(height: 20),
                     TextFormField(
@@ -103,11 +103,11 @@ class _OwnerForgotPasswordScreenState extends State<OwnerForgotPasswordScreen> {
                       keyboardType: TextInputType.emailAddress,
                       autocorrect: false,
                       decoration:
-                          const InputDecoration(labelText: 'Owner email'),
+                          const InputDecoration(labelText: 'Admin email'),
                       validator: (value) =>
                           RecoveryValidation.email(value ?? '')
                               ? null
-                              : 'Enter a valid owner email address.',
+                              : 'Enter a valid admin email address.',
                     ),
                     const SizedBox(height: 16),
                     FilledButton(
@@ -176,7 +176,7 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Enter the verified email linked to your promoter account. No old PIN or owner-issued code is needed.',
+                      'Enter the verified email linked to your promoter account. No old PIN or admin-issued code is needed.',
                     ),
                     const SizedBox(height: 20),
                     TextFormField(
@@ -204,7 +204,7 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                       ),
                     const SizedBox(height: 12),
                     const Text(
-                      'No email linked yet? If you know your current PIN, return to sign-in and choose “Set up / verify recovery email”. If you are locked out, contact the owner.',
+                      'No email linked yet? If you know your current PIN, return to sign-in and choose “Set up / verify recovery email”. If you are locked out, contact the admin.',
                     ),
                   ],
                 ),
@@ -289,7 +289,7 @@ class _RecoveryEmailScreenState extends State<RecoveryEmailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'Link an email you can access before you forget your PIN. Your account, records and owner approval will not change.',
+                    'Link an email you can access before you forget your PIN. Your account, records and admin approval will not change.',
                   ),
                   const SizedBox(height: 18),
                   TextField(
@@ -461,7 +461,7 @@ class _EmailActionScreenState extends State<EmailActionScreen> {
           _complete = true;
           _ready = false;
           _message = _isOwnerReset
-              ? 'Password changed successfully. Return to Enquiry Tracker and sign in with your owner email and new password.'
+              ? 'Password changed successfully. Return to Enquiry Tracker and sign in with your admin email and new password.'
               : 'PIN changed successfully. Return to Enquiry Tracker and sign in with your mobile number and new PIN.';
         });
       }

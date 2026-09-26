@@ -884,7 +884,7 @@ class FirebaseSalesBackend {
       amountMilli: (data['amountMilli'] as num).toInt(),
       reference: data['reference'] as String? ?? '',
       enteredByUid: data['enteredByUid'] as String? ?? '',
-      enteredByName: data['enteredByName'] as String? ?? 'Owner',
+      enteredByName: data['enteredByName'] as String? ?? 'Admin',
       createdAt: _dateTime(data['createdAt']),
       updatedAt: _dateTime(data['updatedAt']),
       previousAmountMilli: (data['previousAmountMilli'] as num?)?.toInt(),

@@ -199,7 +199,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       _session = null;
       _pinController.clear();
       _error =
-          'Your promoter account is disabled or deleted. Contact the owner.';
+          'Your promoter account is disabled or deleted. Contact the admin.';
     });
     await _auth.clearBlockedSession();
   }
@@ -319,8 +319,8 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       setState(() {
         _registering = false;
         _error = hasRecoveryEmail
-            ? 'Account created. Verify the email link and wait for owner approval before signing in.'
-            : 'Account created. Wait for owner approval, then add a recovery email from Set up / verify recovery email.';
+            ? 'Account created. Verify the email link and wait for admin approval before signing in.'
+            : 'Account created. Wait for admin approval, then add a recovery email from Set up / verify recovery email.';
       });
     } on FirebaseAuthException catch (error) {
       if (mounted) setState(() => _error = _friendlyAuthError(error));
@@ -336,16 +336,16 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
   String _friendlyAuthError(FirebaseAuthException error) {
     if (_ownerMode && !_registering) {
       return switch (error.code) {
-        'invalid-email' => 'Enter a valid owner email address.',
+        'invalid-email' => 'Enter a valid admin email address.',
         'invalid-credential' ||
         'wrong-password' ||
         'user-not-found' =>
-          'Owner email or password is incorrect.',
+          'Admin email or password is incorrect.',
         'too-many-requests' =>
           'Too many sign-in attempts. Wait a moment and try again.',
         'network-request-failed' =>
-          'Internet is required to sign in to the owner account.',
-        _ => error.message ?? 'Owner authentication failed.',
+          'Internet is required to sign in to the admin account.',
+        _ => error.message ?? 'Admin authentication failed.',
       };
     }
     return switch (error.code) {
@@ -474,22 +474,26 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const _LoginBrandHeader(),
-                              const SizedBox(height: 12),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  _registering
-                                      ? 'Create your promoter account.'
-                                      : _ownerMode
-                                          ? 'Sign in with your owner account.'
-                                          : 'Sign in with your mobile number and PIN.',
-                                  style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                                ),
+                              _LoginBrandHeader(
+                                title: _ownerMode
+                                    ? 'Admin Panel'
+                                    : 'Enquiry Tracker',
+                                titleFontSize: _ownerMode ? 22 : 26,
                               ),
+                              const SizedBox(height: 12),
+                              if (!_ownerMode)
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    _registering
+                                        ? 'Create your promoter account.'
+                                        : 'Sign in with your mobile number and PIN.',
+                                    style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant),
+                                  ),
+                                ),
                               SizedBox(
                                   height:
                                       !_registering && widget.ownerAccessEnabled
@@ -505,7 +509,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                             _error = null;
                                           })),
                                   ChoiceChip(
-                                      label: const Text('Owner'),
+                                      label: const Text('Admin'),
                                       selected: _ownerMode,
                                       onSelected: (_) => setState(() {
                                             _ownerMode = true;
@@ -584,13 +588,13 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                     controller: _emailController,
                                     keyboardType: TextInputType.emailAddress,
                                     decoration: const InputDecoration(
-                                        labelText: 'Owner email')),
+                                        labelText: 'Admin email')),
                                 const SizedBox(height: 12),
                                 TextField(
                                     controller: _passwordController,
                                     obscureText: true,
                                     decoration: InputDecoration(
-                                        labelText: 'Owner password',
+                                        labelText: 'Admin password',
                                         errorText: _error)),
                                 Align(
                                   alignment: Alignment.centerRight,
@@ -1348,7 +1352,13 @@ class _LeadloopShellState extends State<LeadloopShell> {
 }
 
 class _LoginBrandHeader extends StatelessWidget {
-  const _LoginBrandHeader();
+  const _LoginBrandHeader({
+    required this.title,
+    required this.titleFontSize,
+  });
+
+  final String title;
+  final double titleFontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -1375,15 +1385,16 @@ class _LoginBrandHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              const FittedBox(
+              FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.center,
                 child: Text(
-                  'Enquiry Tracker',
+                  title,
                   maxLines: 1,
                   softWrap: false,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      fontSize: titleFontSize, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -3289,7 +3300,7 @@ class _LeadloopPromoterAdminScreenState
           Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('OWNER ACCESS ONLY',
+              Text('ADMIN ACCESS ONLY',
                   style: TextStyle(
                       color: Theme.of(context).colorScheme.primary,
                       fontSize: 11,
@@ -3614,7 +3625,7 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
       children: [
-        Text('OWNER ACCESS ONLY',
+        Text('ADMIN ACCESS ONLY',
             style: TextStyle(
                 color: Theme.of(context).colorScheme.primary,
                 fontSize: 11,

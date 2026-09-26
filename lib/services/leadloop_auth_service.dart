@@ -160,7 +160,7 @@ class LeadloopAuthService {
     if (!emailSetupOnly && data['active'] != true) {
       await _auth.signOut();
       throw LeadloopAuthException(status == 'pending'
-          ? 'Registration is waiting for owner approval.'
+          ? 'Registration is waiting for admin approval.'
           : 'This promoter account is disabled.');
     }
     final session = LeadloopAuthSession(
@@ -209,12 +209,12 @@ class LeadloopAuthService {
     if (data == null || data['role'] != 'admin' || data['active'] != true) {
       await _auth.signOut();
       throw const LeadloopAuthException(
-          'This account is not an active owner account.');
+          'This account is not an active admin account.');
     }
     final session = LeadloopAuthSession(
       uid: user.uid,
       role: 'admin',
-      displayName: data['name'] as String? ?? user.displayName ?? 'Owner',
+      displayName: data['name'] as String? ?? user.displayName ?? 'Admin',
     );
     await _rememberSession(session);
     return session;

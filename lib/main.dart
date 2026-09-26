@@ -386,7 +386,7 @@ class AdminDashboardScreen extends StatelessWidget {
                 leading: Icon(Icons.archive_outlined),
                 title: Text('Recycle bin'),
                 subtitle: Text(
-                    'Deleted records can be restored or permanently removed by the owner.'))),
+                    'Deleted records can be restored or permanently removed by the admin.'))),
       ],
     );
   }
@@ -403,7 +403,7 @@ class RecycleBinScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
       children: [
-        Text('OWNER ACCESS ONLY',
+        Text('ADMIN ACCESS ONLY',
             style: TextStyle(
                 color: Colors.grey.shade600, fontSize: 11, letterSpacing: 1.1)),
         const SizedBox(height: 4),

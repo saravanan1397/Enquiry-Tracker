@@ -66,7 +66,7 @@ void main() {
     expect(find.text('Recovery email (optional)'), findsNothing);
   });
 
-  testWidgets('owner sign-in requires only email and password',
+  testWidgets('admin sign-in requires only email and password',
       (WidgetTester tester) async {
     await tester.pumpWidget(LeadloopV2(
       store: LocalLeadStore(),
@@ -74,11 +74,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Owner'));
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Admin'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Owner email'), findsOneWidget);
-    expect(find.text('Owner password'), findsOneWidget);
+    expect(find.text('Admin email'), findsOneWidget);
+    expect(find.text('Admin password'), findsOneWidget);
     expect(find.text('Mobile number'), findsNothing);
     expect(find.text('Personal PIN'), findsNothing);
     expect(find.text('Forgot PIN?'), findsNothing);
@@ -86,14 +86,14 @@ void main() {
     expect(find.text('Forgot password?'), findsOneWidget);
   });
 
-  testWidgets('owner access is hidden from the mobile app',
+  testWidgets('admin access is hidden from the mobile app',
       (WidgetTester tester) async {
     await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(ChoiceChip, 'Owner'), findsNothing);
-    expect(find.text('Owner email'), findsNothing);
-    expect(find.text('Owner password'), findsNothing);
+    expect(find.widgetWithText(ChoiceChip, 'Admin'), findsNothing);
+    expect(find.text('Admin email'), findsNothing);
+    expect(find.text('Admin password'), findsNothing);
   });
 
   testWidgets(

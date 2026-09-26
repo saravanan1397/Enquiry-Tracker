@@ -53,7 +53,7 @@ class EmailRecoveryService {
 
   Future<void> sendOwnerReset(String email) async {
     if (!RecoveryValidation.email(email)) {
-      throw const FormatException('Enter a valid owner email address.');
+      throw const FormatException('Enter a valid admin email address.');
     }
     try {
       await _auth.sendPasswordResetEmail(
