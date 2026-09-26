@@ -1181,7 +1181,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
       },
       child: Scaffold(
         appBar: AppBar(
-            toolbarHeight: 84,
+            toolbarHeight: compactHeader ? 84 : 104,
             titleSpacing: isAdmin ? null : 12,
             leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
@@ -1417,6 +1417,13 @@ class _OwnerBrandLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final viewportWidth = MediaQuery.sizeOf(context).width;
+    final compact = viewportWidth < 720;
+    final preferredWidth = viewportWidth < 480
+        ? 220.0
+        : viewportWidth < 900
+            ? 300.0
+            : 380.0;
     return Semantics(
       label: 'Selvan Steel House — go to dashboard',
       button: true,
@@ -1428,18 +1435,20 @@ class _OwnerBrandLogo extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.hasBoundedWidth
-                  ? constraints.maxWidth.clamp(0.0, 300.0)
-                  : 300.0;
+                  ? constraints.maxWidth.clamp(0.0, preferredWidth)
+                  : preferredWidth;
               return SizedBox(
                 width: width,
-                height: 76,
-                child: Image.asset(
-                  dark
-                      ? 'images/selvan_logo_transparent_dark.png'
-                      : 'images/selvan_logo_transparent.png',
-                  fit: BoxFit.contain,
-                  alignment: Alignment.centerLeft,
-                  filterQuality: FilterQuality.high,
+                height: compact ? 64 : 88,
+                child: ClipRect(
+                  child: Image.asset(
+                    dark
+                        ? 'images/selvan_logo_transparent_dark.png'
+                        : 'images/selvan_logo_transparent.png',
+                    fit: BoxFit.cover,
+                    alignment: Alignment.centerLeft,
+                    filterQuality: FilterQuality.high,
+                  ),
                 ),
               );
             },
@@ -1456,26 +1465,30 @@ class _PromoterBrandHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final viewportWidth = MediaQuery.sizeOf(context).width;
+    final preferredWidth = viewportWidth < 400 ? 185.0 : 220.0;
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.hasBoundedWidth
-            ? constraints.maxWidth.clamp(0.0, 180.0)
-            : 180.0;
+            ? constraints.maxWidth.clamp(0.0, preferredWidth)
+            : preferredWidth;
         return SizedBox(
           width: availableWidth,
-          height: 72,
+          height: 76,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Image.asset(
-                  dark
-                      ? 'images/selvan_logo_transparent_dark.png'
-                      : 'images/selvan_logo_transparent.png',
-                  fit: BoxFit.contain,
-                  alignment: Alignment.centerLeft,
-                  filterQuality: FilterQuality.high,
+                child: ClipRect(
+                  child: Image.asset(
+                    dark
+                        ? 'images/selvan_logo_transparent_dark.png'
+                        : 'images/selvan_logo_transparent.png',
+                    fit: BoxFit.cover,
+                    alignment: Alignment.centerLeft,
+                    filterQuality: FilterQuality.high,
+                  ),
                 ),
               ),
               const SizedBox(height: 2),
