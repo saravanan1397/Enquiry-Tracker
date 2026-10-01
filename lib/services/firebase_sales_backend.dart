@@ -313,86 +313,39 @@ class FirebaseSalesBackend {
   Future<void> recyclePerson({
     required SalesPerson person,
     required String ownerUid,
-    bool recycleIndividualSales = false,
   }) async {
-    if (recycleIndividualSales) {
-      await _preserveTotalsAndRecyclePersonEntries(
-        person: person,
-        ownerUid: ownerUid,
-      );
-    }
+    await _restoreHistoryForDeletedPerson(person.id);
     await _people.doc(person.id).update({
       'active': false,
       'deletedAt': FieldValue.serverTimestamp(),
       'deletedByUid': ownerUid,
-      'individualSalesRecycled': recycleIndividualSales,
     });
     await _database.waitForPendingWrites();
   }
 
-  Future<void> _preserveTotalsAndRecyclePersonEntries({
-    required SalesPerson person,
-    required String ownerUid,
-  }) async {
-    final entries =
-        await _entries.where('personId', isEqualTo: person.id).get();
-    final activeEntries = entries.docs
-        .where((document) => document.data()['deletedAt'] == null)
+  /// Entries previously recycled as a side effect of removing a salesperson
+  /// are historical records, not salesperson-profile data. Keep them visible
+  /// in their original month when the profile is removed.
+  Future<void> _restoreHistoryForDeletedPerson([String? personId]) async {
+    final query = personId == null
+        ? _entries.where('deletedWithPerson', isEqualTo: true)
+        : _entries.where('personId', isEqualTo: personId);
+    final snapshot = await query.get();
+    final history = snapshot.docs
+        .where((document) =>
+            document.data()['deletedWithPerson'] == true &&
+            document.data()['deletedAt'] != null)
         .toList(growable: false);
-    final entriesByMonth =
-        <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
-    for (final document in activeEntries) {
-      final monthKey = document.data()['monthKey'] as String?;
-      if (monthKey == null || monthKey.isEmpty) continue;
-      entriesByMonth.putIfAbsent(monthKey, () => []).add(document);
-    }
-
-    for (final month in entriesByMonth.entries) {
-      final snapshotReference =
-          _totalSnapshots.doc('${person.id}_${month.key}');
-      final existing = await snapshotReference.get();
-      final existingData = existing.data();
-      final existingIds =
-          (existingData?['recordIds'] as List<dynamic>? ?? const [])
-              .whereType<String>()
-              .toSet();
-      final newEntries = month.value
-          .where((document) => !existingIds.contains(document.id))
-          .toList(growable: false);
-      final totalMilli = (existingData?['totalMilli'] as num?)?.toInt() ?? 0;
-      final entryCount = (existingData?['entryCount'] as num?)?.toInt() ?? 0;
-      await snapshotReference.set({
-        'personId': person.id,
-        'personName': person.name,
-        'monthKey': month.key,
-        'totalMilli': totalMilli +
-            newEntries.fold<int>(
-              0,
-              (total, document) =>
-                  total + (document.data()['amountMilli'] as num).toInt(),
-            ),
-        'entryCount': entryCount + newEntries.length,
-        'recordIds': <String>{
-          ...existingIds,
-          ...newEntries.map((document) => document.id),
-        }.toList(growable: false),
-        'preservedAt': FieldValue.serverTimestamp(),
-        'preservedByUid': ownerUid,
-        'reason': 'salesperson-deletion',
-      }, SetOptions(merge: true));
-    }
-
-    for (var offset = 0; offset < activeEntries.length; offset += 400) {
-      final end = offset + 400 < activeEntries.length
-          ? offset + 400
-          : activeEntries.length;
+    for (var offset = 0; offset < history.length; offset += 400) {
+      final end = offset + 400 < history.length ? offset + 400 : history.length;
       final batch = _database.batch();
-      for (final document in activeEntries.sublist(offset, end)) {
+      for (final document in history.sublist(offset, end)) {
         batch.update(document.reference, {
-          'deletedAt': FieldValue.serverTimestamp(),
-          'deletedByUid': ownerUid,
+          'deletedAt': null,
+          'deletedByUid': FieldValue.delete(),
           'deletedAsPartOfMonth': false,
-          'deletedWithPerson': true,
+          'deletedWithPerson': FieldValue.delete(),
+          'restoredAt': FieldValue.serverTimestamp(),
         });
       }
       await batch.commit();
@@ -411,6 +364,7 @@ class FirebaseSalesBackend {
   }
 
   Future<void> permanentlyDeletePerson(SalesPerson person) async {
+    await _restoreHistoryForDeletedPerson(person.id);
     final reservationId =
         sha256.convert(utf8.encode(person.normalizedName)).toString();
     final reservation = _nameReservations.doc(reservationId);
@@ -767,6 +721,14 @@ class FirebaseSalesBackend {
   }
 
   Future<int> permanentlyDeleteAllRecycledData() async {
+    await _restoreHistoryForDeletedPerson();
+    final peopleSnapshot = await _people.get();
+    final deletedPeople = peopleSnapshot.docs
+        .where((document) =>
+            document.data()['active'] == false ||
+            document.data()['deletedAt'] != null)
+        .toList(growable: false);
+
     final monthsSnapshot = await _months.get();
     final deletedMonths = monthsSnapshot.docs
         .where((document) => document.data()['deletedAt'] != null)
@@ -784,12 +746,6 @@ class FirebaseSalesBackend {
       await permanentlyDeleteRecord(entry.id);
     }
 
-    final peopleSnapshot = await _people.get();
-    final deletedPeople = peopleSnapshot.docs
-        .where((document) =>
-            document.data()['active'] == false ||
-            document.data()['deletedAt'] != null)
-        .toList(growable: false);
     final deletedPersonIds =
         deletedPeople.map((document) => document.id).toSet();
     final reservationsSnapshot = await _nameReservations.get();
@@ -819,6 +775,10 @@ class FirebaseSalesBackend {
     final cutoff = Timestamp.fromDate(
       recycleBinCutoff(now ?? DateTime.now()).toUtc(),
     );
+
+    // Migrate rows that older versions recycled only because their salesperson
+    // was removed. They are month history, so they must not expire as bin data.
+    await _restoreHistoryForDeletedPerson();
 
     final expiredMonths =
         await _months.where('deletedAt', isLessThanOrEqualTo: cutoff).get();

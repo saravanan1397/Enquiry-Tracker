@@ -350,37 +350,31 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   }
 
   Future<void> _recycleSalesperson(SalesPerson person) async {
-    final recycleIndividualSales = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Move salesperson to recycle bin?'),
         content: Text(
-          'Remove ${person.name} from the active salesperson list? Their monthly sales totals will remain preserved in either option. Choose whether the individual date-wise sales records should also move to the Sales Tracker recycle bin.',
+          'Remove ${person.name} from the active salesperson list? Their existing date-wise sales and monthly totals will remain visible in their original months. They will no longer be available for new sales entries.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.pop(context, false),
-            icon: const Icon(Icons.person_remove_outlined),
-            label: const Text('Keep individual sales'),
-          ),
           FilledButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            icon: const Icon(Icons.delete_sweep_outlined),
-            label: const Text('Recycle individual sales'),
+            icon: const Icon(Icons.person_remove_outlined),
+            label: const Text('Remove salesperson'),
           ),
         ],
       ),
     );
-    if (recycleIndividualSales == null) return;
+    if (confirmed != true) return;
     try {
       await widget.backend.recyclePerson(
         person: person,
         ownerUid: widget.ownerUid,
-        recycleIndividualSales: recycleIndividualSales,
       );
       if (!mounted) return;
       if (_selectedPerson?.id == person.id) {
@@ -390,9 +384,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
         });
       }
       _message(
-        recycleIndividualSales
-            ? '${person.name} and the individual sales records moved to Recycle Bin. Monthly totals were preserved.'
-            : '${person.name} moved to Recycle Bin. Individual sales records and monthly totals were preserved.',
+        '${person.name} removed from active salespeople. Their historical sales remain visible in the original months.',
       );
     } catch (error) {
       if (mounted) _message(_friendlyError(error));

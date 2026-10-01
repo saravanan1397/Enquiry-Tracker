@@ -11,13 +11,24 @@ class _BackupStatusBackend extends FirebaseSalesBackend {
   _BackupStatusBackend(
     this.statuses, {
     this.records = const [],
+    this.people = const [],
   });
 
   final Stream<SalesBackupStatus?> statuses;
   final List<SalesRecord> records;
+  final List<SalesPerson> people;
+  SalesPerson? recycledPerson;
 
   @override
-  Stream<List<SalesPerson>> watchPeople() => Stream.value(const []);
+  Stream<List<SalesPerson>> watchPeople() => Stream.value(people);
+
+  @override
+  Future<void> recyclePerson({
+    required SalesPerson person,
+    required String ownerUid,
+  }) async {
+    recycledPerson = person;
+  }
 
   @override
   Stream<SalesMonthState> watchMonthState(String monthKey) =>
@@ -149,5 +160,53 @@ void main() {
 
     expect(find.text('Alice'), findsNWidgets(3));
     expect(find.text('Bob'), findsOneWidget);
+  });
+
+  testWidgets('removing a salesperson keeps historical sales in their months',
+      (tester) async {
+    const person = SalesPerson(
+      id: 'person-a',
+      name: 'Alice',
+      normalizedName: 'alice',
+    );
+    final backend = _BackupStatusBackend(
+      Stream.value(null),
+      people: [person],
+      records: [_record('record-a', person.id, person.name)],
+    );
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SalesTrackerScreen(
+            backend: backend,
+            ownerUid: 'owner-1',
+            ownerName: 'Admin',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('View salespersons'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Move salesperson to recycle bin'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(
+        'existing date-wise sales and monthly totals will remain visible',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Recycle individual sales'), findsNothing);
+    await tester.tap(find.text('Remove salesperson'));
+    await tester.pumpAndSettle();
+
+    expect(backend.recycledPerson?.id, person.id);
+    expect(find.text('Alice'), findsWidgets);
   });
 }
