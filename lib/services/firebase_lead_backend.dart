@@ -33,6 +33,28 @@ class LeadloopPromoterProfile {
   final DateTime? deletedAt;
 }
 
+class LeadFollowUpEditHistory {
+  const LeadFollowUpEditHistory({
+    required this.recordId,
+    required this.customerName,
+    required this.promoterId,
+    required this.promoterName,
+    required this.followUpNumber,
+    required this.changedAt,
+    required this.beforeComment,
+    required this.afterComment,
+  });
+
+  final String recordId;
+  final String customerName;
+  final String promoterId;
+  final String promoterName;
+  final int followUpNumber;
+  final DateTime? changedAt;
+  final String beforeComment;
+  final String afterComment;
+}
+
 int pendingPromoterRequestCount(Iterable<LeadloopPromoterProfile> promoters) =>
     promoters.where((promoter) => promoter.status == 'pending').length;
 
@@ -62,6 +84,8 @@ class FirebaseLeadBackend {
       _database.collection('leadAssignmentEvents');
   CollectionReference<Map<String, dynamic>> get _deletionEvents =>
       _database.collection('leadDeletionEvents');
+  CollectionReference<Map<String, dynamic>> get _editHistory =>
+      _database.collection('leadEditHistory');
 
   FirebaseFirestore get _database => _firestore ?? FirebaseFirestore.instance;
   FirebaseFunctions get _cloudFunctions =>
@@ -294,6 +318,7 @@ class FirebaseLeadBackend {
     // permanent deletion too. Keep the deletion tombstone: it prevents stale
     // offline copies from reappearing on another device.
     final assignmentEvents = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    final historyEvents = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     for (var offset = 0; offset < ids.length; offset += 30) {
       final candidateEnd = offset + 30;
       final end = candidateEnd < ids.length ? candidateEnd : ids.length;
@@ -301,6 +326,10 @@ class FirebaseLeadBackend {
           .where('leadId', whereIn: ids.sublist(offset, end))
           .get();
       assignmentEvents.addAll(snapshot.docs);
+      final history = await _editHistory
+          .where('recordId', whereIn: ids.sublist(offset, end))
+          .get();
+      historyEvents.addAll(history.docs);
     }
 
     for (var offset = 0; offset < ids.length; offset += _writeBatchSize) {
@@ -316,12 +345,13 @@ class FirebaseLeadBackend {
       }
       await batch.commit();
     }
-    for (var offset = 0; offset < assignmentEvents.length; offset += 400) {
-      final end = offset + 400 < assignmentEvents.length
+    final linkedEvents = [...assignmentEvents, ...historyEvents];
+    for (var offset = 0; offset < linkedEvents.length; offset += 400) {
+      final end = offset + 400 < linkedEvents.length
           ? offset + 400
-          : assignmentEvents.length;
+          : linkedEvents.length;
       final batch = _database.batch();
-      for (final event in assignmentEvents.sublist(offset, end)) {
+      for (final event in linkedEvents.sublist(offset, end)) {
         batch.delete(event.reference);
       }
       await batch.commit();
@@ -331,16 +361,65 @@ class FirebaseLeadBackend {
 
   Future<void> _uploadLeads(List<CustomerLead> leads) async {
     if (leads.isEmpty) return;
+    final edits = <({CustomerLead lead, PendingFollowUpEdit edit})>[];
     for (var offset = 0; offset < leads.length; offset += _writeBatchSize) {
       final candidateEnd = offset + _writeBatchSize;
       final end = candidateEnd < leads.length ? candidateEnd : leads.length;
       final batch = _database.batch();
       for (final lead in leads.sublist(offset, end)) {
         batch.set(_leads.doc(lead.id), _toMap(lead));
+        edits.addAll(lead.pendingFollowUpEdits.map((edit) => (
+              lead: lead,
+              edit: edit,
+            )));
+      }
+      await batch.commit();
+    }
+    for (var offset = 0; offset < edits.length; offset += 400) {
+      final end = offset + 400 < edits.length ? offset + 400 : edits.length;
+      final batch = _database.batch();
+      for (final pending in edits.sublist(offset, end)) {
+        final lead = pending.lead;
+        final edit = pending.edit;
+        batch.set(_editHistory.doc(edit.id), {
+          'recordId': lead.id,
+          'customerName': lead.name,
+          'promoterId': edit.promoterId,
+          'promoterName': edit.promoterName,
+          'followUpNumber': edit.followUpNumber,
+          'changedAt': Timestamp.fromDate(edit.changedAt.toUtc()),
+          'beforeComment': edit.beforeComment,
+          'afterComment': edit.afterComment,
+        });
       }
       await batch.commit();
     }
     await _database.waitForPendingWrites();
+  }
+
+  Future<List<LeadFollowUpEditHistory>> searchLeadEditHistory({
+    required String value,
+    required bool byPromoter,
+  }) async {
+    if (!isConfigured) throw StateError('Firebase is not configured.');
+    final snapshot = await _editHistory
+        .where(byPromoter ? 'promoterName' : 'customerName', isEqualTo: value)
+        .orderBy('changedAt', descending: true)
+        .limit(100)
+        .get();
+    return snapshot.docs.map((document) {
+      final data = document.data();
+      return LeadFollowUpEditHistory(
+        recordId: data['recordId'] as String? ?? '',
+        customerName: data['customerName'] as String? ?? '',
+        promoterId: data['promoterId'] as String? ?? '',
+        promoterName: data['promoterName'] as String? ?? '',
+        followUpNumber: (data['followUpNumber'] as num?)?.toInt() ?? 0,
+        changedAt: _dateTime(data['changedAt']),
+        beforeComment: data['beforeComment'] as String? ?? '',
+        afterComment: data['afterComment'] as String? ?? '',
+      );
+    }).toList(growable: false);
   }
 
   Future<List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>>
@@ -526,14 +605,17 @@ class FirebaseLeadBackend {
       'createdAt': Timestamp.fromDate(lead.createdAt.toUtc()),
       'followUp1': lead.followUp1,
       'followUp1At': _toTimestamp(lead.followUp1At),
+      'followUp1EditedAt': _toTimestamp(lead.followUp1EditedAt),
       'followUp2': lead.followUp2,
       'followUp2At': _toTimestamp(lead.followUp2At),
+      'followUp2EditedAt': _toTimestamp(lead.followUp2EditedAt),
       'followUp3': lead.followUp3,
       'additionalFollowUps':
           lead.additionalFollowUps.map((entry) => entry.toMap()).toList(),
       'outcome': lead.outcome.name,
       'completedAt': lead.completedAt?.toUtc().toIso8601String(),
       'followUp3At': _toTimestamp(lead.followUp3At),
+      'followUp3EditedAt': _toTimestamp(lead.followUp3EditedAt),
       'isSynced': true,
       'deletedAt': _toTimestamp(lead.deletedAt),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -552,10 +634,13 @@ class FirebaseLeadBackend {
         createdAt: _dateTime(map['createdAt']) ?? DateTime.now(),
         followUp1: map['followUp1'] as String?,
         followUp1At: _dateTime(map['followUp1At']),
+        followUp1EditedAt: _dateTime(map['followUp1EditedAt']),
         followUp2: map['followUp2'] as String?,
         followUp2At: _dateTime(map['followUp2At']),
+        followUp2EditedAt: _dateTime(map['followUp2EditedAt']),
         followUp3: map['followUp3'] as String?,
         followUp3At: _dateTime(map['followUp3At']),
+        followUp3EditedAt: _dateTime(map['followUp3EditedAt']),
         additionalFollowUps: (map['additionalFollowUps'] as List? ?? [])
             .map((entry) =>
                 FollowUpEntry.fromMap(Map<String, dynamic>.from(entry as Map)))

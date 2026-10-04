@@ -23,6 +23,22 @@
         { "fieldPath": "promoterId", "order": "ASCENDING" },
         { "fieldPath": "nextFollowUpAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "leadEditHistory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "promoterName", "order": "ASCENDING" },
+        { "fieldPath": "changedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leadEditHistory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "customerName", "order": "ASCENDING" },
+        { "fieldPath": "changedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

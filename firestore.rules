@@ -51,6 +51,31 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Comment edits are append-only audit records. Promoters can read only
+    // their own history; admins can search all promoter/customer history.
+    match /leadEditHistory/{editId} {
+      allow read: if isAdmin()
+        || (isPromoter() && resource.data.promoterId == request.auth.uid);
+      allow create: if isAdmin()
+        || (isPromoter()
+          && request.resource.data.promoterId == request.auth.uid
+          && request.resource.data.promoterName == get(/databases/$(database)/documents/promoters/$(request.auth.uid)).data.name
+          && request.resource.data.keys().hasOnly([
+            'recordId', 'customerName', 'promoterId', 'promoterName',
+            'followUpNumber', 'changedAt', 'beforeComment', 'afterComment'
+          ])
+          && request.resource.data.keys().hasAll([
+            'recordId', 'customerName', 'promoterId', 'promoterName',
+            'followUpNumber', 'changedAt', 'beforeComment', 'afterComment'
+          ])
+          && request.resource.data.followUpNumber is int
+          && request.resource.data.changedAt is timestamp
+          && request.resource.data.beforeComment is string
+          && request.resource.data.afterComment is string);
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     // The app may create only its own pending registration. Only an admin can
     // approve, assign, disable, or otherwise modify a promoter profile.
     match /promoters/{promoterId} {

@@ -92,7 +92,10 @@ class LocalLeadStore {
   Future<void> markSynced(String id) async {
     final lead = find(id);
     if (lead == null || lead.isSynced) return;
-    await save(lead.copyWith(isSynced: true));
+    await save(lead.copyWith(
+      isSynced: true,
+      pendingFollowUpEdits: const [],
+    ));
   }
 
   Future<void> markManySynced(Iterable<String> ids) async {
@@ -100,7 +103,10 @@ class LocalLeadStore {
         .map(find)
         .whereType<CustomerLead>()
         .where((lead) => !lead.isSynced)
-        .map((lead) => lead.copyWith(isSynced: true));
+        .map((lead) => lead.copyWith(
+              isSynced: true,
+              pendingFollowUpEdits: const [],
+            ));
     await _saveAll(updates);
   }
 
@@ -261,11 +267,16 @@ class LocalLeadStore {
         'createdAt': lead.createdAt.toIso8601String(),
         'followUp1': lead.followUp1,
         'followUp1At': lead.followUp1At?.toIso8601String(),
+        'followUp1EditedAt': lead.followUp1EditedAt?.toIso8601String(),
         'followUp2': lead.followUp2,
         'followUp2At': lead.followUp2At?.toIso8601String(),
+        'followUp2EditedAt': lead.followUp2EditedAt?.toIso8601String(),
         'followUp3': lead.followUp3,
+        'followUp3EditedAt': lead.followUp3EditedAt?.toIso8601String(),
         'additionalFollowUps':
             lead.additionalFollowUps.map((entry) => entry.toMap()).toList(),
+        'pendingFollowUpEdits':
+            lead.pendingFollowUpEdits.map((edit) => edit.toMap()).toList(),
         'outcome': lead.outcome.name,
         'completedAt': lead.completedAt?.toUtc().toIso8601String(),
         'followUp3At': lead.followUp3At?.toIso8601String(),
@@ -284,13 +295,20 @@ class LocalLeadStore {
         createdAt: DateTime.parse(map['createdAt'] as String),
         followUp1: map['followUp1'] as String?,
         followUp1At: _optionalDateTime(map['followUp1At']),
+        followUp1EditedAt: _optionalDateTime(map['followUp1EditedAt']),
         followUp2: map['followUp2'] as String?,
         followUp2At: _optionalDateTime(map['followUp2At']),
+        followUp2EditedAt: _optionalDateTime(map['followUp2EditedAt']),
         followUp3: map['followUp3'] as String?,
         followUp3At: _optionalDateTime(map['followUp3At']),
+        followUp3EditedAt: _optionalDateTime(map['followUp3EditedAt']),
         additionalFollowUps: (map['additionalFollowUps'] as List? ?? [])
             .map((entry) =>
                 FollowUpEntry.fromMap(Map<String, dynamic>.from(entry as Map)))
+            .toList(),
+        pendingFollowUpEdits: (map['pendingFollowUpEdits'] as List? ?? [])
+            .map((edit) => PendingFollowUpEdit.fromMap(
+                Map<String, dynamic>.from(edit as Map)))
             .toList(),
         outcome: EnquiryOutcome.values.firstWhere(
             (value) => value.name == map['outcome'],

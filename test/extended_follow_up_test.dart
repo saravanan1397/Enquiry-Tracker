@@ -103,4 +103,40 @@ void main() {
     expect(find.text('Add follow-up 5'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('promoter sees masked number and edits are marked and queued',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = MemoryStore();
+    await tester.pumpWidget(MaterialApp(
+      home: LeadloopFollowUpScreen(
+        store: store,
+        lead: sample(),
+        isPromoter: true,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('••••••0000'), findsOneWidget);
+    final firstComment = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Follow-up 1',
+    );
+    await tester.enterText(firstComment, 'Updated first comment');
+    await tester.ensureVisible(find.text('Save follow-ups'));
+    await tester.tap(find.text('Save follow-ups'));
+    await tester.pumpAndSettle();
+
+    expect(store.saved?.phone, sample().phone);
+    expect(store.saved?.followUp1EditedAt, isNotNull);
+    expect(store.saved?.pendingFollowUpEdits, hasLength(1));
+    expect(store.saved?.pendingFollowUpEdits.single.followUpNumber, 1);
+    expect(store.saved?.pendingFollowUpEdits.single.beforeComment, 'Initial');
+    expect(store.saved?.pendingFollowUpEdits.single.afterComment,
+        'Updated first comment');
+    expect(find.textContaining('Follow-up 1 · Edited'), findsOneWidget);
+  });
 }

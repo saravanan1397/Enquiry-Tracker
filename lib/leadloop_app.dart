@@ -1687,7 +1687,10 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         context,
         MaterialPageRoute(
             builder: (_) => LeadloopFollowUpScreen(
-                store: widget.store, lead: lead, onChanged: widget.onChanged)));
+                store: widget.store,
+                lead: lead,
+                isPromoter: true,
+                onChanged: widget.onChanged)));
     if (mounted) setState(() {});
   }
 
@@ -1833,11 +1836,13 @@ class LeadloopFollowUpScreen extends StatefulWidget {
       {super.key,
       required this.store,
       required this.lead,
+      this.isPromoter = false,
       this.onChanged,
       this.isNewEnquiry = false});
 
   final LocalLeadStore store;
   final CustomerLead lead;
+  final bool isPromoter;
   final bool isNewEnquiry;
   final Future<void> Function()? onChanged;
 
@@ -1865,7 +1870,10 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     _lead = widget.lead;
     _outcome = _lead.outcome;
     _name = TextEditingController(text: _lead.name);
-    _phone = TextEditingController(text: _lead.phone);
+    _phone = TextEditingController(
+        text: widget.isPromoter
+            ? _maskedCustomerPhone(_lead.phone)
+            : _lead.phone);
     _first = TextEditingController(text: _lead.followUp1 ?? '');
     _second = TextEditingController(text: _lead.followUp2 ?? '');
     _third = TextEditingController(text: _lead.followUp3 ?? '');
@@ -1890,7 +1898,7 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   Future<void> _save() async {
     if (_saving || _creatingEnquiry) return;
     final name = _name.text.trim();
-    final phone = _phone.text.trim();
+    final phone = widget.isPromoter ? _lead.phone : _phone.text.trim();
     if (name.isEmpty || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Name and mobile number are required.')));
@@ -1954,6 +1962,12 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     }
     setState(() => _saving = true);
     try {
+      final edits = _collectPendingFollowUpEdits(
+        first: first,
+        second: second,
+        third: third,
+        savedAt: savedAt,
+      );
       final updated = _lead.copyWith(
         outcome: _outcome,
         completedAt: _outcome != EnquiryOutcome.active
@@ -1966,7 +1980,15 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
                 enteredAt: _extraComments[i].text.trim() ==
                         _lead.additionalFollowUps[i].comment
                     ? _lead.additionalFollowUps[i].enteredAt
-                    : savedAt),
+                    : savedAt,
+                editedAt: _lead.additionalFollowUps[i].editedAt ??
+                    (_extraComments[i].text.trim() !=
+                                _lead.additionalFollowUps[i].comment &&
+                            _lead.additionalFollowUps[i].comment
+                                .trim()
+                                .isNotEmpty
+                        ? savedAt
+                        : null)),
           if (_addingFollowUp) FollowUpEntry(comment: next, enteredAt: savedAt),
         ],
         name: name,
@@ -1974,12 +1996,19 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
         followUp1: first,
         followUp1At:
             _commentTime(_lead.followUp1, first, _lead.followUp1At, savedAt),
+        followUp1EditedAt: _editedCommentTime(
+            _lead.followUp1, first, _lead.followUp1EditedAt, savedAt),
         followUp2: second,
         followUp2At:
             _commentTime(_lead.followUp2, second, _lead.followUp2At, savedAt),
+        followUp2EditedAt: _editedCommentTime(
+            _lead.followUp2, second, _lead.followUp2EditedAt, savedAt),
         followUp3: third,
         followUp3At:
             _commentTime(_lead.followUp3, third, _lead.followUp3At, savedAt),
+        followUp3EditedAt: _editedCommentTime(
+            _lead.followUp3, third, _lead.followUp3EditedAt, savedAt),
+        pendingFollowUpEdits: [..._lead.pendingFollowUpEdits, ...edits],
         isSynced: false,
       );
       await widget.store.save(updated);
@@ -1990,6 +2019,7 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
       _addingFollowUp = false;
       _nextComment.clear();
       await widget.onChanged?.call();
+      _lead = widget.store.find(updated.id) ?? updated;
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Follow-ups saved.')));
@@ -2008,7 +2038,7 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   Future<void> _createNewEnquiry() async {
     if (_creatingEnquiry || _saving) return;
     final name = _name.text.trim();
-    final phone = _phone.text.trim();
+    final phone = widget.isPromoter ? _lead.phone : _phone.text.trim();
     if (name.isEmpty || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Name and mobile number are required.')));
@@ -2041,6 +2071,7 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
           builder: (_) => LeadloopFollowUpScreen(
             store: widget.store,
             lead: newLead,
+            isPromoter: widget.isPromoter,
             isNewEnquiry: true,
             onChanged: widget.onChanged,
           ),
@@ -2074,12 +2105,17 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: _phone,
-              keyboardType: TextInputType.phone,
+              readOnly: widget.isPromoter,
+              keyboardType:
+                  widget.isPromoter ? TextInputType.none : TextInputType.phone,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(10),
               ],
-              decoration: const InputDecoration(labelText: 'Mobile number'),
+              decoration: InputDecoration(
+                  labelText: widget.isPromoter
+                      ? 'Mobile number (masked)'
+                      : 'Mobile number'),
             ),
             const SizedBox(height: 8),
             Text('Entered ${_formatDateTime(_lead.createdAt)}',
@@ -2092,13 +2128,15 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
             ],
             const SizedBox(height: 22),
             _LeadloopFollowUpField(
-              label: 'Follow-up 1',
+              label:
+                  'Follow-up 1${_lead.followUp1EditedAt == null ? '' : ' · Edited'}',
               controller: _first,
               enteredAt: _lead.followUp1At,
             ),
             const SizedBox(height: 14),
             _LeadloopFollowUpField(
-              label: 'Follow-up 2',
+              label:
+                  'Follow-up 2${_lead.followUp2EditedAt == null ? '' : ' · Edited'}',
               controller: _second,
               enteredAt: _lead.followUp2At,
               enabled: _lead.followUp1?.trim().isNotEmpty == true,
@@ -2106,7 +2144,8 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
             ),
             const SizedBox(height: 14),
             _LeadloopFollowUpField(
-              label: 'Follow-up 3',
+              label:
+                  'Follow-up 3${_lead.followUp3EditedAt == null ? '' : ' · Edited'}',
               controller: _third,
               enteredAt: _lead.followUp3At,
               enabled: _lead.followUp2?.trim().isNotEmpty == true,
@@ -2115,7 +2154,8 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
             for (var i = 0; i < _lead.additionalFollowUps.length; i++) ...[
               const SizedBox(height: 14),
               _LeadloopFollowUpField(
-                  label: 'Follow-up ${i + 4}',
+                  label:
+                      'Follow-up ${i + 4}${_lead.additionalFollowUps[i].editedAt == null ? '' : ' · Edited'}',
                   controller: _extraComments[i],
                   enteredAt: _lead.additionalFollowUps[i].enteredAt),
             ],
@@ -2188,6 +2228,53 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
   ) {
     if (currentText.isEmpty) return previousTime;
     return previousText?.trim() == currentText ? previousTime : savedAt;
+  }
+
+  DateTime? _editedCommentTime(
+    String? previousText,
+    String currentText,
+    DateTime? previousEditedAt,
+    DateTime savedAt,
+  ) {
+    if (previousEditedAt != null) return previousEditedAt;
+    return previousText?.trim().isNotEmpty == true &&
+            previousText!.trim() != currentText
+        ? savedAt
+        : null;
+  }
+
+  List<PendingFollowUpEdit> _collectPendingFollowUpEdits({
+    required String first,
+    required String second,
+    required String third,
+    required DateTime savedAt,
+  }) {
+    if (!widget.isPromoter) return const [];
+    final edits = <PendingFollowUpEdit>[];
+    void add(int number, String? before, String after) {
+      final oldComment = before?.trim() ?? '';
+      if (oldComment.isEmpty || oldComment == after) return;
+      final id =
+          '${Uri.encodeComponent(_lead.id)}_${savedAt.microsecondsSinceEpoch}_${number}_${_lead.pendingFollowUpEdits.length + edits.length}';
+      edits.add(PendingFollowUpEdit(
+        id: id,
+        followUpNumber: number,
+        promoterId: _lead.promoterId,
+        promoterName: _lead.promoterName,
+        changedAt: savedAt,
+        beforeComment: oldComment,
+        afterComment: after,
+      ));
+    }
+
+    add(1, _lead.followUp1, first);
+    add(2, _lead.followUp2, second);
+    add(3, _lead.followUp3, third);
+    for (var index = 0; index < _lead.additionalFollowUps.length; index++) {
+      add(index + 4, _lead.additionalFollowUps[index].comment,
+          _extraComments[index].text.trim());
+    }
+    return edits;
   }
 }
 
@@ -2296,6 +2383,15 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
       ),
     );
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openEditHistory() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => _LeadEditHistoryScreen(backend: widget.backend),
+      ),
+    );
   }
 
   Future<void> _delete(CustomerLead lead) async {
@@ -2776,6 +2872,11 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
               ],
             ),
           ),
+          IconButton(
+            tooltip: 'Follow-up edit history',
+            onPressed: _openEditHistory,
+            icon: const Icon(Icons.history),
+          ),
           FilledButton.tonalIcon(
             onPressed: leads.isEmpty ? null : _deleteFiltered,
             style: FilledButton.styleFrom(
@@ -2943,20 +3044,20 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
     final comments = <String>[];
     if (lead.followUp1?.trim().isNotEmpty == true) {
       comments.add(
-          'F1: ${lead.followUp1!.trim()}  ·  ${_formatDateTime(lead.followUp1At)}');
+          'F1: ${lead.followUp1!.trim()}  ·  ${_formatDateTime(lead.followUp1At)}${lead.followUp1EditedAt == null ? '' : '  ·  Edited'}');
     }
     if (lead.followUp2?.trim().isNotEmpty == true) {
       comments.add(
-          'F2: ${lead.followUp2!.trim()}  ·  ${_formatDateTime(lead.followUp2At)}');
+          'F2: ${lead.followUp2!.trim()}  ·  ${_formatDateTime(lead.followUp2At)}${lead.followUp2EditedAt == null ? '' : '  ·  Edited'}');
     }
     if (lead.followUp3?.trim().isNotEmpty == true) {
       comments.add(
-          'F3: ${lead.followUp3!.trim()}  ·  ${_formatDateTime(lead.followUp3At)}');
+          'F3: ${lead.followUp3!.trim()}  ·  ${_formatDateTime(lead.followUp3At)}${lead.followUp3EditedAt == null ? '' : '  ·  Edited'}');
     }
     for (var i = 0; i < lead.additionalFollowUps.length; i++) {
       final entry = lead.additionalFollowUps[i];
       comments.add(
-          'F${i + 4}: ${entry.comment}  ·  ${_formatDateTime(entry.enteredAt)}');
+          'F${i + 4}: ${entry.comment}  ·  ${_formatDateTime(entry.enteredAt)}${entry.editedAt == null ? '' : '  ·  Edited'}');
     }
     return comments;
   }
@@ -2972,6 +3073,142 @@ class _LeadCommentLayout {
   final String text;
   final double width;
   final double height;
+}
+
+class _LeadEditHistoryScreen extends StatefulWidget {
+  const _LeadEditHistoryScreen({required this.backend});
+
+  final FirebaseLeadBackend backend;
+
+  @override
+  State<_LeadEditHistoryScreen> createState() => _LeadEditHistoryScreenState();
+}
+
+class _LeadEditHistoryScreenState extends State<_LeadEditHistoryScreen> {
+  final _search = TextEditingController();
+  bool _byPromoter = true;
+  bool _loading = false;
+  bool _searched = false;
+  String? _error;
+  List<LeadFollowUpEditHistory> _results = const [];
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _runSearch() async {
+    final value = _search.text.trim();
+    if (_loading || value.isEmpty) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _searched = true;
+    });
+    try {
+      final results = await widget.backend.searchLeadEditHistory(
+        value: value,
+        byPromoter: _byPromoter,
+      );
+      if (mounted) setState(() => _results = results);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error =
+            'Could not load edit history. Check the connection and try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Follow-up edit history')),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Text(
+                'Search saved comment edits by promoter or customer. Up to 100 matching edits are shown.'),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<bool>(
+              initialValue: _byPromoter,
+              decoration: const InputDecoration(labelText: 'Search by'),
+              items: const [
+                DropdownMenuItem(value: true, child: Text('Promoter name')),
+                DropdownMenuItem(value: false, child: Text('Customer name')),
+              ],
+              onChanged: _loading
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _byPromoter = value;
+                        _searched = false;
+                        _results = const [];
+                        _error = null;
+                      });
+                    },
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _runSearch(),
+              decoration: InputDecoration(
+                labelText: _byPromoter ? 'Promoter name' : 'Customer name',
+              ),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: _loading ? null : _runSearch,
+              icon: _loading
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.search),
+              label: Text(_loading ? 'Searching…' : 'Search history'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+            if (_searched && !_loading && _error == null && _results.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 20),
+                child: Text('No saved comment edits found.'),
+              ),
+            for (final edit in _results)
+              Card(
+                margin: const EdgeInsets.only(top: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          '${edit.customerName} · Follow-up ${edit.followUpNumber}',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text(
+                          '${edit.promoterName} · ${_formatDateTime(edit.changedAt)}'),
+                      Text('Record ID: ${edit.recordId}',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const Divider(height: 20),
+                      Text(
+                          'Before: ${edit.beforeComment.isEmpty ? '—' : edit.beforeComment}'),
+                      const SizedBox(height: 5),
+                      Text(
+                          'After: ${edit.afterComment.isEmpty ? '—' : edit.afterComment}'),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
 }
 
 class _FollowUp2OverdueBanner extends StatelessWidget {
@@ -3034,11 +3271,15 @@ class _PromoterLeadCard extends StatelessWidget {
   final VoidCallback onCall;
 
   List<String> get _comments => [
-        if (lead.followUp1?.trim().isNotEmpty == true) lead.followUp1!.trim(),
-        if (lead.followUp2?.trim().isNotEmpty == true) lead.followUp2!.trim(),
-        if (lead.followUp3?.trim().isNotEmpty == true) lead.followUp3!.trim(),
+        if (lead.followUp1?.trim().isNotEmpty == true)
+          '${lead.followUp1!.trim()}${lead.followUp1EditedAt == null ? '' : ' · Edited'}',
+        if (lead.followUp2?.trim().isNotEmpty == true)
+          '${lead.followUp2!.trim()}${lead.followUp2EditedAt == null ? '' : ' · Edited'}',
+        if (lead.followUp3?.trim().isNotEmpty == true)
+          '${lead.followUp3!.trim()}${lead.followUp3EditedAt == null ? '' : ' · Edited'}',
         ...lead.additionalFollowUps
-            .map((entry) => entry.comment.trim())
+            .map((entry) =>
+                '${entry.comment.trim()}${entry.editedAt == null ? '' : ' · Edited'}')
             .where((comment) => comment.isNotEmpty),
       ];
 
@@ -3091,7 +3332,7 @@ class _PromoterLeadCard extends StatelessWidget {
                           ),
                           Text('|',
                               style: TextStyle(color: scheme.onSurfaceVariant)),
-                          Text(lead.phone),
+                          Text(_maskedCustomerPhone(lead.phone)),
                           _LeadStatusBadge(
                             label: _statusLabel,
                             status: _status,
@@ -4112,6 +4353,13 @@ class _LeadloopDateFilter extends StatelessWidget {
           ),
         ),
       );
+}
+
+String _maskedCustomerPhone(String phone) {
+  final digits = phone.replaceAll(RegExp(r'\D'), '');
+  final visible =
+      digits.length <= 4 ? digits : digits.substring(digits.length - 4);
+  return '••••••$visible';
 }
 
 String _formatDateTime(DateTime? value) {
