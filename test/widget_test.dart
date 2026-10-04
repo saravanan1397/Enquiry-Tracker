@@ -29,7 +29,7 @@ void main() {
     expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
   });
 
-  testWidgets('promoter registration offers the four fixed branches',
+  testWidgets('promoter registration offers the three configured shops',
       (WidgetTester tester) async {
     await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
     await tester.pumpAndSettle();
@@ -38,14 +38,17 @@ void main() {
     await tester.ensureVisible(find.text('New promoter? Create an account'));
     await tester.tap(find.text('New promoter? Create an account'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Branch 1'));
-    await tester.tap(find.text('Branch 1'));
+    await tester.ensureVisible(find.text('SSH - Avadi Market'));
+    await tester.tap(find.text('SSH - Avadi Market'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Branch 1'), findsWidgets);
-    expect(find.text('Branch 2'), findsOneWidget);
-    expect(find.text('Branch 3'), findsOneWidget);
-    expect(find.text('Branch 4'), findsOneWidget);
+    expect(find.text('SSH - Avadi Market'), findsWidgets);
+    expect(find.text('SSH - TNHB'), findsOneWidget);
+    expect(find.text('Selvan Hotel Mart & Service Centre'), findsOneWidget);
+    expect(find.text('Branch 1'), findsNothing);
+    expect(find.text('Branch 2'), findsNothing);
+    expect(find.text('Branch 3'), findsNothing);
+    expect(find.text('Branch 4'), findsNothing);
     expect(find.text('Recovery email (optional)'), findsOneWidget);
   });
 

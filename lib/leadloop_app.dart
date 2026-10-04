@@ -184,7 +184,11 @@ class LeadloopAccessGate extends StatefulWidget {
 
 class _LeadloopAccessGateState extends State<LeadloopAccessGate>
     with WidgetsBindingObserver {
-  static const _branches = ['Branch 1', 'Branch 2', 'Branch 3', 'Branch 4'];
+  static const _branches = [
+    'SSH - Avadi Market',
+    'SSH - TNHB',
+    'Selvan Hotel Mart & Service Centre',
+  ];
   final _nameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _pinController = TextEditingController();
@@ -663,12 +667,23 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<String>(
                                   initialValue: _selectedBranch,
+                                  isExpanded: true,
                                   decoration: const InputDecoration(
                                       labelText: 'Shop name'),
                                   items: _branches
                                       .map((branch) => DropdownMenuItem(
                                             value: branch,
                                             child: Text(branch),
+                                          ))
+                                      .toList(growable: false),
+                                  selectedItemBuilder: (context) => _branches
+                                      .map((branch) => Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              branch,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ))
                                       .toList(growable: false),
                                   onChanged: (branch) {
