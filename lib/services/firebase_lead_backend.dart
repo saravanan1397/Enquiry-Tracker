@@ -33,6 +33,9 @@ class LeadloopPromoterProfile {
   final DateTime? deletedAt;
 }
 
+int pendingPromoterRequestCount(Iterable<LeadloopPromoterProfile> promoters) =>
+    promoters.where((promoter) => promoter.status == 'pending').length;
+
 /// Firebase transport for the offline-first local lead store.
 ///
 /// Hive remains the source used by the screens. This service only uploads
@@ -132,20 +135,21 @@ class FirebaseLeadBackend {
     final snapshot = await (_firestore ?? FirebaseFirestore.instance)
         .collection('promoters')
         .get();
+    return _visiblePromoterProfiles(snapshot);
+  }
+
+  Stream<List<LeadloopPromoterProfile>> watchPromoters() {
+    if (!isConfigured) return Stream.value(const []);
+    return _database
+        .collection('promoters')
+        .snapshots()
+        .map(_visiblePromoterProfiles);
+  }
+
+  List<LeadloopPromoterProfile> _visiblePromoterProfiles(
+      QuerySnapshot<Map<String, dynamic>> snapshot) {
     final profiles = snapshot.docs
-        .map((document) {
-          final data = document.data();
-          return LeadloopPromoterProfile(
-            uid: document.id,
-            name: data['name'] as String? ?? 'Unnamed promoter',
-            mobile: data['mobile'] as String? ?? '',
-            shopId: data['shopId'] as String? ?? '',
-            shopName: data['shopName'] as String? ?? '',
-            active: data['active'] as bool? ?? false,
-            status: data['status'] as String? ?? 'pending',
-            deletedAt: _dateTime(data['deletedAt']),
-          );
-        })
+        .map((document) => _promoterFromData(document.id, document.data()))
         .where((profile) =>
             profile.deletedAt == null &&
             profile.status != 'recycled' &&
@@ -154,6 +158,20 @@ class FirebaseLeadBackend {
     profiles
         .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return profiles;
+  }
+
+  LeadloopPromoterProfile _promoterFromData(
+      String uid, Map<String, dynamic> data) {
+    return LeadloopPromoterProfile(
+      uid: uid,
+      name: data['name'] as String? ?? 'Unnamed promoter',
+      mobile: data['mobile'] as String? ?? '',
+      shopId: data['shopId'] as String? ?? '',
+      shopName: data['shopName'] as String? ?? '',
+      active: data['active'] as bool? ?? false,
+      status: data['status'] as String? ?? 'pending',
+      deletedAt: _dateTime(data['deletedAt']),
+    );
   }
 
   Stream<List<LeadloopPromoterProfile>> watchDeletedPromoters() {

@@ -828,6 +828,8 @@ class _LeadloopShellState extends State<LeadloopShell> {
   bool _ownerViewTouched = false;
   final WorkspaceStateStore _workspaceState = const WorkspaceStateStore();
   final ValueNotifier<int> _leadRevision = ValueNotifier(0);
+  final ValueNotifier<List<LeadloopPromoterProfile>?> _promoterProfiles =
+      ValueNotifier(null);
 
   bool get _ownerModuleOpen => _ownerFollowupOpen || _ownerSalesOpen;
 
@@ -902,6 +904,17 @@ class _LeadloopShellState extends State<LeadloopShell> {
     });
     if (_firebaseBackend.isConfigured) {
       unawaited(_startLeadWatch());
+      if (widget.role == LeadloopRole.admin) {
+        _leadSubscriptions.add(_firebaseBackend.watchPromoters().listen(
+          (promoters) => _promoterProfiles.value = promoters,
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Promoter request watch failed: $error\n$stackTrace');
+            _promoterProfiles.value = const [];
+          },
+        ));
+      }
+    } else if (widget.role == LeadloopRole.admin) {
+      _promoterProfiles.value = const [];
     }
   }
 
@@ -1150,6 +1163,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
     NotificationService.instance.stop();
     _syncService.dispose();
     _leadRevision.dispose();
+    _promoterProfiles.dispose();
     super.dispose();
   }
 
@@ -1157,17 +1171,6 @@ class _LeadloopShellState extends State<LeadloopShell> {
   Widget build(BuildContext context) {
     final isAdmin = widget.role == LeadloopRole.admin;
     final compactHeader = MediaQuery.sizeOf(context).width < 720;
-    final destinations = isAdmin
-        ? const <NavigationDestination>[
-            NavigationDestination(
-                icon: Icon(Icons.dashboard_outlined), label: 'Admin'),
-            NavigationDestination(
-                icon: Icon(Icons.groups_outlined), label: 'Promoters'),
-          ]
-        : const <NavigationDestination>[
-            NavigationDestination(
-                icon: Icon(Icons.person_outline), label: 'Promoter')
-          ];
     final Widget workspaceBody;
     if (isAdmin && _ownerSalesOpen) {
       workspaceBody = SalesTrackerScreen(
@@ -1194,7 +1197,10 @@ class _LeadloopShellState extends State<LeadloopShell> {
                       store: widget.store,
                       backend: _firebaseBackend,
                       onChanged: _syncService.syncNow),
-                  LeadloopPromoterAdminScreen(backend: _firebaseBackend),
+                  LeadloopPromoterAdminScreen(
+                    backend: _firebaseBackend,
+                    promoterProfiles: _promoterProfiles,
+                  ),
                 ]
               : <Widget>[
                   LeadloopPromoterScreen(
@@ -1386,17 +1392,39 @@ class _LeadloopShellState extends State<LeadloopShell> {
         ),
         // Flutter requires NavigationBar to have at least two destinations.
         // Promoters have one screen, so navigation is only shown to owners.
-        bottomNavigationBar:
-            destinations.length < 2 || (isAdmin && !_ownerFollowupOpen)
-                ? null
-                : NavigationBar(
+        bottomNavigationBar: !isAdmin || !_ownerFollowupOpen
+            ? null
+            : ValueListenableBuilder<List<LeadloopPromoterProfile>?>(
+                valueListenable: _promoterProfiles,
+                builder: (context, promoters, _) {
+                  final pending =
+                      pendingPromoterRequestCount(promoters ?? const []);
+                  Widget promoterIcon() => Badge(
+                        isLabelVisible: pending > 0,
+                        label: Text(pending > 99 ? '99+' : '$pending'),
+                        child: const Icon(Icons.groups_outlined),
+                      );
+                  return NavigationBar(
                     selectedIndex: _tab,
                     onDestinationSelected: (index) => _openOwnerView(
-                          index == 0
-                              ? OwnerWorkspaceView.followups
-                              : OwnerWorkspaceView.promoters,
-                        ),
-                    destinations: destinations),
+                      index == 0
+                          ? OwnerWorkspaceView.followups
+                          : OwnerWorkspaceView.promoters,
+                    ),
+                    destinations: [
+                      const NavigationDestination(
+                        icon: Icon(Icons.dashboard_outlined),
+                        label: 'Admin',
+                      ),
+                      NavigationDestination(
+                        icon: promoterIcon(),
+                        selectedIcon: promoterIcon(),
+                        label: 'Promoters',
+                      ),
+                    ],
+                  );
+                },
+              ),
       ),
     );
   }
@@ -3205,9 +3233,14 @@ class _OwnerColumnLabel extends StatelessWidget {
 }
 
 class LeadloopPromoterAdminScreen extends StatefulWidget {
-  const LeadloopPromoterAdminScreen({super.key, required this.backend});
+  const LeadloopPromoterAdminScreen({
+    super.key,
+    required this.backend,
+    required this.promoterProfiles,
+  });
 
   final FirebaseLeadBackend backend;
+  final ValueNotifier<List<LeadloopPromoterProfile>?> promoterProfiles;
 
   @override
   State<LeadloopPromoterAdminScreen> createState() =>
@@ -3250,14 +3283,12 @@ class _LeadloopPromoterAdminScreenState
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
               Text('Promoter moved to Recycle Bin and access was disabled.')));
-      await _load();
     } catch (error) {
       if (!mounted) return;
       const message =
           'Could not move the promoter to Recycle Bin. Check your connection and retry.';
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text(message)));
-      await _load();
     } finally {
       if (mounted) setState(() => _changing = false);
     }
@@ -3266,8 +3297,37 @@ class _LeadloopPromoterAdminScreenState
   @override
   void initState() {
     super.initState();
-    _load();
+    _promoters = widget.promoterProfiles.value ?? const [];
+    _loading = widget.promoterProfiles.value == null;
+    widget.promoterProfiles.addListener(_onPromoterProfilesChanged);
     unawaited(_restoreRecycleBin());
+  }
+
+  @override
+  void didUpdateWidget(covariant LeadloopPromoterAdminScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.promoterProfiles != widget.promoterProfiles) {
+      oldWidget.promoterProfiles.removeListener(_onPromoterProfilesChanged);
+      _promoters = widget.promoterProfiles.value ?? const [];
+      _loading = widget.promoterProfiles.value == null;
+      widget.promoterProfiles.addListener(_onPromoterProfilesChanged);
+    }
+  }
+
+  void _onPromoterProfilesChanged() {
+    final promoters = widget.promoterProfiles.value;
+    if (!mounted || promoters == null) return;
+    setState(() {
+      _promoters = promoters;
+      _loading = false;
+      _error = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.promoterProfiles.removeListener(_onPromoterProfilesChanged);
+    super.dispose();
   }
 
   Future<void> _restoreRecycleBin() async {
@@ -3289,7 +3349,7 @@ class _LeadloopPromoterAdminScreenState
     });
     try {
       final promoters = await widget.backend.listPromoters();
-      if (mounted) setState(() => _promoters = promoters);
+      if (mounted) widget.promoterProfiles.value = promoters;
     } catch (error) {
       if (mounted) setState(() => _error = 'Could not load promoters: $error');
     } finally {
@@ -3325,7 +3385,6 @@ class _LeadloopPromoterAdminScreenState
       active: true,
       status: 'approved',
     );
-    await _load();
   }
 
   Future<void> _disable(LeadloopPromoterProfile promoter) async {
@@ -3336,7 +3395,6 @@ class _LeadloopPromoterAdminScreenState
       active: false,
       status: 'disabled',
     );
-    await _load();
   }
 
   String _shopIdFromName(String shopName) => shopName
@@ -3353,7 +3411,7 @@ class _LeadloopPromoterAdminScreenState
         onBack: () => _setRecycleBinVisible(false),
       );
     }
-    final pending = _promoters.where((promoter) => !promoter.active).length;
+    final pending = pendingPromoterRequestCount(_promoters);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
       children: [
