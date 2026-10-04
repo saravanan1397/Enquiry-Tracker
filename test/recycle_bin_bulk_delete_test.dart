@@ -7,9 +7,11 @@ import 'package:leadloop/services/local_lead_store.dart';
 
 class _FakeBackend extends FirebaseLeadBackend {
   final List<String> deletedIds = [];
+  bool configured = true;
+  Object? deleteError;
 
   @override
-  bool get isConfigured => true;
+  bool get isConfigured => configured;
 
   @override
   Stream<List<LeadloopPromoterProfile>> watchDeletedPromoters() =>
@@ -17,6 +19,7 @@ class _FakeBackend extends FirebaseLeadBackend {
 
   @override
   Future<void> deleteLeads(Iterable<String> leadIds) async {
+    if (deleteError != null) throw deleteError!;
     deletedIds.addAll(leadIds);
   }
 }
@@ -98,5 +101,53 @@ void main() {
 
     expect(backend.deletedIds, isEmpty);
     expect(store.recycleBin(), hasLength(1));
+  });
+
+  testWidgets('single permanent delete keeps local record when Firebase fails',
+      (tester) async {
+    final store = _FakeStore([_lead('one', 'First')]);
+    final backend = _FakeBackend()..deleteError = StateError('offline');
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: LeadloopRecycleBinScreen(
+          store: store,
+          backend: backend,
+          onBack: () {},
+        ),
+      ),
+    ));
+
+    await tester.tap(find.byTooltip('Delete permanently').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete forever'));
+    await tester.pumpAndSettle();
+
+    expect(store.recycleBin(), hasLength(1));
+    expect(
+        find.textContaining('It remains in the recycle bin'), findsOneWidget);
+  });
+
+  testWidgets(
+      'single permanent delete removes local record after Firebase succeeds',
+      (tester) async {
+    final store = _FakeStore([_lead('one', 'First')]);
+    final backend = _FakeBackend();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: LeadloopRecycleBinScreen(
+          store: store,
+          backend: backend,
+          onBack: () {},
+        ),
+      ),
+    ));
+
+    await tester.tap(find.byTooltip('Delete permanently').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete forever'));
+    await tester.pumpAndSettle();
+
+    expect(backend.deletedIds, ['one']);
+    expect(store.recycleBin(), isEmpty);
   });
 }

@@ -283,8 +283,26 @@ class FirebaseLeadBackend {
   /// 500 writes per batch; keeping this below that limit leaves headroom for
   /// future server-side bookkeeping.
   Future<void> deleteLeads(Iterable<String> leadIds) async {
-    if (!isConfigured) return;
+    if (!isConfigured) {
+      throw StateError('Firebase is not configured.');
+    }
     final ids = leadIds.toSet().toList(growable: false);
+    if (ids.isEmpty) return;
+
+    // Transfers leave lightweight events so an offline promoter can remove a
+    // reassigned enquiry from its local cache. Remove those events as part of
+    // permanent deletion too. Keep the deletion tombstone: it prevents stale
+    // offline copies from reappearing on another device.
+    final assignmentEvents = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (var offset = 0; offset < ids.length; offset += 30) {
+      final candidateEnd = offset + 30;
+      final end = candidateEnd < ids.length ? candidateEnd : ids.length;
+      final snapshot = await _assignmentEvents
+          .where('leadId', whereIn: ids.sublist(offset, end))
+          .get();
+      assignmentEvents.addAll(snapshot.docs);
+    }
+
     for (var offset = 0; offset < ids.length; offset += _writeBatchSize) {
       final candidateEnd = offset + _writeBatchSize;
       final end = candidateEnd < ids.length ? candidateEnd : ids.length;
@@ -295,6 +313,16 @@ class FirebaseLeadBackend {
           'leadId': id,
           'deletedAt': FieldValue.serverTimestamp(),
         });
+      }
+      await batch.commit();
+    }
+    for (var offset = 0; offset < assignmentEvents.length; offset += 400) {
+      final end = offset + 400 < assignmentEvents.length
+          ? offset + 400
+          : assignmentEvents.length;
+      final batch = _database.batch();
+      for (final event in assignmentEvents.sublist(offset, end)) {
+        batch.delete(event.reference);
       }
       await batch.commit();
     }

@@ -3630,6 +3630,7 @@ class LeadloopRecycleBinScreen extends StatefulWidget {
 
 class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
   bool _deletingAll = false;
+  final Set<String> _deletingIds = <String>{};
   int _visibleRecordCount = 15;
 
   Future<void> _restore(CustomerLead lead) async {
@@ -3650,6 +3651,7 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
   }
 
   Future<void> _deleteForever(CustomerLead lead) async {
+    if (_deletingAll || _deletingIds.contains(lead.id)) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -3666,11 +3668,29 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
-    await widget.backend.deleteLead(lead.id);
-    await widget.store.permanentlyDelete(lead.id);
-    await widget.onChanged?.call();
-    if (mounted) setState(() {});
+    if (confirmed != true || !mounted) return;
+    setState(() => _deletingIds.add(lead.id));
+    try {
+      if (!widget.backend.isConfigured) {
+        throw StateError('Firebase is not configured.');
+      }
+      await widget.backend.deleteLead(lead.id);
+      await widget.store.permanentlyDelete(lead.id);
+      await widget.onChanged?.call();
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${lead.name} permanently deleted.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Could not permanently delete this record from Firebase. It remains in the recycle bin; check your connection and try again.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _deletingIds.remove(lead.id));
+    }
   }
 
   Future<void> _deleteAllForever(List<CustomerLead> deleted) async {
@@ -3769,23 +3789,26 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
             style: TextStyle(color: Colors.grey)),
         _sectionTitle('Customer enquiries',
             'No customer enquiries in Recycle Bin.', deleted.length),
-        if (deleted.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              onPressed: _deletingAll ? null : () => _deleteAllForever(deleted),
-              icon: _deletingAll
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.delete_sweep_outlined),
-              label: Text(_deletingAll
-                  ? 'Deleting…'
-                  : 'Delete all customer enquiries permanently'),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.tonalIcon(
+            onPressed: _deletingAll || deleted.isEmpty
+                ? null
+                : () => _deleteAllForever(deleted),
+            style: FilledButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
             ),
+            icon: _deletingAll
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.delete_sweep_outlined),
+            label: Text(_deletingAll
+                ? 'Deleting…'
+                : 'Delete all customer enquiries permanently'),
           ),
-        ],
+        ),
         const SizedBox(height: 22),
         if (deleted.isNotEmpty)
           ...visibleDeleted.map(
@@ -3802,8 +3825,15 @@ class _LeadloopRecycleBinScreenState extends State<LeadloopRecycleBinScreen> {
                         child: const Text('Restore')),
                     IconButton(
                       tooltip: 'Delete permanently',
-                      onPressed: () => _deleteForever(lead),
-                      icon: const Icon(Icons.delete_forever_outlined),
+                      onPressed: _deletingAll || _deletingIds.contains(lead.id)
+                          ? null
+                          : () => _deleteForever(lead),
+                      icon: _deletingIds.contains(lead.id)
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.delete_forever_outlined),
                     ),
                   ],
                 ),
