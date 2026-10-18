@@ -11,17 +11,21 @@ initializeApp({ credential: cert(account) });
 const db = getFirestore();
 const auth = getAuth();
 const requests = db.collection('promoterDeletionRequests');
+const retryFailed = process.env.PROMOTER_DELETION_RETRY_FAILED === 'true';
+const eligibleStatuses = retryFailed
+  ? ['pending', 'processing', 'failed']
+  : ['pending', 'processing'];
 const require = createRequire(import.meta.url);
 const { deletionHandler } = require('../promoter_deletion.js');
 const permanentlyDelete = deletionHandler(db, auth);
 
 const queued = await requests
-  .where('status', 'in', ['pending', 'processing'])
+  .where('status', 'in', eligibleStatuses)
   .limit(50)
   .get();
 
 if (queued.empty) {
-  console.log('No pending promoter permanent-deletion requests.');
+  console.log('No eligible promoter permanent-deletion requests.');
   process.exit(0);
 }
 
@@ -54,12 +58,16 @@ for (const candidate of queued.docs) {
     await reference.delete();
     console.log(`Permanently deleted promoter account ${claimed.promoterId}.`);
   } catch (error) {
-    const message = String(error?.message ?? error).slice(0, 500);
+    const causeCode = error?.details?.causeCode;
+    const causeMessage = error?.details?.causeMessage;
+    const message = causeMessage
+      ? `${String(error?.message ?? error)} Cause (${causeCode ?? 'unknown'}): ${String(causeMessage).slice(0, 400)}`
+      : String(error?.message ?? error).slice(0, 500);
+    console.error(`Promoter deletion ${candidate.id} failed: ${message}`);
     await reference.update({
       status: 'failed',
       completedAt: Timestamp.now(),
-      error: message,
+      error: message.slice(0, 900),
     });
-    console.error(`Promoter deletion ${candidate.id} failed: ${message}`);
   }
 }

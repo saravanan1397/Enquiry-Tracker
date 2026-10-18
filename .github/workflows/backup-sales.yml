@@ -16,6 +16,7 @@ on:
         options:
           - Process pending app request
           - Force current backup
+          - Retry failed promoter deletions
 
 permissions:
   contents: read
@@ -46,6 +47,7 @@ jobs:
         run: node functions/scripts/process-promoter-deletions.mjs
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          PROMOTER_DELETION_RETRY_FAILED: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'Retry failed promoter deletions' && 'true' || 'false' }}
 
       - name: Read, encrypt and upload Sales Tracker backup
         run: node functions/scripts/backup-sales.mjs

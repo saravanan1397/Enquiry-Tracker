@@ -78,10 +78,21 @@ function deletionHandler(db, auth) {
       finalBatch.set(jobRef, { status: 'complete' });
       await finalBatch.commit();
       return { deleted: true };
-    } catch (_) {
+    } catch (error) {
       // Keep the deletion marker/profile locked. Retrying is safe even when Auth
       // was already deleted. Never report success while cleanup is incomplete.
-      throw new HttpsError('internal', 'Deletion is incomplete. The account is blocked. Retry Delete permanently to finish cleanup.');
+      const causeCode = String(error?.code ?? 'unknown').slice(0, 100);
+      const causeMessage = String(error?.message ?? error).slice(0, 400);
+      console.error('Permanent promoter deletion cleanup failed:', {
+        causeCode,
+        causeMessage,
+        stack: error?.stack,
+      });
+      throw new HttpsError(
+        'internal',
+        'Deletion is incomplete. The account is blocked. Retry Delete permanently to finish cleanup.',
+        { causeCode, causeMessage },
+      );
     }
   };
 }
