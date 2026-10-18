@@ -51,11 +51,7 @@ for (const candidate of queued.docs) {
       auth: { uid: claimed.requestedBy },
       data: { uid: claimed.promoterId, confirmation: 'DELETE' },
     });
-    await reference.update({
-      status: 'completed',
-      completedAt: Timestamp.now(),
-      error: null,
-    });
+    await reference.delete();
     console.log(`Permanently deleted promoter account ${claimed.promoterId}.`);
   } catch (error) {
     const message = String(error?.message ?? error).slice(0, 500);
