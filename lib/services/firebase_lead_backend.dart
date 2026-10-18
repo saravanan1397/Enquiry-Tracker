@@ -271,7 +271,7 @@ class FirebaseLeadBackend {
       if (currentStatus == 'pending' || currentStatus == 'processing') {
         return currentStatus!;
       }
-      if (currentStatus == 'completed') return currentStatus;
+      if (currentStatus == 'completed') return 'completed';
 
       final fields = <String, Object?>{
         'promoterId': promoterUid,
