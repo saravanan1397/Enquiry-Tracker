@@ -255,6 +255,40 @@ class FirebaseLeadBackend {
     await _database.waitForPendingWrites();
   }
 
+  /// Queues permanent account deletion for the existing GitHub maintenance
+  /// worker. This avoids requiring a billable Cloud Function deployment.
+  Future<String> requestPromoterPermanentDeletion({
+    required String promoterUid,
+    required String requestedBy,
+  }) async {
+    if (!isConfigured) throw StateError('Firebase is not configured.');
+    final request = _database
+        .collection('promoterDeletionRequests')
+        .doc(promoterUid);
+    return _database.runTransaction((transaction) async {
+      final snapshot = await transaction.get(request);
+      final currentStatus = snapshot.data()?['status'] as String?;
+      if (currentStatus == 'pending' || currentStatus == 'processing') {
+        return currentStatus!;
+      }
+      if (currentStatus == 'completed') return currentStatus;
+
+      final fields = <String, Object?>{
+        'promoterId': promoterUid,
+        'requestedBy': requestedBy,
+        'status': 'pending',
+        'requestedAt': FieldValue.serverTimestamp(),
+        'error': null,
+      };
+      if (snapshot.exists) {
+        transaction.update(request, fields);
+      } else {
+        transaction.set(request, fields);
+      }
+      return 'pending';
+    });
+  }
+
   Future<void> updatePromoter({
     required String uid,
     required String shopId,

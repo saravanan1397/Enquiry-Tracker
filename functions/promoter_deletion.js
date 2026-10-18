@@ -22,7 +22,13 @@ function deletionHandler(db, auth) {
       if (owner?.role !== 'admin' || owner.active !== true) {
         throw new HttpsError('permission-denied', 'Only active owners can delete promoters.');
       }
-      if (targetUser.data()) throw new HttpsError('permission-denied', 'Owner/user accounts cannot be deleted through promoter management.');
+      const legacyUser = targetUser.data();
+      // Older promoter accounts may also have a users/{uid} document. Protect
+      // actual admin/other accounts, but allow a promoter document to be cleaned
+      // up with its promoter profile so the recycle-bin action can finish.
+      if (legacyUser && legacyUser.role !== 'promoter') {
+        throw new HttpsError('permission-denied', 'Admin accounts cannot be deleted through promoter management.');
+      }
       const profile = profileDoc.data();
       if (jobDoc.data()?.status === 'complete') return { finished: true };
       if ((!profile || profile.role !== 'promoter') && !jobDoc.data()) {
@@ -30,7 +36,11 @@ function deletionHandler(db, auth) {
       }
       if (profile) tx.update(profileRef, { active: false, status: 'deleting' });
       tx.set(jobRef, { status: 'pending' });
-      return { finished: false, mobile: profile?.mobile };
+      return {
+        finished: false,
+        mobile: profile?.mobile,
+        deleteLegacyUser: legacyUser?.role === 'promoter',
+      };
     });
     if (deletion.finished) return { deleted: true };
 
@@ -60,6 +70,9 @@ function deletionHandler(db, auth) {
         const reservation = db.doc(`promoterMobiles/${deletion.mobile}`);
         const current = await reservation.get();
         if (current.data()?.uid === uid) finalBatch.delete(reservation);
+      }
+      if (deletion.deleteLegacyUser) {
+        finalBatch.delete(db.doc(`users/${uid}`));
       }
       finalBatch.delete(profileRef);
       finalBatch.set(jobRef, { status: 'complete' });

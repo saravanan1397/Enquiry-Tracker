@@ -109,6 +109,44 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Permanent promoter deletion is queued for the existing GitHub Actions
+    // worker, which uses the private Admin SDK service-account secret.
+    match /promoterDeletionRequests/{promoterId} {
+      function promoterIsInRecycleBin() {
+        let profilePath = /databases/$(database)/documents/promoters/$(promoterId);
+        let profile = get(profilePath).data;
+        return exists(profilePath)
+          && profile.role == 'promoter'
+          && (profile.status == 'recycled'
+            || profile.status == 'deleting'
+            || ('deletedAt' in profile && profile.deletedAt != null));
+      }
+
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(
+          ['promoterId', 'requestedBy', 'status', 'requestedAt', 'error'])
+        && request.resource.data.keys().hasAll(
+          ['promoterId', 'requestedBy', 'status', 'requestedAt', 'error'])
+        && request.resource.data.promoterId == promoterId
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt == request.time
+        && request.resource.data.error == null
+        && promoterIsInRecycleBin();
+      allow update: if isAdmin()
+        && resource.data.status == 'failed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['requestedBy', 'status', 'requestedAt', 'error'])
+        && request.resource.data.promoterId == promoterId
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt == request.time
+        && request.resource.data.error == null
+        && promoterIsInRecycleBin();
+      allow delete: if false;
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
       allow write: if false;

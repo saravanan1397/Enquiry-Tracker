@@ -1,0 +1,69 @@
+import { createRequire } from 'node:module';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+
+const accountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+if (!accountJson) throw new Error('Missing FIREBASE_SERVICE_ACCOUNT_JSON secret.');
+const account = JSON.parse(accountJson);
+initializeApp({ credential: cert(account) });
+
+const db = getFirestore();
+const auth = getAuth();
+const requests = db.collection('promoterDeletionRequests');
+const require = createRequire(import.meta.url);
+const { deletionHandler } = require('../promoter_deletion.js');
+const permanentlyDelete = deletionHandler(db, auth);
+
+const queued = await requests
+  .where('status', 'in', ['pending', 'processing'])
+  .limit(50)
+  .get();
+
+if (queued.empty) {
+  console.log('No pending promoter permanent-deletion requests.');
+  process.exit(0);
+}
+
+for (const candidate of queued.docs) {
+  const reference = candidate.ref;
+  const claimed = await db.runTransaction(async transaction => {
+    const latest = await transaction.get(reference);
+    const data = latest.data();
+    if (!latest.exists || !['pending', 'processing'].includes(data?.status)) {
+      return null;
+    }
+    transaction.update(reference, {
+      status: 'processing',
+      startedAt: Timestamp.now(),
+      error: null,
+    });
+    return data;
+  });
+  if (!claimed) continue;
+
+  try {
+    if (typeof claimed.promoterId !== 'string' ||
+        typeof claimed.requestedBy !== 'string') {
+      throw new Error('Deletion request is missing its promoter or admin ID.');
+    }
+    await permanentlyDelete({
+      auth: { uid: claimed.requestedBy },
+      data: { uid: claimed.promoterId, confirmation: 'DELETE' },
+    });
+    await reference.update({
+      status: 'completed',
+      completedAt: Timestamp.now(),
+      error: null,
+    });
+    console.log(`Permanently deleted promoter account ${claimed.promoterId}.`);
+  } catch (error) {
+    const message = String(error?.message ?? error).slice(0, 500);
+    await reference.update({
+      status: 'failed',
+      completedAt: Timestamp.now(),
+      error: message,
+    });
+    console.error(`Promoter deletion ${candidate.id} failed: ${message}`);
+  }
+}

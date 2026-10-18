@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -3774,23 +3773,31 @@ class _PromoterRecycleBinView extends StatelessWidget {
     );
     if (confirmed != true || !context.mounted) return;
     try {
-      await FirebaseFunctions.instanceFor(region: 'asia-south1')
-          .httpsCallable(
-        'deletePromoterPermanently',
-        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
-      )
-          .call({'uid': promoter.uid, 'confirmation': 'DELETE'});
+      final adminUid = FirebaseAuth.instance.currentUser?.uid;
+      if (adminUid == null) {
+        throw StateError(
+            'Admin session is no longer active. Please sign in again.');
+      }
+      final status = await backend.requestPromoterPermanentDeletion(
+        promoterUid: promoter.uid,
+        requestedBy: adminUid,
+      );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${promoter.name} permanently deleted.')));
+        final message = switch (status) {
+          'completed' =>
+            '${promoter.name} has already been permanently deleted.',
+          'processing' =>
+            'Permanent deletion for ${promoter.name} is already processing.',
+          _ =>
+            'Deletion request queued for ${promoter.name}. It should finish within a few minutes.',
+        };
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (error) {
       if (!context.mounted) return;
-      final message = error is FirebaseFunctionsException
-          ? error.message ?? 'Permanent promoter deletion failed.'
-          : 'Could not permanently delete the promoter. Retry later.';
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not queue permanent deletion: $error')));
     }
   }
 

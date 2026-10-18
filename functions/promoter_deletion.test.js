@@ -78,6 +78,15 @@ test('refuses owner/self and unknown targets', async () => {
   await assert.rejects(f.invoke({ ...f.request, data: { uid: 'unknown', confirmation: 'DELETE' } }), { code: 'not-found' });
   assert.equal(f.deleted.length, 0);
 });
+test('deletes a legacy promoter users document but preserves customer enquiries', async () => {
+  const f = setup();
+  f.data.set('users/p1', { role: 'promoter', active: false });
+  await f.invoke(f.request);
+  assert.equal(f.data.has('users/p1'), false);
+  assert.equal(f.data.has('promoters/p1'), false);
+  assert.equal(f.data.has('leads/one'), true);
+  assert.equal(f.data.has('leads/two'), true);
+});
 test('Auth failure locks profile and preserves retryable state', async () => {
   const f = setup(); const original = f.auth.deleteUser;
   f.auth.deleteUser = async () => { throw new Error('Auth unavailable'); };

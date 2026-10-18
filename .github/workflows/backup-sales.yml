@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: firebase-maintenance-${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   backup:
     runs-on: ubuntu-latest
@@ -37,6 +41,11 @@ jobs:
 
       - name: Install Firebase backup dependency
         run: npm ci --prefix functions --omit=dev
+
+      - name: Process permanent promoter deletion requests
+        run: node functions/scripts/process-promoter-deletions.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
 
       - name: Read, encrypt and upload Sales Tracker backup
         run: node functions/scripts/backup-sales.mjs
