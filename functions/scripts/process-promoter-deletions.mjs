@@ -34,7 +34,10 @@ for (const candidate of queued.docs) {
   const claimed = await db.runTransaction(async transaction => {
     const latest = await transaction.get(reference);
     const data = latest.data();
-    if (!latest.exists || !['pending', 'processing'].includes(data?.status)) {
+    const claimableStatuses = retryFailed
+      ? ['pending', 'processing', 'failed']
+      : ['pending', 'processing'];
+    if (!latest.exists || !claimableStatuses.includes(data?.status)) {
       return null;
     }
     transaction.update(reference, {
