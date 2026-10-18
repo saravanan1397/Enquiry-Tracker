@@ -49,11 +49,9 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
   bool _showRecycleBin = false;
   bool _viewStateTouched = false;
   bool _backupTriggeredThisVisit = false;
-  bool _backupWasActiveThisVisit = false;
+  bool _backupBannerDismissed = false;
   int _visibleRecordCount = 15;
-  Timer? _backupSuccessTimer;
-  String? _scheduledBackupSuccessKey;
-  String? _dismissedBackupSuccessKey;
+  Timer? _backupBannerTimer;
 
   @override
   void initState() {
@@ -69,7 +67,7 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
 
   @override
   void dispose() {
-    _backupSuccessTimer?.cancel();
+    _backupBannerTimer?.cancel();
     _amount.dispose();
     _reference.dispose();
     _salespersonSearch.dispose();
@@ -710,8 +708,12 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     setState(() {
       _backupBusy = true;
       _backupTriggeredThisVisit = true;
-      _dismissedBackupSuccessKey = null;
-      _scheduledBackupSuccessKey = null;
+      _backupBannerDismissed = false;
+    });
+    _backupBannerTimer?.cancel();
+    _backupBannerTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      setState(() => _backupBannerDismissed = true);
     });
     try {
       await widget.backend.requestBackup(
@@ -727,6 +729,8 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     } catch (error) {
       if (mounted) {
         _backupTriggeredThisVisit = false;
+        _backupBannerTimer?.cancel();
+        _backupBannerDismissed = true;
         _message(_friendlyError(error));
       }
     } finally {
@@ -734,36 +738,13 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
     }
   }
 
-  String _backupSuccessKey(SalesBackupStatus backup) =>
-      '${backup.completedAt?.microsecondsSinceEpoch ?? 0}:'
-      '${backup.assetNames.join('|')}';
-
-  void _scheduleBackupSuccessDismissal(SalesBackupStatus? backup) {
-    if (backup == null || backup.status != 'completed') return;
-    final key = _backupSuccessKey(backup);
-    if (_scheduledBackupSuccessKey == key ||
-        _dismissedBackupSuccessKey == key) {
-      return;
-    }
-    _backupSuccessTimer?.cancel();
-    _scheduledBackupSuccessKey = key;
-    _backupSuccessTimer = Timer(const Duration(seconds: 10), () {
-      if (!mounted || _scheduledBackupSuccessKey != key) return;
-      setState(() => _dismissedBackupSuccessKey = key);
-    });
-  }
-
   SalesBackupStatus? _visibleBackupStatus(SalesBackupStatus? backup) {
-    if (backup == null) return null;
-    if (backup.isActive) {
-      _backupWasActiveThisVisit = true;
-      return backup;
+    if (backup == null ||
+        !_backupTriggeredThisVisit ||
+        _backupBannerDismissed) {
+      return null;
     }
-    if (backup.status != 'completed') return backup;
-    if (!_backupTriggeredThisVisit && !_backupWasActiveThisVisit) return null;
-    return _dismissedBackupSuccessKey == _backupSuccessKey(backup)
-        ? null
-        : backup;
+    return backup;
   }
 
   @override
@@ -798,7 +779,6 @@ class _SalesTrackerScreenState extends State<SalesTrackerScreen> {
                         final backupStatus = backupSnapshot.data;
                         final visibleBackupStatus =
                             _visibleBackupStatus(backupStatus);
-                        _scheduleBackupSuccessDismissal(visibleBackupStatus);
                         return _body(
                           people,
                           month,
