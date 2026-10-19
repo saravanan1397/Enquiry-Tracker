@@ -188,8 +188,9 @@ try {
     personTotalSnapshots,
   });
   const release = await fullBackupRelease();
+  const automaticPrefix = runMode === 'daily' ? 'auto_' : '';
   const assetName =
-    `sales-backup-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
+    `${automaticPrefix}sales-backup-${generated.year}${generated.month}${generated.day}-${generated.hour}${generated.minute}${generated.second}-IST.etbackup`;
   const uploadUrl = release.upload_url.replace('{?name,label}', '');
   await githubRequest(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
     method: 'POST',
