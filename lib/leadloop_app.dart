@@ -2089,16 +2089,6 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
           const SnackBar(content: Text(MobileNumberValidator.errorMessage)));
       return;
     }
-    if (widget.isPromoter &&
-        _first.text.trim().isEmpty &&
-        _second.text.trim().isEmpty &&
-        _third.text.trim().isEmpty &&
-        _extraComments.every((controller) => controller.text.trim().isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Add a follow-up comment before saving.')));
-      return;
-    }
-
     setState(() => _creatingEnquiry = true);
     try {
       final newLead = CustomerLead(
@@ -2111,8 +2101,12 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
         promoterId: _lead.promoterId,
         createdAt: DateTime.now(),
       );
-      await widget.store.save(newLead);
-      await widget.onChanged?.call();
+      // Promoter-created enquiries stay as an in-memory draft until a
+      // follow-up comment is supplied and saved. Admin behavior is unchanged.
+      if (!widget.isPromoter) {
+        await widget.store.save(newLead);
+        await widget.onChanged?.call();
+      }
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
