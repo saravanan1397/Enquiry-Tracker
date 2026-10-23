@@ -326,6 +326,18 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
 
   Future<void> _register() async {
     if (_busy) return;
+    if (_nameController.text.trim().isEmpty) {
+      setState(() => _error = 'Enter your full name.');
+      return;
+    }
+    if (!MobileNumberValidator.isValid(_mobileController.text)) {
+      setState(() => _error = MobileNumberValidator.errorMessage);
+      return;
+    }
+    if (_pinController.text.isEmpty) {
+      setState(() => _error = 'Enter a PIN.');
+      return;
+    }
     if (_pinController.text != _confirmPinController.text) {
       setState(() => _error = 'PINs do not match.');
       return;
@@ -652,7 +664,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                 TextField(
                                     controller: _nameController,
                                     decoration: const InputDecoration(
-                                        labelText: 'Full name')),
+                                        labelText: 'Full name *')),
                                 const SizedBox(height: 12),
                                 TextField(
                                     controller: _mobileController,
@@ -662,7 +674,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                       LengthLimitingTextInputFormatter(10),
                                     ],
                                     decoration: const InputDecoration(
-                                        labelText: 'Mobile number')),
+                                        labelText: 'Mobile number *')),
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<String>(
                                   initialValue: _selectedBranch,
@@ -712,7 +724,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                       LengthLimitingTextInputFormatter(128),
                                     ],
                                     decoration: const InputDecoration(
-                                        labelText: 'Create PIN (6+ digits)')),
+                                        labelText: 'Create PIN * (6+ digits)')),
                                 const SizedBox(height: 12),
                                 TextField(
                                     controller: _confirmPinController,
@@ -722,9 +734,17 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                       FilteringTextInputFormatter.digitsOnly,
                                       LengthLimitingTextInputFormatter(128),
                                     ],
-                                    decoration: InputDecoration(
-                                        labelText: 'Confirm PIN',
-                                        errorText: _error)),
+                                    decoration: const InputDecoration(
+                                        labelText: 'Confirm PIN *')),
+                              ],
+                              if (_registering && _error != null) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  _error!,
+                                  style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.error),
+                                ),
                               ],
                               const SizedBox(height: 14),
                               SizedBox(
@@ -957,6 +977,12 @@ class _LeadloopShellState extends State<LeadloopShell> {
   Future<void> _manualSyncNow() async {
     try {
       await _syncNow();
+      if (widget.role == LeadloopRole.admin) {
+        await _firebaseBackend.refreshAdminLeads(
+          widget.store,
+          onChanged: _refreshLeadViews,
+        );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Dashboard refreshed.')),

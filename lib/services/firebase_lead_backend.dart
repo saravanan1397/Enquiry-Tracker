@@ -117,6 +117,24 @@ class FirebaseLeadBackend {
     }
   }
 
+  /// Forces an admin refresh from the complete server collection. The live
+  /// listener can resume from an incremental cursor, so an explicit refresh
+  /// must not depend on that cursor to recover records missing from local Hive.
+  Future<void> refreshAdminLeads(
+    LocalLeadStore localStore, {
+    required void Function() onChanged,
+  }) async {
+    if (!isConfigured) return;
+    final snapshot = await _leads.get(const GetOptions(source: Source.server));
+    final serverLeads = snapshot.docs
+        .where((document) => !document.metadata.hasPendingWrites)
+        .map(_fromDocument)
+        .toList(growable: false);
+    await localStore.reconcileAdminLeads(serverLeads);
+    await _recycleExpiredPurchases(localStore);
+    onChanged();
+  }
+
   Future<void> _recycleExpiredPurchases(LocalLeadStore localStore) async {
     final recycledIds = await localStore.recycleExpiredPurchases();
     if (recycledIds.isEmpty) return;
@@ -262,9 +280,8 @@ class FirebaseLeadBackend {
     required String requestedBy,
   }) async {
     if (!isConfigured) throw StateError('Firebase is not configured.');
-    final request = _database
-        .collection('promoterDeletionRequests')
-        .doc(promoterUid);
+    final request =
+        _database.collection('promoterDeletionRequests').doc(promoterUid);
     return _database.runTransaction((transaction) async {
       final snapshot = await transaction.get(request);
       final currentStatus = snapshot.data()?['status'] as String?;

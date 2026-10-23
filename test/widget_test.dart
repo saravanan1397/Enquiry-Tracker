@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:leadloop/leadloop_app.dart';
 import 'package:leadloop/services/local_lead_store.dart';
+import 'package:leadloop/services/mobile_number_validator.dart';
 
 void main() {
   testWidgets('Enquiry Tracker app launches', (WidgetTester tester) async {
@@ -50,6 +51,34 @@ void main() {
     expect(find.text('Branch 3'), findsNothing);
     expect(find.text('Branch 4'), findsNothing);
     expect(find.text('Recovery email (optional)'), findsOneWidget);
+  });
+
+  testWidgets('promoter registration requires name, mobile and PIN',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(LeadloopV2(store: LocalLeadStore()));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('New promoter? Create an account'));
+    await tester.tap(find.text('New promoter? Create an account'));
+    await tester.pumpAndSettle();
+
+    final submit = find.text('Create promoter account');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your full name.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), 'Test Promoter');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(find.text(MobileNumberValidator.errorMessage), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(1), '9876543210');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a PIN.'), findsOneWidget);
   });
 
   testWidgets('registration has a back button to promoter sign-in',

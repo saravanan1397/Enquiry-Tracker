@@ -56,12 +56,21 @@ class LeadloopAuthService {
     required String shopName,
     required String email,
   }) async {
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      throw const LeadloopAuthException('Enter your full name.');
+    }
     final normalizedMobile = _normalizeMobile(mobile);
     final normalizedEmail = email.trim().toLowerCase();
-    if (!RecoveryValidation.optionalEmail(normalizedEmail) ||
-        !RecoveryValidation.pin(pin)) {
+    if (pin.isEmpty) {
+      throw const LeadloopAuthException('Enter a PIN.');
+    }
+    if (!RecoveryValidation.pin(pin)) {
+      throw const LeadloopAuthException('PIN must contain at least 6 digits.');
+    }
+    if (!RecoveryValidation.optionalEmail(normalizedEmail)) {
       throw const LeadloopAuthException(
-          'Enter a valid optional email address and a PIN of 6–128 digits.');
+          'Enter a valid optional recovery email address.');
     }
     final credential = await _auth.createUserWithEmailAndPassword(
       email: normalizedEmail.isEmpty
@@ -70,7 +79,7 @@ class LeadloopAuthService {
       password: pin,
     );
     final user = credential.user!;
-    await user.updateDisplayName(name.trim());
+    await user.updateDisplayName(normalizedName);
     try {
       final batch = _firestore.batch();
       batch.set(
@@ -78,7 +87,7 @@ class LeadloopAuthService {
         {'uid': user.uid},
       );
       batch.set(_firestore.collection('promoters').doc(user.uid), {
-        'name': name.trim(),
+        'name': normalizedName,
         'mobile': normalizedMobile,
         'shopName': shopName.trim(),
         'shopId': _shopIdFromName(shopName),
@@ -115,7 +124,7 @@ class LeadloopAuthService {
     return LeadloopAuthSession(
       uid: user.uid,
       role: 'promoter',
-      displayName: name.trim(),
+      displayName: normalizedName,
       shopId: _shopIdFromName(shopName),
       shopName: shopName.trim(),
     );
