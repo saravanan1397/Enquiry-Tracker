@@ -11,8 +11,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:leadloop/leadloop_app.dart';
 import 'package:leadloop/services/local_lead_store.dart';
 import 'package:leadloop/services/mobile_number_validator.dart';
+import 'package:leadloop/services/sync_service.dart';
 
 void main() {
+  testWidgets('promoter cannot save a customer without a follow-up comment',
+      (WidgetTester tester) async {
+    final store = LocalLeadStore();
+    final syncStatus = ValueNotifier(LeadloopSyncStatus.synced);
+    addTearDown(syncStatus.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: LeadloopPromoterScreen(
+          store: store,
+          promoterId: 'promoter-1',
+          promoterName: 'Test Promoter',
+          shopId: 'avadi',
+          shopName: 'SSH - Avadi Market',
+          syncStatusListenable: syncStatus,
+        ),
+      ),
+    ));
+    await tester.enterText(find.byType(TextField).at(0), 'Test Customer');
+    await tester.enterText(find.byType(TextField).at(1), '9876543210');
+    await tester.tap(find.text('Save customer'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Follow-up 1 comment is required.'), findsOneWidget);
+    expect(store.activeLeads(), isEmpty);
+  });
+
   testWidgets('Enquiry Tracker app launches', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     final store = LocalLeadStore();

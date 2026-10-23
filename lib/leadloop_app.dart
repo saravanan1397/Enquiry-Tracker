@@ -1678,6 +1678,11 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
     }
     final savedAt = DateTime.now();
     final firstComment = _comment.text.trim();
+    if (firstComment.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Follow-up 1 comment is required.')));
+      return;
+    }
     await widget.store.save(CustomerLead(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: name,
@@ -1772,8 +1777,8 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
             minLines: 1,
             maxLines: 2,
             decoration: const InputDecoration(
-                labelText: 'Follow-up 1 comment',
-                hintText: 'Optional for now')),
+                labelText: 'Follow-up 1 comment *',
+                hintText: 'Enter the customer follow-up')),
         const SizedBox(height: 15),
         FilledButton.icon(
             onPressed: _save,
@@ -1954,6 +1959,16 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
       return;
     }
     final next = _nextComment.text.trim();
+    final hasAnyComment = first.isNotEmpty ||
+        second.isNotEmpty ||
+        third.isNotEmpty ||
+        _extraComments.any((controller) => controller.text.trim().isNotEmpty) ||
+        (_addingFollowUp && next.isNotEmpty);
+    if (widget.isPromoter && !hasAnyComment) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Add a follow-up comment before saving.')));
+      return;
+    }
     if (_extraComments.any((controller) => controller.text.trim().isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Saved follow-ups cannot be left blank.')));
@@ -2072,6 +2087,15 @@ class _LeadloopFollowUpScreenState extends State<LeadloopFollowUpScreen> {
     if (!MobileNumberValidator.isValid(phone)) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text(MobileNumberValidator.errorMessage)));
+      return;
+    }
+    if (widget.isPromoter &&
+        _first.text.trim().isEmpty &&
+        _second.text.trim().isEmpty &&
+        _third.text.trim().isEmpty &&
+        _extraComments.every((controller) => controller.text.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Add a follow-up comment before saving.')));
       return;
     }
 
