@@ -352,8 +352,8 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
       setState(() {
         _registering = false;
         _error = hasRecoveryEmail
-            ? 'Account created. Verify the email link and wait for admin approval before signing in.'
-            : 'Account created. Wait for admin approval, then add a recovery email from Set up / verify recovery email.';
+            ? 'Request submitted. Email verification is optional. Wait for Admin approval before signing in.'
+            : 'Request submitted. Wait for Admin approval before signing in. You can add a recovery email later.';
       });
     } on FirebaseAuthException catch (error) {
       if (mounted) setState(() => _error = _friendlyAuthError(error));
@@ -585,7 +585,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                     autocorrect: false,
                                     decoration: const InputDecoration(
                                       labelText:
-                                          'Verified email (once on this device)',
+                                          'Account email (once on this device)',
                                     ),
                                   ),
                                 ],
@@ -699,7 +699,7 @@ class _LeadloopAccessGateState extends State<LeadloopAccessGate>
                                   decoration: const InputDecoration(
                                     labelText: 'Recovery email (optional)',
                                     helperText:
-                                        'You can add and verify this later from your profile.',
+                                        'Email verification is optional. You can add or verify a recovery email later.',
                                   ),
                                 ),
                                 const SizedBox(height: 12),

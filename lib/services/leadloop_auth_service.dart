@@ -26,6 +26,15 @@ class LeadloopAuthSession {
   final String shopName;
 }
 
+bool requiresPromoterEmailVerification({
+  required String? authEmail,
+  required bool emailVerified,
+  required bool verificationOptional,
+}) =>
+    !verificationOptional &&
+    !RecoveryValidation.legacy(authEmail) &&
+    !emailVerified;
+
 class LeadloopAuthService {
   LeadloopAuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
       : _auth = auth ?? FirebaseAuth.instance,
@@ -76,6 +85,9 @@ class LeadloopAuthService {
         'role': 'promoter',
         'active': false,
         'status': 'pending',
+        // Existing profiles omit this field and retain their current
+        // verification requirement. Only new registrations opt out.
+        'emailVerificationOptional': true,
         'createdAt': FieldValue.serverTimestamp(),
       });
       await batch.commit();
@@ -96,8 +108,8 @@ class LeadloopAuthService {
       try {
         await user.sendEmailVerification(EmailRecoveryService.settings);
       } catch (_) {
-        throw const LeadloopAuthException(
-            'Account created, but verification email could not be sent. Use “Set up / verify recovery email” to resend; do not register again.');
+        // Verification is optional for newly registered promoters. The
+        // recovery-email setup flow can send another verification later.
       }
     }
     return LeadloopAuthSession(
@@ -143,8 +155,11 @@ class LeadloopAuthService {
       await _deviceEmails.remember(_project, normalizedMobile, user.email!);
     }
     if (!emailSetupOnly &&
-        !RecoveryValidation.legacy(user.email) &&
-        !user.emailVerified) {
+        requiresPromoterEmailVerification(
+          authEmail: user.email,
+          emailVerified: user.emailVerified,
+          verificationOptional: data['emailVerificationOptional'] == true,
+        )) {
       await _auth.signOut();
       throw const LeadloopAuthException(
           'Verify your email before signing in. Use “Set up / verify recovery email” to resend the link.');
