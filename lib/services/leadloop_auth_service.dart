@@ -276,7 +276,15 @@ class LeadloopAuthService {
   }
 
   Future<void> signOut() async {
-    await NotificationService.instance.disable();
+    try {
+      await NotificationService.instance
+          .disable()
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // FCM token deletion can fail on emulators or without Play Services.
+      // It must not prevent Firebase Auth from signing the user out.
+      NotificationService.instance.stop();
+    }
     await _auth.signOut();
     await Future.wait([
       _storage.delete(key: _sessionKey),
