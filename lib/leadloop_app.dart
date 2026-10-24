@@ -4229,38 +4229,57 @@ class _FollowUpStageButtons extends StatelessWidget {
                           ))
                       .toList(),
                 )
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 0,
+              : Row(
                   children: [
-                    ...FollowUpStage.values
-                        .where((stage) =>
-                            !includeThirdAndLater ||
-                            stage != FollowUpStage.later)
-                        .map(_stageChip),
-                    FilterChip(
-                      avatar: Icon(Icons.warning_amber_rounded,
-                          size: 18,
-                          color:
-                              AppColors.errorFor(Theme.of(context).brightness)),
-                      label: const Text('Overdue'),
-                      selected: showOverdue,
-                      selectedColor: AppColors.errorSurfaceFor(
-                          Theme.of(context).brightness),
-                      labelStyle: showOverdue
-                          ? TextStyle(
-                              color: AppColors.onErrorSurfaceFor(
-                                  Theme.of(context).brightness),
-                              fontWeight: FontWeight.w700,
-                            )
-                          : null,
-                      side: BorderSide(
-                        color: showOverdue
-                            ? AppColors.errorFor(Theme.of(context).brightness)
-                            : Theme.of(context).colorScheme.outline,
+                    for (final stage in FollowUpStage.values.where((stage) =>
+                        !includeThirdAndLater || stage != FollowUpStage.later))
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Center(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: _stageChip(stage),
+                            ),
+                          ),
+                        ),
                       ),
-                      showCheckmark: false,
-                      onSelected: (_) => onOverdueSelected?.call(),
+                    Expanded(
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: FilterChip(
+                            avatar: Icon(Icons.warning_amber_rounded,
+                                size: 16,
+                                color: AppColors.errorFor(
+                                    Theme.of(context).brightness)),
+                            label: const Text('Overdue'),
+                            selected: showOverdue,
+                            selectedColor: AppColors.errorSurfaceFor(
+                                Theme.of(context).brightness),
+                            labelStyle: showOverdue
+                                ? TextStyle(
+                                    color: AppColors.onErrorSurfaceFor(
+                                        Theme.of(context).brightness),
+                                    fontWeight: FontWeight.w700,
+                                  )
+                                : null,
+                            labelPadding:
+                                const EdgeInsets.symmetric(horizontal: 2),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            side: BorderSide(
+                              color: showOverdue
+                                  ? AppColors.errorFor(
+                                      Theme.of(context).brightness)
+                                  : Theme.of(context).colorScheme.outline,
+                            ),
+                            showCheckmark: false,
+                            onSelected: (_) => onOverdueSelected?.call(),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
