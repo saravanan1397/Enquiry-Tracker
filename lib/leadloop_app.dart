@@ -1653,6 +1653,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
   final _search = TextEditingController();
   FollowUpStage? _stage;
   int _visibleRecordCount = 15;
+  bool _showOverdueOnly = false;
 
   @override
   void dispose() {
@@ -1736,8 +1737,9 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         allLeads.where(FollowUpDeadlineService.isOverdue).toList();
     final query = _search.text.trim().toLowerCase();
     final leads = allLeads
-        .where((lead) =>
-            query.isNotEmpty || _stage == null || lead.currentStage == _stage)
+        .where((lead) => _showOverdueOnly
+            ? FollowUpDeadlineService.isOverdue(lead)
+            : query.isNotEmpty || _stage == null || lead.currentStage == _stage)
         .where((lead) => LeadSearchService.matches(lead, query))
         .toList();
     final visibleLeads =
@@ -1820,8 +1822,15 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         const SizedBox(height: 10),
         _FollowUpStageButtons(
           selected: _stage,
+          showOverdue: _showOverdueOnly,
           onSelected: (stage) => setState(() {
+            _showOverdueOnly = false;
             _stage = stage;
+            _visibleRecordCount = 15;
+          }),
+          onOverdueSelected: () => setState(() {
+            _showOverdueOnly = !_showOverdueOnly;
+            _stage = null;
             _visibleRecordCount = 15;
           }),
         ),
@@ -3338,7 +3347,7 @@ class _PromoterLeadCard extends StatelessWidget {
   }
 
   String get _statusLabel => switch (_status) {
-        _LeadStatus.overdue => 'Due',
+        _LeadStatus.overdue => 'F${lead.followUpNumber + 1} overdue',
         _LeadStatus.purchased => 'Purchased',
         _LeadStatus.closed => 'Closed',
         _LeadStatus.active => 'Follow-up ${lead.followUpNumber}',
@@ -4186,37 +4195,58 @@ class _FollowUpStageButtons extends StatelessWidget {
   const _FollowUpStageButtons({
     required this.selected,
     required this.onSelected,
+    this.showOverdue = false,
+    this.onOverdueSelected,
   });
 
   final FollowUpStage? selected;
   final ValueChanged<FollowUpStage?> onSelected;
+  final bool showOverdue;
+  final VoidCallback? onOverdueSelected;
 
   @override
   Widget build(BuildContext context) => Align(
         alignment: Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 430),
-          child: Row(
-            children: FollowUpStage.values
-                .map((stage) => Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          right: stage == FollowUpStage.third ? 0 : 8,
-                        ),
-                        child: FilterChip(
-                          label: Text(stage == FollowUpStage.later
-                              ? 'Follow 4+'
-                              : 'Follow ${stage.index + 1}'),
-                          selected: selected == stage,
-                          showCheckmark: false,
-                          onSelected: (_) =>
-                              onSelected(selected == stage ? null : stage),
-                        ),
-                      ),
-                    ))
-                .toList(),
-          ),
+          child: onOverdueSelected == null
+              ? Row(
+                  children: FollowUpStage.values
+                      .map((stage) => Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                right: stage == FollowUpStage.third ? 0 : 8,
+                              ),
+                              child: _stageChip(stage),
+                            ),
+                          ))
+                      .toList(),
+                )
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 0,
+                  children: [
+                    ...FollowUpStage.values.map(_stageChip),
+                    FilterChip(
+                      avatar:
+                          const Icon(Icons.warning_amber_rounded, size: 18),
+                      label: const Text('Overdue'),
+                      selected: showOverdue,
+                      showCheckmark: false,
+                      onSelected: (_) => onOverdueSelected?.call(),
+                    ),
+                  ],
+                ),
         ),
+      );
+
+  FilterChip _stageChip(FollowUpStage stage) => FilterChip(
+        label: Text(stage == FollowUpStage.later
+            ? 'Follow 4+'
+            : 'Follow ${stage.index + 1}'),
+        selected: !showOverdue && selected == stage,
+        showCheckmark: false,
+        onSelected: (_) => onSelected(selected == stage ? null : stage),
       );
 }
 
