@@ -1739,7 +1739,11 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
     final leads = allLeads
         .where((lead) => _showOverdueOnly
             ? FollowUpDeadlineService.isOverdue(lead)
-            : query.isNotEmpty || _stage == null || lead.currentStage == _stage)
+            : query.isNotEmpty ||
+                _stage == null ||
+                lead.currentStage == _stage ||
+                (_stage == FollowUpStage.third &&
+                    lead.currentStage == FollowUpStage.later))
         .where((lead) => LeadSearchService.matches(lead, query))
         .toList();
     final visibleLeads =
@@ -1823,6 +1827,7 @@ class _LeadloopPromoterScreenState extends State<LeadloopPromoterScreen> {
         _FollowUpStageButtons(
           selected: _stage,
           showOverdue: _showOverdueOnly,
+          includeThirdAndLater: true,
           onSelected: (stage) => setState(() {
             _showOverdueOnly = false;
             _stage = stage;
@@ -4197,12 +4202,14 @@ class _FollowUpStageButtons extends StatelessWidget {
     required this.onSelected,
     this.showOverdue = false,
     this.onOverdueSelected,
+    this.includeThirdAndLater = false,
   });
 
   final FollowUpStage? selected;
   final ValueChanged<FollowUpStage?> onSelected;
   final bool showOverdue;
   final VoidCallback? onOverdueSelected;
+  final bool includeThirdAndLater;
 
   @override
   Widget build(BuildContext context) => Align(
@@ -4226,12 +4233,32 @@ class _FollowUpStageButtons extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 0,
                   children: [
-                    ...FollowUpStage.values.map(_stageChip),
+                    ...FollowUpStage.values
+                        .where((stage) =>
+                            !includeThirdAndLater ||
+                            stage != FollowUpStage.later)
+                        .map(_stageChip),
                     FilterChip(
-                      avatar:
-                          const Icon(Icons.warning_amber_rounded, size: 18),
+                      avatar: Icon(Icons.warning_amber_rounded,
+                          size: 18,
+                          color:
+                              AppColors.errorFor(Theme.of(context).brightness)),
                       label: const Text('Overdue'),
                       selected: showOverdue,
+                      selectedColor: AppColors.errorSurfaceFor(
+                          Theme.of(context).brightness),
+                      labelStyle: showOverdue
+                          ? TextStyle(
+                              color: AppColors.onErrorSurfaceFor(
+                                  Theme.of(context).brightness),
+                              fontWeight: FontWeight.w700,
+                            )
+                          : null,
+                      side: BorderSide(
+                        color: showOverdue
+                            ? AppColors.errorFor(Theme.of(context).brightness)
+                            : Theme.of(context).colorScheme.outline,
+                      ),
                       showCheckmark: false,
                       onSelected: (_) => onOverdueSelected?.call(),
                     ),
@@ -4240,14 +4267,22 @@ class _FollowUpStageButtons extends StatelessWidget {
         ),
       );
 
-  FilterChip _stageChip(FollowUpStage stage) => FilterChip(
-        label: Text(stage == FollowUpStage.later
-            ? 'Follow 4+'
-            : 'Follow ${stage.index + 1}'),
-        selected: !showOverdue && selected == stage,
-        showCheckmark: false,
-        onSelected: (_) => onSelected(selected == stage ? null : stage),
-      );
+  FilterChip _stageChip(FollowUpStage stage) {
+    final selectedForStage =
+        includeThirdAndLater && stage == FollowUpStage.third
+            ? selected == FollowUpStage.third || selected == FollowUpStage.later
+            : selected == stage;
+    return FilterChip(
+      label: Text(includeThirdAndLater && stage == FollowUpStage.third
+          ? 'Follow 3+'
+          : stage == FollowUpStage.later
+              ? 'Follow 4+'
+              : 'Follow ${stage.index + 1}'),
+      selected: !showOverdue && selectedForStage,
+      showCheckmark: false,
+      onSelected: (_) => onSelected(selectedForStage ? null : stage),
+    );
+  }
 }
 
 class _LeadloopMetric extends StatelessWidget {
