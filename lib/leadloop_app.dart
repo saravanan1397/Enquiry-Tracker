@@ -2937,8 +2937,20 @@ class _LeadloopAdminScreenState extends State<LeadloopAdminScreen> {
           FilledButton.tonalIcon(
             onPressed: leads.isEmpty ? null : _deleteFiltered,
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.errorContainer,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).brightness == Brightness.light
+                  ? AppColors.error
+                  : Theme.of(context).colorScheme.errorContainer,
+              foregroundColor: Theme.of(context).brightness == Brightness.light
+                  ? Colors.white
+                  : Theme.of(context).colorScheme.onErrorContainer,
+              disabledBackgroundColor:
+                  Theme.of(context).brightness == Brightness.light
+                      ? const Color(0xFFE8C8C5)
+                      : null,
+              disabledForegroundColor:
+                  Theme.of(context).brightness == Brightness.light
+                      ? AppColors.onErrorSurfaceFor(Brightness.light)
+                      : null,
             ),
             icon: const Icon(Icons.delete_sweep_outlined),
             label: Text(
