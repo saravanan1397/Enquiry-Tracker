@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import 'inventory_widget.dart';
 import 'models/customer_lead.dart';
 import 'services/follow_up_deadline_service.dart';
 
@@ -88,21 +90,66 @@ class OwnerHome extends StatelessWidget {
                       ],
                       onTap: onSales,
                     );
+                    final inventoryUrl = inventoryWidgetUrl(
+                        const String.fromEnvironment('IS_WIDGET_URL'));
+                    final inventoryCard = _ModuleCard(
+                      title: 'Inventory System',
+                      eyebrow: 'INVENTORY',
+                      description: 'Stock by location, purchases and transfers',
+                      footer: inventoryUrl == null
+                          ? 'The Inventory System needs a hosted connection.'
+                          : 'Inventory uses a separate sign-in.',
+                      icon: Icons.inventory_2_outlined,
+                      actionLabel: inventoryUrl == null
+                          ? 'Not connected'
+                          : 'Open inventory',
+                      lightAccent: const Color(0xFF176E70),
+                      darkAccent: const Color(0xFF82D4CF),
+                      lightGradient: const [
+                        Color(0xFFF4FAFA),
+                        Color(0xFFE0F0EF),
+                      ],
+                      darkGradient: const [
+                        Color(0xFF0D1B1D),
+                        Color(0xFF173538),
+                      ],
+                      metrics: const [('WORKSPACE', 'IS')],
+                      onTap: inventoryUrl == null
+                          ? null
+                          : () => Navigator.of(context).push<void>(
+                                MaterialPageRoute<void>(
+                                  builder: (_) =>
+                                      InventoryWidgetScreen(url: inventoryUrl),
+                                ),
+                              ),
+                    );
                     if (constraints.maxWidth < 920) {
                       return Column(
                         children: [
                           followupCard,
                           const SizedBox(height: 16),
                           salesCard,
+                          if (kIsWeb) ...[
+                            const SizedBox(height: 16),
+                            inventoryCard,
+                          ],
                         ],
                       );
                     }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    return Column(
                       children: [
-                        Expanded(child: followupCard),
-                        const SizedBox(width: 18),
-                        Expanded(child: salesCard),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: followupCard),
+                            const SizedBox(width: 18),
+                            Expanded(child: salesCard),
+                          ],
+                        ),
+                        if (kIsWeb) ...[
+                          const SizedBox(height: 18),
+                          inventoryCard,
+                        ],
                       ],
                     );
                   },
