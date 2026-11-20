@@ -4,6 +4,27 @@ import '../lib/inventory_workspace.dart';
 import '../lib/services/inventory_store.dart';
 
 void main() {
+  test('inventory theme uses separate page and card surfaces in both modes',
+      () {
+    final light = inventoryTheme(false);
+    final dark = inventoryTheme(true);
+    expect(light.scaffoldBackgroundColor, const Color(0xFFF1F1F1));
+    expect(light.colorScheme.surface, Colors.white);
+    expect(dark.scaffoldBackgroundColor, const Color(0xFF1D1D1D));
+    expect(dark.colorScheme.surface, const Color(0xFF252525));
+    for (final theme in [light, dark]) {
+      final scheme = theme.colorScheme;
+      final text = scheme.onSurface.computeLuminance();
+      for (final surface in [scheme.surface, scheme.surfaceContainer]) {
+        final background = surface.computeLuminance();
+        final contrast = text > background
+            ? (text + .05) / (background + .05)
+            : (background + .05) / (text + .05);
+        expect(contrast, greaterThanOrEqualTo(4.5));
+      }
+    }
+  });
+
   test('sidebar keeps the requested order and preserves Locations', () {
     expect(inventorySections, [
       'Overview',
@@ -59,6 +80,7 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.text('Locations'), findsOneWidget);
     expect(find.text('Products'), findsOneWidget);
+    expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
     expect(Theme.of(tester.element(find.byType(InventoryWorkspace))).brightness,
         Brightness.light);
   });

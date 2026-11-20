@@ -70,14 +70,8 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 16,
-              runSpacing: 8,
-              children: [
-                Text(title, style: Theme.of(context).textTheme.headlineSmall),
-                FilledButton(onPressed: onAction, child: Text(action)),
-              ]),
+          _pageHeading(
+              title, FilledButton(onPressed: onAction, child: Text(action))),
           const SizedBox(height: 14),
           _viewSearch(),
           Text(note),

@@ -15,46 +15,87 @@ const inventoryHistorySection = 'History';
 const physicalStockSection = 'Physical Stocks';
 const inventoryPurchaseSection = 'Purchase';
 const inventoryTitle = 'Centralized Inventory';
+const inventoryHeaderColor = Color(0xFF1A1A1A);
+
+const _sectionIcons = {
+  'Overview': Icons.dashboard_outlined,
+  'Products': Icons.sell_outlined,
+  physicalStockSection: Icons.inventory_2_outlined,
+  'Transfers': Icons.swap_horiz,
+  inventoryHistorySection: Icons.history,
+  'Reports': Icons.bar_chart_outlined,
+  'Locations': Icons.place_outlined,
+  'Suppliers': Icons.groups_outlined,
+  inventoryPurchaseSection: Icons.receipt_long_outlined,
+};
 
 ThemeData inventoryTheme(bool dark) {
   final brightness = dark ? Brightness.dark : Brightness.light;
   final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF007D73),
+    seedColor: const Color(0xFF555555),
     brightness: brightness,
   ).copyWith(
-    primary: dark ? const Color(0xFF73DFD1) : const Color(0xFF007368),
-    onPrimary: dark ? const Color(0xFF062722) : Colors.white,
-    surface: dark ? const Color(0xFF121C28) : Colors.white,
-    onSurface: dark ? const Color(0xFFEAF1F8) : const Color(0xFF142239),
-    outline: dark ? const Color(0xFF6D8293) : const Color(0xFF788B9C),
-    outlineVariant: dark ? const Color(0xFF344454) : const Color(0xFFD5DFE7),
+    primary: dark ? const Color(0xFFF2F2F2) : const Color(0xFF303030),
+    onPrimary: dark ? const Color(0xFF202020) : Colors.white,
+    surface: dark ? const Color(0xFF252525) : Colors.white,
+    surfaceContainerLow:
+        dark ? const Color(0xFF2B2B2B) : const Color(0xFFF7F7F7),
+    surfaceContainer: dark ? const Color(0xFF292929) : const Color(0xFFEBEBEB),
+    surfaceContainerHigh:
+        dark ? const Color(0xFF343434) : const Color(0xFFE6E6E6),
+    onSurface: dark ? const Color(0xFFF1F1F1) : const Color(0xFF262626),
+    onSurfaceVariant: dark ? const Color(0xFFC8C8C8) : const Color(0xFF525252),
+    outline: dark ? const Color(0xFF929292) : const Color(0xFF737373),
+    outlineVariant: dark ? const Color(0xFF444444) : const Color(0xFFDCDCDC),
+    surfaceTint: Colors.transparent,
   );
+  final controlShape =
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
-    scaffoldBackgroundColor: scheme.surface,
+    scaffoldBackgroundColor:
+        dark ? const Color(0xFF1D1D1D) : const Color(0xFFF1F1F1),
     dividerColor: scheme.outlineVariant,
     inputDecorationTheme: InputDecorationTheme(
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+      filled: true,
+      fillColor: scheme.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide(color: scheme.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size(0, 42),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        minimumSize: const Size(0, 36),
+        shape: controlShape,
+        textStyle: const TextStyle(fontWeight: FontWeight.w600),
       ),
     ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        backgroundColor: scheme.surface,
+        side: BorderSide(color: scheme.outlineVariant),
+        minimumSize: const Size(0, 36),
+        shape: controlShape,
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
   );
   return theme.copyWith(
       textTheme: theme.textTheme.copyWith(
-    headlineSmall:
-        theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+    headlineSmall: theme.textTheme.headlineSmall
+        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 22),
     titleMedium:
         theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
   ));
@@ -85,52 +126,70 @@ class InventoryWorkspace extends StatelessWidget {
   final VoidCallback onTheme, onRefresh;
   final Widget child;
 
-  static const _navy = Color(0xFF0F1B30);
-  static const _teal = Color(0xFF00766D);
-
-  Widget _navigation({required bool compact}) {
+  Widget _navigation(BuildContext context, {required bool compact}) {
+    final scheme = Theme.of(context).colorScheme;
     final items = [
       for (final item in inventorySections)
-        Semantics(
-          selected: item == section,
-          child: TextButton(
-            style: TextButton.styleFrom(
-              backgroundColor: item == section ? _teal : Colors.transparent,
-              foregroundColor: Colors.white,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              minimumSize: Size(compact ? 0 : double.infinity, 44),
-              shape: const RoundedRectangleBorder(),
-            ),
-            onPressed: () => onSection(item),
-            child: Text(item,
-                style: TextStyle(
-                    fontWeight:
-                        item == section ? FontWeight.w700 : FontWeight.w500)),
-          ),
+        Padding(
+          padding:
+              EdgeInsets.only(right: compact ? 4 : 0, bottom: compact ? 0 : 2),
+          child: Semantics(
+              selected: item == section,
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  backgroundColor:
+                      item == section ? scheme.surface : Colors.transparent,
+                  foregroundColor: item == section
+                      ? scheme.onSurface
+                      : scheme.onSurfaceVariant,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: Size(compact ? 0 : double.infinity, 40),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => onSection(item),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(_sectionIcons[item], size: 17),
+                  const SizedBox(width: 9),
+                  Flexible(
+                    child: Text(item,
+                        maxLines: compact ? 1 : 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: item == section
+                                ? FontWeight.w700
+                                : FontWeight.w500)),
+                  ),
+                ]),
+              )),
         ),
     ];
-    if (compact)
+    if (compact) {
       return Material(
-        color: _navy,
+        color: scheme.surfaceContainer,
         child: SizedBox(
           width: double.infinity,
           child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal, child: Row(children: items)),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              scrollDirection: Axis.horizontal,
+              child: Row(children: items)),
         ),
       );
+    }
     return Material(
-      color: _navy,
+      color: scheme.surfaceContainer,
       child: ListView(
-        padding: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(18, 23, 10, 24),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 18, 2, 15),
             child: Text(inventoryTitle,
                 style: TextStyle(
-                    fontSize: 15,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800)),
+                    fontSize: 14,
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w700)),
           ),
           ...items,
         ],
@@ -139,14 +198,14 @@ class InventoryWorkspace extends StatelessWidget {
   }
 
   Widget _header(BuildContext context, bool compact) => Material(
-        color: Theme.of(context).colorScheme.surface,
+        color: Theme.of(context).scaffoldBackgroundColor,
         child: DecoratedBox(
           decoration: BoxDecoration(
               border: Border(
                   bottom: BorderSide(
                       color: Theme.of(context).colorScheme.outlineVariant))),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             child: Row(
               children: [
                 if (!embedded)
@@ -219,12 +278,12 @@ class InventoryWorkspace extends StatelessWidget {
             final compact = constraints.maxWidth < 750;
             final workspace = Column(children: [
               _header(context, compact),
-              if (compact) _navigation(compact: true),
+              if (compact) _navigation(context, compact: true),
               Expanded(child: child),
             ]);
             if (compact) return workspace;
             return Row(children: [
-              SizedBox(width: 207, child: _navigation(compact: false)),
+              SizedBox(width: 207, child: _navigation(context, compact: false)),
               Expanded(child: workspace),
             ]);
           });

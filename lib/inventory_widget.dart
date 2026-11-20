@@ -203,7 +203,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               });
             },
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(22, 24, 22, 26),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 26),
               children: [
                 FutureBuilder<List<InventoryRows>>(
                   future: _data,
@@ -247,18 +247,12 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   Widget _locationsContent(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text('Locations',
-                  style: Theme.of(context).textTheme.headlineSmall),
-              FilledButton.icon(
-                  onPressed: _editLocation,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Location')),
-            ],
+          _pageHeading(
+            'Locations',
+            FilledButton.icon(
+                onPressed: _editLocation,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Location')),
           ),
           const SizedBox(height: 12),
           _viewSearch(),
@@ -521,22 +515,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LayoutBuilder(builder: (context, limits) {
-          final headline =
-              Text(title, style: Theme.of(context).textTheme.headlineSmall);
-          if (limits.maxWidth < 420) {
-            return Wrap(
-                spacing: 16,
-                runSpacing: 12,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [headline, action]);
-          }
-          return Row(children: [
-            Expanded(child: headline),
-            const SizedBox(width: 12),
-            action
-          ]);
-        }),
+        _pageHeading(title, action),
         const SizedBox(height: 14),
         if (_section != inventoryHistorySection) _viewSearch(),
         if (_section == 'Reports') ...[
@@ -860,6 +839,22 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(dt))}';
   }
 
+  Widget _pageHeading(String title, Widget action) =>
+      LayoutBuilder(builder: (context, limits) {
+        return Flex(
+          direction: limits.maxWidth < 640 ? Axis.vertical : Axis.horizontal,
+          crossAxisAlignment: limits.maxWidth < 640
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          spacing: 10,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.headlineSmall),
+            action,
+          ],
+        );
+      });
+
   Widget _productsTable(List<List<Object>> rows, {bool showActions = true}) =>
       _table(
         [
@@ -884,70 +879,86 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       final extraPerColumn = centered && constraints.maxWidth > minimum
           ? (constraints.maxWidth - minimum) / headings.length
           : 0.0;
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Divider(height: 1),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints:
-                BoxConstraints(minWidth: centered ? 0 : constraints.maxWidth),
-            child: DataTable(
-              headingRowHeight: 42,
-              dataRowMinHeight: 37,
-              dataRowMaxHeight: 48,
-              headingRowColor:
-                  WidgetStatePropertyAll(scheme.surfaceContainerLow),
-              headingTextStyle: TextStyle(
-                  color: scheme.onSurface, fontWeight: FontWeight.w800),
-              horizontalMargin: centered ? 12 : 14,
-              columnSpacing: 24,
-              dividerThickness: 1,
-              columns: headings.indexed.map(((int, String) column) {
-                final (index, text) = column;
-                return DataColumn(
-                    label: !centered
-                        ? Text(text)
-                        : Flexible(
-                            child: Text(text,
-                                textAlign: TextAlign.center,
-                                softWrap: true,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis)),
-                    headingRowAlignment:
-                        centered ? MainAxisAlignment.center : null,
-                    columnWidth: !centered
-                        ? null
-                        : FixedColumnWidth(
-                            centeredWidths[index] + extraPerColumn),
-                    numeric: !centered &&
-                        [
-                          'Quantity',
-                          'Change',
-                          'Balance',
-                          'Balance stock',
-                          'In hand',
-                          'Reorder at',
-                          'Unit cost INR',
-                          'Stock value INR',
-                          'Tracked stock'
-                        ].contains(text));
-              }).toList(),
-              rows: rows
-                  .map((row) => DataRow(cells: [
-                        for (final (index, cell) in row.indexed)
-                          DataCell(_tableCell(cell, headings[index], centered)),
-                      ]))
-                  .toList(),
+      return Material(
+        color: scheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints:
+                  BoxConstraints(minWidth: centered ? 0 : constraints.maxWidth),
+              child: DataTable(
+                headingRowHeight: 38,
+                dataRowMinHeight: 38,
+                dataRowMaxHeight: 44,
+                headingRowColor:
+                    WidgetStatePropertyAll(scheme.surfaceContainerLow),
+                headingTextStyle: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+                dataTextStyle: TextStyle(color: scheme.onSurface, fontSize: 13),
+                dataRowColor: WidgetStateProperty.resolveWith((states) =>
+                    states.contains(WidgetState.hovered)
+                        ? scheme.surfaceContainerLow
+                        : null),
+                horizontalMargin: centered ? 12 : 14,
+                columnSpacing: 24,
+                dividerThickness: 1,
+                columns: headings.indexed.map(((int, String) column) {
+                  final (index, text) = column;
+                  return DataColumn(
+                      label: !centered
+                          ? Text(text)
+                          : Flexible(
+                              child: Text(text,
+                                  textAlign: TextAlign.center,
+                                  softWrap: true,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis)),
+                      headingRowAlignment:
+                          centered ? MainAxisAlignment.center : null,
+                      columnWidth: !centered
+                          ? null
+                          : FixedColumnWidth(
+                              centeredWidths[index] + extraPerColumn),
+                      numeric: !centered &&
+                          [
+                            'Quantity',
+                            'Change',
+                            'Balance',
+                            'Balance stock',
+                            'In hand',
+                            'Reorder at',
+                            'Unit cost INR',
+                            'Stock value INR',
+                            'Tracked stock'
+                          ].contains(text));
+                }).toList(),
+                rows: rows
+                    .map((row) => DataRow(cells: [
+                          for (final (index, cell) in row.indexed)
+                            DataCell(
+                                _tableCell(cell, headings[index], centered)),
+                        ]))
+                    .toList(),
+              ),
             ),
           ),
-        ),
-        if (rows.isEmpty)
-          Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-              child: Text(_searchTerm.isEmpty
-                  ? 'No records to show.'
-                  : 'No matching records.')),
-      ]);
+          if (rows.isEmpty)
+            Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+                child: Text(_searchTerm.isEmpty
+                    ? 'No records to show.'
+                    : 'No matching records.')),
+        ]),
+      );
     });
   }
 
@@ -958,14 +969,33 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         : value is num && heading == 'Balance stock'
             ? value.toStringAsFixed(0)
             : value.toString();
+    final isStatus = heading == 'Status' && text.isNotEmpty;
     final label = Text(text,
         textAlign: centered ? TextAlign.center : null,
+        style: heading == 'Product' || isStatus
+            ? const TextStyle(fontWeight: FontWeight.w600)
+            : null,
         maxLines: centered ? 2 : null,
         overflow: centered ? TextOverflow.ellipsis : null);
     final shown = centered && text.length >= 14
         ? Tooltip(message: text, child: label)
         : label;
-    return centered ? Center(child: shown) : shown;
+    final content = isStatus
+        ? Builder(builder: (context) {
+            final scheme = Theme.of(context).colorScheme;
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                child: shown,
+              ),
+            );
+          })
+        : shown;
+    return centered ? Center(child: content) : content;
   }
 
   Future<void> _product([InventoryRow? row]) async {
