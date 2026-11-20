@@ -25,6 +25,26 @@ void main() {
     }
   });
 
+  test('action button palettes have readable contrast in light and dark', () {
+    for (final dark in [false, true]) {
+      final theme = inventoryTheme(dark);
+      for (final style in [
+        theme.filledButtonTheme.style!,
+        theme.outlinedButtonTheme.style!,
+      ]) {
+        final foreground = style.foregroundColor!.resolve({})!;
+        final background = style.backgroundColor!.resolve({})!;
+        final a = foreground.computeLuminance();
+        final b = background.computeLuminance();
+        final contrast = a > b ? (a + .05) / (b + .05) : (b + .05) / (a + .05);
+        expect(contrast, greaterThanOrEqualTo(4.5));
+      }
+      final accent =
+          theme.filledButtonTheme.style!.backgroundColor!.resolve({});
+      expect(accent, dark ? const Color(0xFF78DED1) : const Color(0xFF00695E));
+    }
+  });
+
   test('sidebar keeps the requested order and preserves Locations', () {
     expect(inventorySections, [
       'Overview',

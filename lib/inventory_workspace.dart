@@ -15,7 +15,6 @@ const inventoryHistorySection = 'History';
 const physicalStockSection = 'Physical Stocks';
 const inventoryPurchaseSection = 'Purchase';
 const inventoryTitle = 'Centralized Inventory';
-const inventoryHeaderColor = Color(0xFF1A1A1A);
 
 const _sectionIcons = {
   'Overview': Icons.dashboard_outlined,
@@ -51,6 +50,9 @@ ThemeData inventoryTheme(bool dark) {
   );
   final controlShape =
       RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
+  final actionColor = dark ? const Color(0xFF78DED1) : const Color(0xFF00695E);
+  final actionText = dark ? const Color(0xFF082721) : Colors.white;
+  final subtleAction = dark ? const Color(0xFF193631) : const Color(0xFFE7F5F2);
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
@@ -75,6 +77,8 @@ ThemeData inventoryTheme(bool dark) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
+        backgroundColor: actionColor,
+        foregroundColor: actionText,
         minimumSize: const Size(0, 36),
         shape: controlShape,
         textStyle: const TextStyle(fontWeight: FontWeight.w600),
@@ -82,11 +86,20 @@ ThemeData inventoryTheme(bool dark) {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        backgroundColor: scheme.surface,
-        side: BorderSide(color: scheme.outlineVariant),
+        backgroundColor: subtleAction,
+        foregroundColor: actionColor,
         minimumSize: const Size(0, 36),
         shape: controlShape,
+      ).copyWith(
+        side: WidgetStateProperty.resolveWith((states) => BorderSide(
+              color: states.contains(WidgetState.disabled)
+                  ? scheme.outlineVariant
+                  : actionColor,
+            )),
       ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: actionColor),
     ),
     dialogTheme: DialogThemeData(
         backgroundColor: scheme.surface,

@@ -13,7 +13,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
 import 'inventory_widget.dart';
-import 'inventory_workspace.dart' show inventoryHeaderColor;
 import 'owner_home.dart';
 import 'email_recovery_ui.dart';
 import 'promoter_deletion_dialog.dart';
@@ -1201,7 +1200,6 @@ class _LeadloopShellState extends State<LeadloopShell> {
   Widget build(BuildContext context) {
     final isAdmin = widget.role == LeadloopRole.admin;
     final compactHeader = MediaQuery.sizeOf(context).width < 720;
-    final inventoryHeader = isAdmin && _ownerInventoryOpen;
     final Widget workspaceBody;
     if (isAdmin && _ownerInventoryOpen) {
       workspaceBody = InventoryWidgetScreen(adminDark: widget.isDarkMode);
@@ -1270,25 +1268,15 @@ class _LeadloopShellState extends State<LeadloopShell> {
       },
       child: Scaffold(
         appBar: AppBar(
-            backgroundColor: inventoryHeader
-                ? inventoryHeaderColor
-                : isAdmin
-                    ? _brandHeaderBackground
-                    : null,
-            foregroundColor: inventoryHeader
-                ? Colors.white
-                : isAdmin
-                    ? Colors.black87
-                    : null,
-            surfaceTintColor: inventoryHeader ? Colors.transparent : null,
-            toolbarHeight: inventoryHeader ? 54 : (compactHeader ? 84 : 104),
+            backgroundColor: isAdmin ? _brandHeaderBackground : null,
+            foregroundColor: isAdmin ? Colors.black87 : null,
+            toolbarHeight: compactHeader ? 84 : 104,
             titleSpacing: isAdmin ? null : 12,
             leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
                 : null,
             title: isAdmin
-                ? _OwnerBrandLogo(
-                    onTap: _ownerBack, compactBadge: inventoryHeader)
+                ? _OwnerBrandLogo(onTap: _ownerBack)
                 : const _PromoterBrandHeader(),
             actions: [
               if (isAdmin && compactHeader)
@@ -1533,22 +1521,19 @@ class _LoginBrandHeader extends StatelessWidget {
 }
 
 class _OwnerBrandLogo extends StatelessWidget {
-  const _OwnerBrandLogo({required this.onTap, this.compactBadge = false});
+  const _OwnerBrandLogo({required this.onTap});
 
   final VoidCallback onTap;
-  final bool compactBadge;
 
   @override
   Widget build(BuildContext context) {
     final viewportWidth = MediaQuery.sizeOf(context).width;
     final compact = viewportWidth < 720;
-    final preferredWidth = compactBadge
-        ? 164.0
-        : viewportWidth < 480
-            ? 220.0
-            : viewportWidth < 900
-                ? 300.0
-                : 380.0;
+    final preferredWidth = viewportWidth < 480
+        ? 220.0
+        : viewportWidth < 900
+            ? 300.0
+            : 380.0;
     return Semantics(
       label: 'Selvan Steel House — go to dashboard',
       button: true,
@@ -1562,13 +1547,9 @@ class _OwnerBrandLogo extends StatelessWidget {
               final width = constraints.hasBoundedWidth
                   ? constraints.maxWidth.clamp(0.0, preferredWidth)
                   : preferredWidth;
-              final logo = SizedBox(
+              return SizedBox(
                 width: width,
-                height: compactBadge
-                    ? 36
-                    : compact
-                        ? 64
-                        : 88,
+                height: compact ? 64 : 88,
                 child: ClipRect(
                   child: Image.asset(
                     'images/selvan_logo_transparent.png',
@@ -1577,11 +1558,6 @@ class _OwnerBrandLogo extends StatelessWidget {
                     filterQuality: FilterQuality.high,
                   ),
                 ),
-              );
-              if (!compactBadge) return logo;
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: ColoredBox(color: _brandHeaderBackground, child: logo),
               );
             },
           ),
