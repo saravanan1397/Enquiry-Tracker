@@ -1272,7 +1272,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
             backgroundColor: isAdmin ? _brandHeaderBackground : null,
             foregroundColor: isAdmin ? Colors.black87 : null,
             surfaceTintColor: inventoryHeader ? Colors.transparent : null,
-            centerTitle: inventoryHeader ? true : null,
+            centerTitle: inventoryHeader ? false : null,
             toolbarHeight: compactHeader ? 84 : (inventoryHeader ? 112 : 104),
             titleSpacing: isAdmin ? null : 12,
             leading: isAdmin && _ownerModuleOpen
