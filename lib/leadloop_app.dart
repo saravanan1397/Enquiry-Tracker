@@ -1199,7 +1199,6 @@ class _LeadloopShellState extends State<LeadloopShell> {
   @override
   Widget build(BuildContext context) {
     final isAdmin = widget.role == LeadloopRole.admin;
-    final inventoryHeader = isAdmin && _ownerInventoryOpen;
     final compactHeader = MediaQuery.sizeOf(context).width < 720;
     final Widget workspaceBody;
     if (isAdmin && _ownerInventoryOpen) {
@@ -1271,15 +1270,13 @@ class _LeadloopShellState extends State<LeadloopShell> {
         appBar: AppBar(
             backgroundColor: isAdmin ? _brandHeaderBackground : null,
             foregroundColor: isAdmin ? Colors.black87 : null,
-            surfaceTintColor: inventoryHeader ? Colors.transparent : null,
-            centerTitle: inventoryHeader ? false : null,
-            toolbarHeight: compactHeader ? 84 : (inventoryHeader ? 112 : 104),
+            toolbarHeight: compactHeader ? 84 : 104,
             titleSpacing: isAdmin ? null : 12,
             leading: isAdmin && _ownerModuleOpen
                 ? BackButton(onPressed: _ownerBack)
                 : null,
             title: isAdmin
-                ? _OwnerBrandLogo(onTap: _ownerBack, prominent: inventoryHeader)
+                ? _OwnerBrandLogo(onTap: _ownerBack)
                 : const _PromoterBrandHeader(),
             actions: [
               if (isAdmin && compactHeader)
@@ -1524,23 +1521,19 @@ class _LoginBrandHeader extends StatelessWidget {
 }
 
 class _OwnerBrandLogo extends StatelessWidget {
-  const _OwnerBrandLogo({required this.onTap, this.prominent = false});
+  const _OwnerBrandLogo({required this.onTap});
 
   final VoidCallback onTap;
-  final bool prominent;
 
   @override
   Widget build(BuildContext context) {
     final viewportWidth = MediaQuery.sizeOf(context).width;
     final compact = viewportWidth < 720;
-    final preferredWidth = prominent
-        ? (viewportWidth * (compact ? .60 : .58))
-            .clamp(0.0, compact ? 350.0 : 520.0)
-        : viewportWidth < 480
-            ? 220.0
-            : viewportWidth < 900
-                ? 300.0
-                : 380.0;
+    final preferredWidth = viewportWidth < 480
+        ? 220.0
+        : viewportWidth < 900
+            ? 300.0
+            : 380.0;
     return Semantics(
       label: 'Selvan Steel House — go to dashboard',
       button: true,
@@ -1556,15 +1549,12 @@ class _OwnerBrandLogo extends StatelessWidget {
                   : preferredWidth;
               return SizedBox(
                 width: width,
-                height: prominent ? (compact ? 76 : 110) : (compact ? 64 : 88),
+                height: compact ? 64 : 88,
                 child: ClipRect(
                   child: Image.asset(
                     'images/selvan_logo_transparent.png',
                     fit: BoxFit.fitWidth,
-                    // The PNG has extra transparent space below the artwork.
-                    alignment: prominent
-                        ? const Alignment(0, -.16)
-                        : Alignment.centerLeft,
+                    alignment: Alignment.centerLeft,
                     filterQuality: FilterQuality.high,
                   ),
                 ),
