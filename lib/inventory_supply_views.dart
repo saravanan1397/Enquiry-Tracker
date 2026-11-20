@@ -26,6 +26,38 @@ class _PurchaseInputs {
 }
 
 extension _InventorySupplyViews on _InventoryWidgetScreenState {
+  Widget _productBinContent(BuildContext context, InventoryRows data) =>
+      _supplyPage(
+        context,
+        'Product Recycle Bin',
+        'Back to Products',
+        () => _showProductBin(false),
+        'Restore a product to make its existing stock available again. Products are not permanently deleted here.',
+        ['Product', 'SKU', 'Barcode', 'Category', 'Deleted', 'Actions'],
+        [
+          for (final row in data.docs.take(100))
+            if (row.data()['deletedAt'] != null &&
+                _matchesSearch([
+                  _supplyName(row),
+                  row.data()['sku'],
+                  row.data()['barcode'],
+                  row.data()['category'],
+                ]))
+              [
+                _supplyName(row),
+                row.data()['sku'] ?? '',
+                row.data()['barcode'] ?? '',
+                row.data()['category'] ?? '',
+                _time(row.data()['deletedAt']),
+                TextButton(
+                  onPressed: () => _setProductRecycled(row, recycled: false),
+                  child: const Text('Restore'),
+                ),
+              ],
+        ],
+        truncated: data.size > 100,
+      );
+
   Widget _supplyPage(
           BuildContext context,
           String title,
@@ -140,7 +172,7 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
     };
     return _supplyPage(
       context,
-      'Purchasing',
+      inventoryPurchaseSection,
       'New Purchase Order',
       () => _newOrder(data[0], data[2]),
       'Group products under one order reference. Receive or cancel each line separately; only received units enter stock.',

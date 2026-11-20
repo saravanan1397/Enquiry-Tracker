@@ -138,6 +138,30 @@ class InventoryStore {
 
   Future<InventoryRows> products() => _products.limit(101).get(_server);
 
+  Future<InventoryRows> deletedProducts() =>
+      _products.orderBy('deletedAt', descending: true).limit(101).get(_server);
+
+  Future<void> setProductRecycled(String id, {required bool recycled}) async {
+    final product = _products.doc(id);
+    final actor = _uid;
+    final error = await _db.runTransaction<String?>((tx) async {
+      final data = (await tx.get(product)).data();
+      if (data == null) return 'This product no longer exists.';
+      if ((data['deletedAt'] != null) == recycled) return null;
+      final stamp = FieldValue.serverTimestamp();
+      tx.update(product, {
+        'active': recycled ? false : data['activeBeforeDelete'] == true,
+        'deletedAt': recycled ? stamp : FieldValue.delete(),
+        'activeBeforeDelete':
+            recycled ? data['active'] == true : FieldValue.delete(),
+        'actor': actor,
+        'at': stamp,
+      });
+      return null;
+    });
+    if (error != null) throw FormatException(error);
+  }
+
   Future<InventoryRows> suppliers() =>
       _suppliers.orderBy('name').limit(101).get(_server);
 

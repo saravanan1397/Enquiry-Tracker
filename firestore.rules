@@ -315,7 +315,18 @@ service cloud.firestore {
     }
     match /is_products/{id} {
       allow read: if isAdmin();
-      allow create, update: if isAdmin() && inventoryId(id) && inventoryProduct(request.resource.data);
+      allow create: if isAdmin() && inventoryId(id) && inventoryProduct(request.resource.data);
+      allow update: if isAdmin() && inventoryId(id)
+        && ((!('deletedAt' in resource.data) && inventoryProduct(request.resource.data))
+          || inventoryRecycleProduct(resource.data, request.resource.data));
+    }
+    function inventoryRecycleProduct(old, data) {
+      return data.diff(old).affectedKeys().hasOnly(['deletedAt','activeBeforeDelete','active','actor','at'])
+        && data.actor == request.auth.uid && data.at == request.time
+        && (!('deletedAt' in old)
+          ? data.deletedAt == request.time && data.active == false && data.activeBeforeDelete == old.active
+          : !('deletedAt' in data) && !('activeBeforeDelete' in data)
+            && data.active == old.activeBeforeDelete);
     }
     match /is_drafts/{id} {
       allow create: if isAdmin() && inventoryId(id) && inventoryDraft(request.resource.data);

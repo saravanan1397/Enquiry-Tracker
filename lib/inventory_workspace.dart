@@ -4,15 +4,16 @@ const inventorySections = [
   'Overview',
   'Products',
   physicalStockSection,
-  inventoryHistorySection,
   'Transfers',
+  inventoryHistorySection,
   'Reports',
   'Locations',
   'Suppliers',
-  'Purchasing',
+  inventoryPurchaseSection,
 ];
 const inventoryHistorySection = 'History';
-const physicalStockSection = 'Physical Stock';
+const physicalStockSection = 'Physical Stocks';
+const inventoryPurchaseSection = 'Purchase';
 const inventoryTitle = 'Centralized Inventory';
 
 ThemeData inventoryTheme(bool dark) {

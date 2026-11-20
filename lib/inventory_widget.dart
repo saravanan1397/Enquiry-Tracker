@@ -55,7 +55,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         for (final location in _locations)
           if (location.active) location.id: location.name,
       };
-  var _section = 'Overview';
+  var _section = physicalStockSection;
+  var _productBin = false;
   String? _location;
   final _search = TextEditingController();
   var _dark = false;
@@ -107,6 +108,10 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   void _load() {
+    if (_productBin) {
+      _data = Future.wait([_store.deletedProducts()]);
+      return;
+    }
     if (_section == 'Locations' || _section == 'Suppliers') {
       _data = _section == 'Suppliers'
           ? Future.wait([_store.suppliers()])
@@ -123,7 +128,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         _store.drafts(location: _location),
         _store.legacyTransfers(),
       ],
-      if (_section == 'Purchasing') ...[
+      if (_section == inventoryPurchaseSection) ...[
         _store.purchaseOrders(),
         _store.suppliers(),
       ],
@@ -137,6 +142,31 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         _loadLocations();
         _load();
       });
+  }
+
+  void _showProductBin(bool show) {
+    setState(() {
+      _productBin = show;
+      _search.clear();
+      _load();
+    });
+  }
+
+  Future<void> _setProductRecycled(InventoryRow product,
+      {required bool recycled}) async {
+    final saved = await _editor(
+      title: recycled ? 'Move product to Recycle Bin?' : 'Restore product?',
+      fields: (_) => [
+        Text(_supplyName(product)),
+        const SizedBox(height: 8),
+        Text(recycled
+            ? 'The product will be hidden from current stock views. Its quantities, purchase records and movement history will be kept.'
+            : 'The product will return to Products with its previous active or archived status and its existing stock.'),
+      ],
+      action: recycled ? 'Move to Recycle Bin' : 'Restore Product',
+      save: () => _store.setProductRecycled(product.id, recycled: recycled),
+    );
+    if (saved) _refresh();
   }
 
   @override
@@ -157,9 +187,10 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               unawaited(_saveTheme(_dark));
             },
             onSection: (section) {
-              if (_section == section) return;
+              if (_section == section && !_productBin) return;
               setState(() {
                 _section = section;
+                _productBin = false;
                 _search.clear();
                 _load();
               });
@@ -197,10 +228,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                       );
                     }
                     final data = snapshot.requireData;
+                    if (_productBin)
+                      return _productBinContent(context, data.first);
                     return switch (_section) {
                       'Locations' => _locationsContent(context),
                       'Suppliers' => _suppliersContent(context, data.first),
-                      'Purchasing' => _purchasingContent(context, data),
+                      inventoryPurchaseSection =>
+                        _purchasingContent(context, data),
                       'Transfers' => _transfersContent(context, data),
                       _ => _content(context, data),
                     };
@@ -305,18 +339,20 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.search),
-            labelText: switch (_section) {
-              'Overview' ||
-              'Products' =>
-                'Search products by name, SKU, barcode or category',
-              physicalStockSection => 'Search physical stock',
-              inventoryHistorySection => 'Search movements and drafts',
-              'Reports' => 'Search stock report',
-              'Suppliers' => 'Search suppliers',
-              'Purchasing' => 'Search purchase orders',
-              'Transfers' => 'Search transfers',
-              _ => 'Search locations',
-            },
+            labelText: _productBin
+                ? 'Search deleted products'
+                : switch (_section) {
+                    'Overview' ||
+                    'Products' =>
+                      'Search products by name, SKU, barcode or category',
+                    physicalStockSection => 'Search physical stock',
+                    inventoryHistorySection => 'Search movements and drafts',
+                    'Reports' => 'Search stock report',
+                    'Suppliers' => 'Search suppliers',
+                    inventoryPurchaseSection => 'Search purchase orders',
+                    'Transfers' => 'Search transfers',
+                    _ => 'Search locations',
+                  },
             suffixIcon: _search.text.isEmpty
                 ? null
                 : IconButton(
@@ -333,6 +369,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final rows = data[1];
     final byProduct = {for (final p in products.docs) p.id: p.data()};
     final productDocuments = {for (final p in products.docs) p.id: p};
+    bool productInBin(Object? id) => byProduct[id]?['deletedAt'] != null;
     String productName(String? id) =>
         (byProduct[id]?['name'] as String?)?.trim().isNotEmpty == true
             ? byProduct[id]!['name'] as String
@@ -369,7 +406,9 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     ];
     final reportRows = <List<Object>>[
       for (final row in rows.docs.take(100))
-        if (_section == 'Reports' && matchesRecord(row))
+        if (_section == 'Reports' &&
+            !productInBin(row.data()['productId']) &&
+            matchesRecord(row))
           [
             productName(row.data()['productId'] as String?),
             locationName(row.data()['location']),
@@ -382,7 +421,14 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ],
     ];
     final action = _section == 'Products'
-        ? FilledButton(onPressed: _product, child: const Text('Add Product'))
+        ? Wrap(spacing: 8, runSpacing: 8, children: [
+            OutlinedButton.icon(
+              onPressed: () => _showProductBin(true),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Recycle Bin'),
+            ),
+            FilledButton(onPressed: _product, child: const Text('Add Product')),
+          ])
         : _section == 'Reports'
             ? Wrap(spacing: 8, runSpacing: 8, children: [
                 OutlinedButton(
@@ -427,6 +473,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       for (final row in visibleRows) {
         final item = row.data();
         final id = item['productId'] as String;
+        if (productInBin(id)) continue;
         stock.update(id, (q) => q + (item['quantity'] as int),
             ifAbsent: () => item['quantity'] as int);
       }
@@ -442,12 +489,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     });
     final productRows = <List<Object>>[
       for (final row in products.docs.take(100))
-        if (_matchesSearch([
-          productName(row.id),
-          row.data()['sku'],
-          row.data()['category'],
-          row.data()['barcode']
-        ]))
+        if (!productInBin(row.id) &&
+            _matchesSearch([
+              productName(row.id),
+              row.data()['sku'],
+              row.data()['category'],
+              row.data()['barcode']
+            ]))
           [
             '${row.data()['sku'] ?? ''}',
             productName(row.id),
@@ -455,22 +503,19 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             '${row.data()['category'] ?? ''}',
             '${stock[row.id] ?? '—'}',
             row.data()['active'] == true ? 'Active' : 'Archived',
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              if (_section != 'Products')
+            if (_section == 'Products')
+              Row(mainAxisSize: MainAxisSize.min, children: [
                 IconButton(
-                  tooltip: 'Edit stock for ${productName(row.id)}',
-                  icon: const Icon(Icons.edit_outlined, size: 19),
-                  onPressed: row.data()['active'] != true
-                      ? null
-                      : () => _movement(products.docs,
-                          stockType: 'count', selectedProduct: row),
+                  tooltip: 'Edit details for ${productName(row.id)}',
+                  icon: const Icon(Icons.edit_note_outlined, size: 21),
+                  onPressed: () => _product(row),
                 ),
-              IconButton(
-                tooltip: 'Edit details for ${productName(row.id)}',
-                icon: const Icon(Icons.edit_note_outlined, size: 21),
-                onPressed: () => _product(row),
-              ),
-            ]),
+                IconButton(
+                  tooltip: 'Delete ${productName(row.id)}',
+                  icon: const Icon(Icons.delete_outline, size: 21),
+                  onPressed: () => _setProductRecycled(row, recycled: true),
+                ),
+              ]),
           ],
     ];
     return Column(
@@ -508,32 +553,46 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Actions'
           ], [
             for (final row in visibleRows.where(matchesRecord))
-              [
-                productName(row.data()['productId'] as String?),
-                locationName(row.data()['location']),
-                row.data()['quantity'] as int,
-                if (productDocuments[row.data()['productId']]
-                    case final InventoryRow product)
-                  IconButton(
-                    tooltip: 'Edit stock for ${productName(product.id)}',
-                    icon: const Icon(Icons.edit_outlined, size: 19),
-                    onPressed: product.data()['active'] == true &&
-                            _activeLocations.containsKey(row.data()['location'])
-                        ? () => _movement(products.docs,
-                            stockType: 'count',
-                            selectedProduct: product,
-                            selectedLocation: row.data()['location'] as String,
-                            selectedQuantity: row.data()['quantity'] as int)
-                        : null,
-                  )
-                else
-                  const SizedBox.shrink(),
-              ],
+              if (!productInBin(row.data()['productId']))
+                [
+                  productName(row.data()['productId'] as String?),
+                  locationName(row.data()['location']),
+                  row.data()['quantity'] as int,
+                  if (productDocuments[row.data()['productId']]
+                      case final InventoryRow product)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                        tooltip: 'Edit stock for ${productName(product.id)}',
+                        icon: const Icon(Icons.edit_outlined, size: 19),
+                        onPressed: product.data()['active'] == true &&
+                                _activeLocations
+                                    .containsKey(row.data()['location'])
+                            ? () => _movement(products.docs,
+                                stockType: 'count',
+                                selectedProduct: product,
+                                selectedLocation:
+                                    row.data()['location'] as String,
+                                selectedQuantity: row.data()['quantity'] as int)
+                            : null,
+                      ),
+                      IconButton(
+                        tooltip:
+                            'Set stock at a chosen branch for ${productName(product.id)}',
+                        icon: const Icon(Icons.tune, size: 20),
+                        onPressed: product.data()['active'] == true
+                            ? () => _movement(products.docs,
+                                stockType: 'count', selectedProduct: product)
+                            : null,
+                      ),
+                    ])
+                  else
+                    const SizedBox.shrink(),
+                ],
           ], centeredWidths: const [
             190,
             180,
             114,
-            100
+            126
           ]),
         ],
         if (_section == 'Overview') ...[
@@ -542,7 +601,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           const SizedBox(height: 14),
           Text('Products', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          _productsTable(productRows),
+          _productsTable(productRows, showActions: false),
           const SizedBox(height: 20),
           Text('Low stock', style: Theme.of(context).textTheme.titleMedium),
           _table([
@@ -801,18 +860,19 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(dt))}';
   }
 
-  Widget _productsTable(List<List<Object>> rows) => _table(
-        const [
+  Widget _productsTable(List<List<Object>> rows, {bool showActions = true}) =>
+      _table(
+        [
           'SKU',
           'Product',
           'Barcode',
           'Category',
           'Tracked stock',
           'Status',
-          'Actions'
+          if (showActions) 'Actions'
         ],
         rows,
-        centeredWidths: const [92, 194, 126, 128, 118, 92, 126],
+        centeredWidths: [92, 194, 126, 128, 118, 92, if (showActions) 126],
       );
 
   Widget _table(List<String> headings, List<List<Object>> rows,
@@ -980,7 +1040,10 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     String? destination;
     if (!_activeLocations.containsKey(location)) location = null;
     var product = selectedProduct?.id ?? values['productId'] as String?;
-    if (!products.take(100).any((p) => p.id == product)) product = null;
+    if (!products.any((p) =>
+        p.id == product &&
+        p.data()['active'] == true &&
+        p.data()['deletedAt'] == null)) product = null;
     var type = stockType ?? values['type'] as String?;
     final entryTypes = {
       ...inventoryMovementTypes,
@@ -1045,9 +1108,11 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               product,
               {
                 for (final p in products)
-                  p.id: '${p.data()['name']}'.trim().isEmpty
-                      ? 'Unnamed product'
-                      : '${p.data()['name']}'
+                  if (p.data()['active'] == true &&
+                      p.data()['deletedAt'] == null)
+                    p.id: '${p.data()['name']}'.trim().isEmpty
+                        ? 'Unnamed product'
+                        : '${p.data()['name']}'
               },
               (v) => update(() => product = v)),
         _input(

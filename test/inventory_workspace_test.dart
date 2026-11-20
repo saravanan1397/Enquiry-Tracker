@@ -8,13 +8,13 @@ void main() {
     expect(inventorySections, [
       'Overview',
       'Products',
-      'Physical Stock',
-      'History',
+      'Physical Stocks',
       'Transfers',
+      'History',
       'Reports',
       'Locations',
       'Suppliers',
-      'Purchasing',
+      'Purchase',
     ]);
   });
 

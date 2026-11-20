@@ -28,6 +28,7 @@ class _Store implements InventoryStore {
   _Store({this.withStock = false});
   final bool withStock;
   int? stock;
+  bool recycled = false;
   InventoryMovement? posted;
   final transfers = <(String, String, String, int)>[];
   int _movementNumber = 0;
@@ -39,10 +40,20 @@ class _Store implements InventoryStore {
           'category': 'Cookware',
           'barcode': '00001844',
           'unitCost': 2599,
-          'active': true,
+          'active': !recycled,
+          if (recycled) 'deletedAt': 'fixture timestamp',
           'reorder': 2
         }),
       ]);
+  @override
+  Future<InventoryRows> deletedProducts() async =>
+      recycled ? products() : _Rows([]);
+  @override
+  Future<void> setProductRecycled(String id, {required bool recycled}) async {
+    expect(id, 'p1');
+    this.recycled = recycled;
+  }
+
   @override
   Future<InventoryRows> balances({String? location}) async => _Rows([
         if (withStock || stock != null)
@@ -124,6 +135,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: InventoryWidgetScreen(store: _Store(withStock: true))));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Overview'));
+    await tester.pumpAndSettle();
     final search = find.byKey(const ValueKey('inventory-view-search'));
     expect(tester.getSize(find.byType(DataTable).first).width,
         closeTo(tester.getSize(search).width, 1));
@@ -139,9 +152,14 @@ void main() {
     expect(
         tester.getCenter(find.text('Actions')).dx,
         closeTo(
-            tester
-                .getCenter(find.byTooltip('Edit details for Cookware Fixture'))
-                .dx,
+            (tester
+                        .getCenter(
+                            find.byTooltip('Edit details for Cookware Fixture'))
+                        .dx +
+                    tester
+                        .getCenter(find.byTooltip('Delete Cookware Fixture'))
+                        .dx) /
+                2,
             1));
     await tester.binding.setSurfaceSize(const Size(590, 900));
     await tester.pumpAndSettle();
@@ -167,7 +185,7 @@ void main() {
     expect(find.text('Barcode (optional)'), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Physical Stock'));
+    await tester.tap(find.text('Physical Stocks'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Edit details for Cookware Fixture'), findsNothing);
     final pencil = find.byTooltip('Edit stock for Cookware Fixture');
@@ -225,6 +243,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: InventoryWidgetScreen(store: store, adminDark: false)));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Overview'));
+    await tester.pumpAndSettle();
     expect(find.text('Back up now'), findsOneWidget);
     expect(find.text('Restore from backup'), findsOneWidget);
     await tester.tap(find.text('Back up now'));
@@ -235,7 +255,7 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.text('Back up inventory'), findsNothing);
-    await tester.tap(find.text('Physical Stock'));
+    await tester.tap(find.text('Physical Stocks'));
     await tester.pumpAndSettle();
     expect(find.text('Balance stock'), findsOneWidget);
     expect(find.text('Set Total Stock'), findsNothing);
@@ -284,15 +304,13 @@ void main() {
     for (final (section, query, shown) in [
       ('Overview', 'test-1', 'Cookware Fixture'),
       ('Products', '00001844', 'Cookware Fixture'),
-      ('Physical Stock', 'warehouse', 'Cookware Fixture'),
+      ('Physical Stocks', 'warehouse', 'Cookware Fixture'),
       ('History', 'awaiting invoice', 'Resume'),
       ('Reports', 'warehouse', 'Cookware Fixture'),
       ('Locations', 'selvan hotel', 'Selvan Hotel Mart'),
     ]) {
-      if (section != 'Overview') {
-        await tester.tap(find.text(section).first);
-        await tester.pumpAndSettle();
-      }
+      await tester.tap(find.text(section).first);
+      await tester.pumpAndSettle();
       if (section == 'Reports') {
         expect(find.text('Stock value INR'), findsOneWidget);
         expect(find.text('25.99'), findsNWidgets(2));
@@ -330,9 +348,7 @@ void main() {
     await tester
         .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
     await tester.pumpAndSettle();
-    expect(find.text('Record Movement'), findsNothing);
-    await tester.tap(find.text('Physical Stock'));
-    await tester.pumpAndSettle();
+    expect(find.text('Record Movement'), findsOneWidget);
     await tester.tap(find.text('Record Movement'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Not selected').first);
@@ -373,16 +389,24 @@ void main() {
   });
 
   testWidgets(
-      'Overview shows unstocked products and edits stock at a chosen location',
+      'Physical Stocks opens first and edits stock at a chosen location',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final store = _Store();
+    final store = _Store(withStock: true);
     await tester
         .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
     await tester.pumpAndSettle();
-    expect(find.text('Cookware Fixture'), findsOneWidget);
-    await tester.tap(find.byTooltip('Edit stock for Cookware Fixture'));
+    expect(find.text('Record Movement'), findsOneWidget);
+    await tester.tap(find.text('Overview'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cookware Fixture'), findsWidgets);
+    expect(find.text('Record Movement'), findsNothing);
+    expect(find.text('Actions'), findsNothing);
+    await tester.tap(find.text('Physical Stocks'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+        find.byTooltip('Set stock at a chosen branch for Cookware Fixture'));
     await tester.pumpAndSettle();
     expect(find.text('Edit Stock'), findsOneWidget);
     await tester.tap(find.text('Not selected'));
@@ -398,5 +422,42 @@ void main() {
     expect(store.posted?.quantity, 7);
     expect(store.posted?.type, 'count');
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('products can be recycled and restored without changing stock',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store(withStock: true);
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Products'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete Cookware Fixture'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to Recycle Bin'));
+    await tester.pumpAndSettle();
+    expect(store.recycled, isTrue);
+    expect(find.text('Cookware Fixture'), findsNothing);
+    await tester.tap(find.text('Physical Stocks'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cookware Fixture'), findsNothing);
+    await tester.tap(find.text('Products'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Recycle Bin'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cookware Fixture'), findsOneWidget);
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Restore Product'));
+    await tester.pumpAndSettle();
+    expect(store.recycled, isFalse);
+    expect(find.text('Cookware Fixture'), findsNothing);
+    await tester.tap(find.text('Physical Stocks'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cookware Fixture'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    expect(store.posted, isNull);
   });
 }

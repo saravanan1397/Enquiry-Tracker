@@ -109,3 +109,21 @@ await commit([write('is_orders/'+first,{status:'cancelled',updatedAt:stamp},{upd
 assert.equal(await quantity(destination),10);
 await commit([write('is_orders/'+second,{status:'received',received:2,lastReceiptId:id('R'),updatedAt:stamp},{update:true})],token,403);
 console.log('Verified that immediate transfers post both branches or neither, cannot be repeated, preserve older transfers, and do not break purchasing.');
+
+const productPath='is_products/'+product;
+const recycle=write(productPath,{active:false,activeBeforeDelete:true,deletedAt:stamp,actor:uid,at:stamp},{update:true});
+await commit([recycle],other.idToken,403);
+await commit([write(productPath,{active:false,activeBeforeDelete:true,deletedAt:stamp,name:'Changed',actor:uid,at:stamp},{update:true})],token,403);
+await commit([recycle]);
+await commit(movement(id('S'),'sale',source,6,1,-1),token,403);
+await commit([write(productPath,{name:'Changed'},{update:true})],token,403);
+await commit([{delete:prefix+productPath}],token,403);
+const restore=write(productPath,{active:true,actor:uid,at:stamp},{update:true});
+restore.updateMask.fieldPaths.push('deletedAt','activeBeforeDelete');
+await commit([restore]);
+const restored=(await request(db+'/'+productPath,{credential:'owner'})).fields;
+assert.equal(restored.active.booleanValue,true);
+assert.equal(restored.deletedAt,undefined);
+assert.equal(await quantity(source),6);
+assert.equal(await quantity(destination),10);
+console.log('Verified reversible product recycling, access guards and preserved stock.');
