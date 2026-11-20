@@ -54,7 +54,7 @@ ThemeData inventoryTheme(bool dark) {
   ));
 }
 
-class InventoryWorkspace extends StatelessWidget {
+class InventoryWorkspace extends StatefulWidget {
   const InventoryWorkspace({
     super.key,
     required this.dark,
@@ -77,36 +77,92 @@ class InventoryWorkspace extends StatelessWidget {
   final VoidCallback onTheme, onRefresh;
   final Widget child;
 
+  @override
+  State<InventoryWorkspace> createState() => _InventoryWorkspaceState();
+}
+
+class _InventoryWorkspaceState extends State<InventoryWorkspace> {
   static const _navy = Color(0xFF0F1B30);
   static const _teal = Color(0xFF00766D);
+  final _menuSearch = TextEditingController();
+  var _query = '';
+
+  @override
+  void dispose() {
+    _menuSearch.dispose();
+    super.dispose();
+  }
 
   Widget _navigation({required bool compact}) {
+    final search = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+      child: TextField(
+        controller: _menuSearch,
+        onChanged: (value) =>
+            setState(() => _query = value.trim().toLowerCase()),
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: 'Search menu',
+          hintStyle: const TextStyle(color: Color(0xFFC5D4E5)),
+          prefixIcon:
+              const Icon(Icons.search, color: Color(0xFFC5D4E5), size: 19),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear menu search',
+                  icon: const Icon(Icons.clear,
+                      size: 17, color: Color(0xFFC5D4E5)),
+                  onPressed: () {
+                    _menuSearch.clear();
+                    setState(() => _query = '');
+                  },
+                ),
+          fillColor: const Color(0xFF202F45),
+          filled: true,
+        ),
+      ),
+    );
     final items = [
       for (final item in inventorySections)
-        Semantics(
-          selected: item == section,
-          child: TextButton(
-            style: TextButton.styleFrom(
-              backgroundColor: item == section ? _teal : Colors.transparent,
-              foregroundColor: Colors.white,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              minimumSize: Size(compact ? 0 : double.infinity, 44),
-              shape: const RoundedRectangleBorder(),
+        if (item.toLowerCase().contains(_query))
+          Semantics(
+            selected: item == widget.section,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                backgroundColor:
+                    item == widget.section ? _teal : Colors.transparent,
+                foregroundColor: Colors.white,
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                minimumSize: Size(compact ? 0 : double.infinity, 44),
+                shape: const RoundedRectangleBorder(),
+              ),
+              onPressed: () => widget.onSection(item),
+              child: Text(item,
+                  style: TextStyle(
+                      fontWeight: item == widget.section
+                          ? FontWeight.w700
+                          : FontWeight.w500)),
             ),
-            onPressed: () => onSection(item),
-            child: Text(item,
-                style: TextStyle(
-                    fontWeight:
-                        item == section ? FontWeight.w700 : FontWeight.w500)),
           ),
-        ),
     ];
+    final empty = const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child:
+          Text('No matching menus', style: TextStyle(color: Color(0xFFC5D4E5))),
+    );
     if (compact)
       return Material(
         color: _navy,
-        child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal, child: Row(children: items)),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          search,
+          if (items.isEmpty)
+            empty
+          else
+            SingleChildScrollView(
+                scrollDirection: Axis.horizontal, child: Row(children: items)),
+        ]),
       );
     return Material(
       color: _navy,
@@ -121,7 +177,8 @@ class InventoryWorkspace extends StatelessWidget {
                     color: Colors.white,
                     fontWeight: FontWeight.w800)),
           ),
-          ...items,
+          search,
+          if (items.isEmpty) empty else ...items,
         ],
       ),
     );
@@ -156,9 +213,13 @@ class InventoryWorkspace extends StatelessWidget {
                       constraints: const BoxConstraints(maxWidth: 230),
                       child: DropdownButtonFormField<String>(
                         key: ValueKey(
-                            locations.containsKey(location) ? location : ''),
+                            widget.locations.containsKey(widget.location)
+                                ? widget.location
+                                : ''),
                         initialValue:
-                            locations.containsKey(location) ? location : '',
+                            widget.locations.containsKey(widget.location)
+                                ? widget.location
+                                : '',
                         isExpanded: true,
                         decoration: InputDecoration(
                           hintText: 'All locations',
@@ -167,29 +228,30 @@ class InventoryWorkspace extends StatelessWidget {
                         items: [
                           const DropdownMenuItem(
                               value: '', child: Text('All locations')),
-                          for (final entry in locations.entries)
+                          for (final entry in widget.locations.entries)
                             DropdownMenuItem(
                                 value: entry.key,
                                 child: Text(entry.value,
                                     overflow: TextOverflow.ellipsis)),
                         ],
                         onChanged: (value) =>
-                            onLocation(value == '' ? null : value),
+                            widget.onLocation(value == '' ? null : value),
                       ),
                     ),
                   ),
                 ),
                 IconButton(
-                  tooltip:
-                      dark ? 'Switch to light theme' : 'Switch to dark theme',
-                  onPressed: onTheme,
-                  icon: Icon(dark
+                  tooltip: widget.dark
+                      ? 'Switch to light theme'
+                      : 'Switch to dark theme',
+                  onPressed: widget.onTheme,
+                  icon: Icon(widget.dark
                       ? Icons.light_mode_outlined
                       : Icons.dark_mode_outlined),
                 ),
                 IconButton(
                   tooltip: 'Refresh inventory',
-                  onPressed: onRefresh,
+                  onPressed: widget.onRefresh,
                   icon: const Icon(Icons.refresh),
                 ),
               ],
@@ -200,7 +262,7 @@ class InventoryWorkspace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Theme(
-        data: inventoryTheme(dark),
+        data: inventoryTheme(widget.dark),
         child: Builder(
             builder: (context) => Scaffold(
                   body: SafeArea(
@@ -209,7 +271,7 @@ class InventoryWorkspace extends StatelessWidget {
                       final workspace = Column(children: [
                         _header(context, compact),
                         if (compact) _navigation(compact: true),
-                        Expanded(child: child),
+                        Expanded(child: widget.child),
                       ]);
                       if (compact) return workspace;
                       return Row(children: [

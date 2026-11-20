@@ -296,6 +296,33 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           reorder != null &&
           (row.data()['quantity'] as int) < reorder;
     });
+    final normalizedQuery = _query.trim().toLowerCase();
+    final productRows = <List<Object>>[
+      for (final row in products.docs.take(100))
+        if (['name', 'sku'].any((key) =>
+            '${row.data()[key] ?? ''}'.toLowerCase().contains(normalizedQuery)))
+          [
+            '${row.data()['sku'] ?? ''}',
+            productName(row.id),
+            '${row.data()['category'] ?? ''}',
+            '${stock[row.id] ?? '—'}',
+            row.data()['active'] == true ? 'Active' : 'Archived',
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(
+                tooltip: 'Edit stock for ${productName(row.id)}',
+                icon: const Icon(Icons.edit_outlined, size: 19),
+                onPressed: row.data()['active'] != true
+                    ? null
+                    : () => _movement(products.docs, null, true, row),
+              ),
+              IconButton(
+                tooltip: 'Edit details for ${productName(row.id)}',
+                icon: const Icon(Icons.edit_note_outlined, size: 21),
+                onPressed: () => _product(row),
+              ),
+            ]),
+          ],
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -349,6 +376,17 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           Text(
               '${products.docs.take(100).length} products shown · ${stock.values.fold<int>(0, (a, b) => a + b)} units in the balances shown'),
           const SizedBox(height: 14),
+          Text('Products', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          _table([
+            'SKU',
+            'Product',
+            'Category',
+            'Tracked stock',
+            'Status',
+            'Actions'
+          ], productRows),
+          const SizedBox(height: 20),
           Text('Low stock', style: Theme.of(context).textTheme.titleMedium),
           _table([
             'Product',
@@ -379,23 +417,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Category',
             'Tracked stock',
             'Status',
-            ''
-          ], [
-            for (final row in products.docs.take(100))
-              if (['name', 'sku'].any((key) => '${row.data()[key] ?? ''}'
-                  .toLowerCase()
-                  .contains(_query.toLowerCase().trim())))
-                [
-                  '${row.data()['sku'] ?? ''}',
-                  productName(row.id),
-                  '${row.data()['category'] ?? ''}',
-                  '${stock[row.id] ?? '—'}',
-                  row.data()['active'] == true ? 'Active' : 'Archived',
-                  TextButton(
-                      onPressed: () => _product(row),
-                      child: const Text('Edit')),
-                ],
-          ]),
+            'Actions'
+          ], productRows),
         ],
         if (_section == 'Stock Movements') ...[
           Wrap(
@@ -623,11 +646,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   Future<void> _movement(List<InventoryRow> products,
-      [InventoryRow? draft, bool countOnly = false]) async {
+      [InventoryRow? draft,
+      bool countOnly = false,
+      InventoryRow? selectedProduct]) async {
     final values = draft?.data() ?? {};
     var location = (values['location'] as String?) ?? _location;
     if (!_activeLocations.containsKey(location)) location = null;
-    var product = values['productId'] as String?;
+    var product = selectedProduct?.id ?? values['productId'] as String?;
     if (!products.take(100).any((p) => p.id == product)) product = null;
     var type = countOnly ? 'count' : values['type'] as String?;
     if (!inventoryMovementTypes.containsKey(type)) type = null;
@@ -643,31 +668,54 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final movementId = _store.newMovementId();
     final draftId = draft?.id ?? _store.newDraftId();
     final result = await _editor(
-      title: countOnly ? 'Record Physical Count' : 'Record Movement',
+      title: selectedProduct != null
+          ? 'Edit Stock'
+          : countOnly
+              ? 'Record Physical Count'
+              : 'Record Movement',
       fields: (update) => [
         if (!countOnly)
           _select('Movement type', type, inventoryMovementTypes,
               (v) => update(() => type = v)),
         _select('Where is the stock kept?', location, _activeLocations,
             (v) => update(() => location = v)),
-        _select(
-            'Product',
-            product,
-            {
-              for (final p in products.take(100))
-                p.id: '${p.data()['name']}'.trim().isEmpty
-                    ? 'Unnamed product'
-                    : '${p.data()['name']}'
-            },
-            (v) => update(() => product = v)),
-        _input(quantity, countOnly ? 'Counted quantity' : 'Quantity',
+        if (selectedProduct != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+                'Product: ${selectedProduct.data()['name'] ?? ''}\nEnter the new total for the selected location. A stock movement will record the difference.'),
+          )
+        else
+          _select(
+              'Product',
+              product,
+              {
+                for (final p in products.take(100))
+                  p.id: '${p.data()['name']}'.trim().isEmpty
+                      ? 'Unnamed product'
+                      : '${p.data()['name']}'
+              },
+              (v) => update(() => product = v)),
+        _input(
+            quantity,
+            selectedProduct != null
+                ? 'New quantity on hand'
+                : countOnly
+                    ? 'Counted quantity'
+                    : 'Quantity',
             number: true),
         _input(note, 'Note'),
       ],
-      action: countOnly ? 'Post Count' : 'Post Movement',
+      action: selectedProduct != null
+          ? 'Save Stock'
+          : countOnly
+              ? 'Post Count'
+              : 'Post Movement',
       save: () =>
           _store.post(input(), movementId: movementId, draftId: draft?.id),
-      saveDraft: () => _store.saveDraft(input(), id: draftId),
+      saveDraft: selectedProduct != null
+          ? null
+          : () => _store.saveDraft(input(), id: draftId),
     );
     quantity.dispose();
     note.dispose();
@@ -719,7 +767,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }) async {
     var busy = false;
     String? error;
-    final result = await showDialog<bool>(
+    final route = DialogRoute<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialog) => Theme(
@@ -784,6 +832,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             );
           })),
     );
+    final result = await Navigator.of(context, rootNavigator: true).push(route);
+    await route.completed;
     return result == true;
   }
 }
