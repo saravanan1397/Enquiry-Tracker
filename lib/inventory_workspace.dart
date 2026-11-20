@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 const inventorySections = [
   'Overview',
   'Products',
-  'Locations',
+  physicalStockSection,
   'Stock Movements',
-  'Stock Counts',
-  'Reports'
+  'Reports',
+  'Locations',
 ];
+const physicalStockSection = 'Physical Stock';
 const inventoryTitle = 'SSH Centralized Inventory';
 
 ThemeData inventoryTheme(bool dark) {

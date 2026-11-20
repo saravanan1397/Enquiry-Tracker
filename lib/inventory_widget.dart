@@ -3,11 +3,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'inventory_workspace.dart';
+import 'services/export_file_downloader.dart';
+import 'services/inventory_report_export.dart';
 import 'services/inventory_store.dart';
 
 class InventoryWidgetScreen extends StatefulWidget {
@@ -81,7 +84,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       _store.products(),
       if (['Overview', 'Products', 'Reports'].contains(_section))
         _store.balances(location: _location),
-      if (_section == 'Stock Counts') _store.counts(location: _location),
+      if (_section == physicalStockSection) _store.counts(location: _location),
       if (_section == 'Stock Movements') ...[
         _store.movements(location: _location),
         _store.drafts(location: _location),
@@ -253,28 +256,36 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         locationNames[id] ?? (id as String? ?? '—');
     final title = _section == 'Overview' ? 'Inventory Overview' : _section;
     final reportHeadings = ['Product', 'Location', 'On hand', 'Reorder at'];
-    final reportRows = [
+    final reportRows = <List<Object>>[
       for (final row in rows.docs.take(100))
         if (_section == 'Reports')
           [
             productName(row.data()['productId'] as String?),
             locationName(row.data()['location']),
-            '${row.data()['quantity']}',
-            '${byProduct[row.data()['productId']]?['reorder'] ?? ''}',
+            row.data()['quantity'] as int,
+            (byProduct[row.data()['productId']]?['reorder'] as int?) ?? '',
           ],
     ];
     final action = _section == 'Products'
         ? FilledButton(onPressed: _product, child: const Text('Add Product'))
         : _section == 'Reports'
-            ? FilledButton(
-                onPressed: reportRows.isEmpty
-                    ? null
-                    : () => _exportReport(reportHeadings, reportRows),
-                child: const Text('Export CSV'))
+            ? Wrap(spacing: 8, runSpacing: 8, children: [
+                OutlinedButton(
+                    onPressed: reportRows.isEmpty
+                        ? null
+                        : () => _exportReport(reportHeadings, reportRows),
+                    child: const Text('Export CSV')),
+                FilledButton(
+                    onPressed: reportRows.isEmpty
+                        ? null
+                        : () => _exportReport(reportHeadings, reportRows,
+                            excel: true),
+                    child: const Text('Export Excel')),
+              ])
             : FilledButton(
-                onPressed: () =>
-                    _movement(products.docs, null, _section == 'Stock Counts'),
-                child: Text(_section == 'Stock Counts'
+                onPressed: () => _movement(
+                    products.docs, null, _section == physicalStockSection),
+                child: Text(_section == physicalStockSection
                     ? 'Record Count'
                     : 'Record Movement'),
               );
@@ -349,7 +360,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           const SizedBox(height: 12),
           _table(reportHeadings, reportRows),
         ],
-        if (_section == 'Stock Counts') ...[
+        if (_section == physicalStockSection) ...[
           const Text(
               'A physical count records the difference and updates stock when posted.'),
           const SizedBox(height: 12),
@@ -502,23 +513,37 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     );
   }
 
-  Future<void> _exportReport(
-      List<String> headers, List<List<String>> rows) async {
+  Future<void> _exportReport(List<String> headers, List<List<Object>> rows,
+      {bool excel = false}) async {
     String cell(String value) {
       final safe =
           RegExp(r'^\s*[=+@-]|^[\t\r\n]').hasMatch(value) ? "'$value" : value;
       return '"${safe.replaceAll('"', '""')}"';
     }
 
-    final content =
-        [headers, ...rows].map((row) => row.map(cell).join(',')).join('\r\n');
     try {
+      final fileName = excel
+          ? stockReportFileName(DateTime.now())
+          : 'ssh-inventory-stock.csv';
+      final bytes = excel
+          ? buildInventoryWorkbook(headers, rows)
+          : Uint8List.fromList(utf8.encode('\uFEFF' +
+              [headers, ...rows]
+                  .map((row) =>
+                      row.map((value) => cell(value.toString())).join(','))
+                  .join('\r\n')));
+      if (excel && kIsWeb) {
+        await downloadExcelExport(bytes, fileName);
+        return;
+      }
       await SharePlus.instance.share(ShareParams(
         files: [
-          XFile.fromData(Uint8List.fromList(utf8.encode('\uFEFF$content')),
-              mimeType: 'text/csv')
+          XFile.fromData(bytes,
+              mimeType: excel
+                  ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                  : 'text/csv')
         ],
-        fileNameOverrides: ['ssh-inventory-stock.csv'],
+        fileNameOverrides: [fileName],
         downloadFallbackEnabled: true,
       ));
     } catch (_) {

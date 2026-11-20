@@ -4,6 +4,17 @@ import '../lib/inventory_workspace.dart';
 import '../lib/services/inventory_store.dart';
 
 void main() {
+  test('sidebar keeps the requested order and preserves Locations', () {
+    expect(inventorySections, [
+      'Overview',
+      'Products',
+      'Physical Stock',
+      'Stock Movements',
+      'Reports',
+      'Locations',
+    ]);
+  });
+
   testWidgets('desktop uses a sidebar and toggles only the workspace theme',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
