@@ -114,6 +114,29 @@ class _Store implements InventoryStore {
 
 void main() {
   testWidgets(
+      'product columns have the same fixed width on wide and narrow displays',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(2200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: InventoryWidgetScreen(store: _Store(withStock: true))));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(DataTable).first).width, 872);
+    await tester.tap(find.text('Products').first);
+    await tester.pumpAndSettle();
+    final table = find.byType(DataTable);
+    expect(tester.getSize(table).width, 872);
+    expect(
+        tester.getTopLeft(find.text('Tracked stock')).dx -
+            tester.getTopLeft(find.text('Category')).dx,
+        lessThan(160));
+    await tester.binding.setSurfaceSize(const Size(590, 900));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(table).width, 872);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
       'movement filters share a desktop row and stock tables stay compact',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1800, 900));

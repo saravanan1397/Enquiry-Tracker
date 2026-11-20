@@ -535,15 +535,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           const SizedBox(height: 14),
           Text('Products', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          _table([
-            'SKU',
-            'Product',
-            'Barcode',
-            'Category',
-            'Tracked stock',
-            'Status',
-            'Actions'
-          ], productRows),
+          _productsTable(productRows),
           const SizedBox(height: 20),
           Text('Low stock', style: Theme.of(context).textTheme.titleMedium),
           _table([
@@ -562,15 +554,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ]),
         ],
         if (_section == 'Products') ...[
-          _table([
-            'SKU',
-            'Product',
-            'Barcode',
-            'Category',
-            'Tracked stock',
-            'Status',
-            'Actions'
-          ], productRows, compactWidth: 860, columnSpacing: 24),
+          _productsTable(productRows),
         ],
         if (_section == inventoryHistorySection) ...[
           LayoutBuilder(builder: (context, limits) {
@@ -793,8 +777,22 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(dt))}';
   }
 
+  Widget _productsTable(List<List<Object>> rows) => _table(
+        const [
+          'SKU',
+          'Product',
+          'Barcode',
+          'Category',
+          'Tracked stock',
+          'Status',
+          'Actions'
+        ],
+        rows,
+        fixedWidths: const [92, 194, 126, 128, 114, 92, 126],
+      );
+
   Widget _table(List<String> headings, List<List<Object>> rows,
-      {double? compactWidth, double? columnSpacing}) {
+      {double? compactWidth, List<double>? fixedWidths}) {
     return LayoutBuilder(builder: (context, constraints) {
       final scheme = Theme.of(context).colorScheme;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -803,8 +801,10 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-                minWidth: constraints.maxWidth
-                    .clamp(0.0, compactWidth ?? constraints.maxWidth)),
+                minWidth: fixedWidths != null
+                    ? 0
+                    : constraints.maxWidth
+                        .clamp(0.0, compactWidth ?? constraints.maxWidth)),
             child: DataTable(
               headingRowHeight: 42,
               dataRowMinHeight: 37,
@@ -814,35 +814,40 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               headingTextStyle: TextStyle(
                   color: scheme.onSurface, fontWeight: FontWeight.w800),
               horizontalMargin: 14,
-              columnSpacing: columnSpacing ?? (compactWidth == null ? 24 : 16),
+              columnSpacing: compactWidth == null ? 24 : 16,
               dividerThickness: 1,
-              columns: headings
-                  .map((text) => DataColumn(
-                      label: Text(text),
-                      numeric: [
-                        'Quantity',
-                        'Change',
-                        'Balance',
-                        'Balance stock',
-                        'On hand',
-                        'Reorder at',
-                        'Unit cost INR',
-                        'Stock value INR',
-                        'Tracked stock'
-                      ].contains(text)))
-                  .toList(),
+              columns: headings.indexed.map(((int, String) column) {
+                final (index, text) = column;
+                return DataColumn(
+                    label: fixedWidths == null
+                        ? Text(text)
+                        : Flexible(
+                            child: Text(text,
+                                softWrap: true,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis)),
+                    columnWidth: fixedWidths == null
+                        ? null
+                        : FixedColumnWidth(fixedWidths[index]),
+                    numeric: [
+                      'Quantity',
+                      'Change',
+                      'Balance',
+                      'Balance stock',
+                      'On hand',
+                      'Reorder at',
+                      'Unit cost INR',
+                      'Stock value INR',
+                      'Tracked stock'
+                    ].contains(text));
+              }).toList(),
               rows: rows
                   .map((row) => DataRow(cells: [
                         for (final (index, cell) in row.indexed)
                           DataCell(cell is Widget
                               ? cell
-                              : Text(cell is num &&
-                                      headings[index].endsWith(' INR')
-                                  ? cell.toStringAsFixed(2)
-                                  : cell is num &&
-                                          headings[index] == 'Balance stock'
-                                      ? cell.toStringAsFixed(0)
-                                      : cell.toString())),
+                              : _tableText(
+                                  cell, headings[index], fixedWidths != null)),
                       ]))
                   .toList(),
             ),
@@ -856,6 +861,20 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                   : 'No matching records.')),
       ]);
     });
+  }
+
+  Widget _tableText(Object value, String heading, bool fixedWidth) {
+    final text = value is num && heading.endsWith(' INR')
+        ? value.toStringAsFixed(2)
+        : value is num && heading == 'Balance stock'
+            ? value.toStringAsFixed(0)
+            : value.toString();
+    final label = Text(text,
+        maxLines: fixedWidth ? 2 : null,
+        overflow: fixedWidth ? TextOverflow.ellipsis : null);
+    return fixedWidth && text.length >= 14
+        ? Tooltip(message: text, child: label)
+        : label;
   }
 
   Future<void> _product([InventoryRow? row]) async {
