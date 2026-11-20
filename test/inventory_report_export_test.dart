@@ -13,7 +13,7 @@ void main() {
 
   test('stock report has numeric quantities and literal product names', () {
     final bytes = buildInventoryWorkbook(
-      ['Product', 'Location', 'On hand', 'Reorder at'],
+      ['Product', 'Location', 'In hand', 'Reorder at'],
       [
         ['=A1 & <sample>', 'SSH Market', 0, ''],
         ['Mixer', 'SSH Warehouse', 12, 5],
@@ -27,7 +27,7 @@ void main() {
     expect(xml('xl/_rels/workbook.xml.rels'),
         contains('Target="worksheets/sheet1.xml"'));
     final sheet = xml('xl/worksheets/sheet1.xml');
-    expect(sheet, contains('On hand'));
+    expect(sheet, contains('In hand'));
     expect(sheet, contains('=A1 &amp; &lt;sample&gt;'));
     expect(sheet, isNot(contains('<f>')));
     expect(sheet, contains('<v>0</v>'));

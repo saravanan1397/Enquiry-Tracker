@@ -399,7 +399,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final reportHeadings = [
       'Product',
       'Location',
-      'On hand',
+      'In hand',
       'Reorder at',
       'Unit cost INR',
       'Stock value INR'
@@ -607,7 +607,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           _table([
             'Product',
             'Location',
-            'On hand',
+            'In hand',
             'Reorder at'
           ], [
             for (final row in low)
@@ -925,7 +925,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                           'Change',
                           'Balance',
                           'Balance stock',
-                          'On hand',
+                          'In hand',
                           'Reorder at',
                           'Unit cost INR',
                           'Stock value INR',
@@ -1118,7 +1118,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         _input(
             quantity,
             selectedProduct != null
-                ? 'New quantity on hand'
+                ? 'New quantity in hand'
                 : switch (stockType) {
                     'sale' => 'Outgoing stock',
                     _ => 'Quantity',

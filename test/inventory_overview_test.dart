@@ -201,7 +201,7 @@ void main() {
     await tester.tap(pencil);
     await tester.pumpAndSettle();
     expect(find.text('Location: SSH Warehouse'), findsOneWidget);
-    final quantity = find.widgetWithText(TextField, 'New quantity on hand');
+    final quantity = find.widgetWithText(TextField, 'New quantity in hand');
     expect(tester.widget<TextField>(quantity).controller!.text, '1');
     await tester.enterText(quantity, '9');
     await tester.tap(find.text('Save Stock'));
@@ -282,7 +282,7 @@ void main() {
     await tester.tap(find.byTooltip('Edit stock for Cookware Fixture'));
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextField, 'New quantity on hand'), '100');
+        find.widgetWithText(TextField, 'New quantity in hand'), '100');
     await tester.tap(find.text('Save Stock'));
     await tester.pumpAndSettle();
     expect(find.text('100'), findsOneWidget);
@@ -414,7 +414,7 @@ void main() {
     await tester.tap(find.text('SSH Warehouse').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextField, 'New quantity on hand'), '7');
+        find.widgetWithText(TextField, 'New quantity in hand'), '7');
     await tester.tap(find.text('Save Stock'));
     await tester.pumpAndSettle();
     expect(store.posted?.productId, 'p1');
