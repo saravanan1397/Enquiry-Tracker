@@ -381,7 +381,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 ] else ...[
                   if (widget.adminDark != null && _section == 'Overview') ...[
                     OutlinedButton(
-                      onPressed: () => _launchTrustedAction('backup'),
+                      onPressed: _showBackupDeviceOptions,
                       child: const Text('Back up now'),
                     ),
                     OutlinedButton(
@@ -606,6 +606,41 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     );
   }
 
+  Future<void> _showBackupDeviceOptions() => showDialog<void>(
+        context: context,
+        builder: (dialog) => Theme(
+          data: inventoryTheme(_workspaceDark),
+          child: AlertDialog(
+            title: const Text('Back up inventory'),
+            content: const Text(
+              'Do you trust this device to store encrypted backups? '
+              'Choose a local folder, or use the folder already saved on this PC. '
+              'A new Windows PC needs the backup helper installed first.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialog).pop(),
+                child: const Text('Cancel'),
+              ),
+              OutlinedButton(
+                onPressed: () {
+                  Navigator.of(dialog).pop();
+                  unawaited(_launchTrustedAction('backup'));
+                },
+                child: const Text('Use saved folder'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(dialog).pop();
+                  unawaited(_launchTrustedAction('trust'));
+                },
+                child: const Text('Trust this device'),
+              ),
+            ],
+          ),
+        ),
+      );
+
   Future<void> _launchTrustedAction(String action) async {
     try {
       if (await launchUrl(Uri(scheme: 'centralized-inventory', host: action),
@@ -613,7 +648,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         if (mounted)
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text(
-                  'Continue in the trusted Windows backup helper. After restoring, refresh Inventory.')));
+                  'Continue in the trusted Windows backup helper. If it does not open, set it up on this PC first.')));
         return;
       }
     } catch (_) {}

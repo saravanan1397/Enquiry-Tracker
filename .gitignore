@@ -12,5 +12,6 @@ apk/
 
 # Local backup credentials must never be committed.
 /Inventory Backup/
+*.etbackup
 Git secrets.txt
 sshtrackingapp-*.json

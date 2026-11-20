@@ -101,6 +101,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Back up now'), findsOneWidget);
     expect(find.text('Restore from backup'), findsOneWidget);
+    await tester.tap(find.text('Back up now'));
+    await tester.pumpAndSettle();
+    expect(find.text('Back up inventory'), findsOneWidget);
+    expect(find.text('Trust this device'), findsOneWidget);
+    expect(find.text('Use saved folder'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Back up inventory'), findsNothing);
     await tester.tap(find.text('Physical Stock'));
     await tester.pumpAndSettle();
     expect(find.text('Balance stock'), findsOneWidget);
