@@ -16,6 +16,8 @@ void main() {
     await store.writeOwnerView(OwnerWorkspaceView.sales);
 
     expect(await store.readOwnerView(), OwnerWorkspaceView.sales);
+    await store.writeOwnerView(OwnerWorkspaceView.inventory);
+    expect(await store.readOwnerView(), OwnerWorkspaceView.inventory);
   });
 
   test('admin logout resets the next login to the widgets home page', () async {

@@ -14,9 +14,11 @@ import 'services/inventory_report_export.dart';
 import 'services/inventory_store.dart';
 
 class InventoryWidgetScreen extends StatefulWidget {
-  const InventoryWidgetScreen({super.key, this.store});
+  const InventoryWidgetScreen({super.key, this.store, this.adminDark});
 
   final InventoryStore? store;
+  // When provided, the host admin shell controls the workspace theme.
+  final bool? adminDark;
 
   @override
   State<InventoryWidgetScreen> createState() => _InventoryWidgetScreenState();
@@ -35,6 +37,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   String? _location;
   final _search = TextEditingController();
   var _dark = false;
+  bool get _workspaceDark => widget.adminDark ?? _dark;
   var _themeChanged = false;
   String? _movementType;
   DateTimeRange? _movementDates;
@@ -46,7 +49,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     super.initState();
     _loadLocations();
     _load();
-    unawaited(_loadTheme());
+    if (widget.adminDark == null) unawaited(_loadTheme());
   }
 
   @override
@@ -110,7 +113,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   Widget build(BuildContext context) => FutureBuilder<List<InventoryLocation>>(
       future: _locationData,
       builder: (context, locationSnapshot) => InventoryWorkspace(
-            dark: _dark,
+            dark: _workspaceDark,
+            embedded: widget.adminDark != null,
             section: _section,
             location: _location,
             locations: _activeLocations,
@@ -629,7 +633,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       lastDate: DateTime(now.year + 1, 12, 31),
       initialDateRange: _movementDates,
       builder: (context, child) =>
-          Theme(data: inventoryTheme(_dark), child: child!),
+          Theme(data: inventoryTheme(_workspaceDark), child: child!),
     );
     if (range != null && mounted) setState(() => _movementDates = range);
   }
@@ -853,7 +857,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialog) => Theme(
-          data: inventoryTheme(_dark),
+          data: inventoryTheme(_workspaceDark),
           child: StatefulBuilder(builder: (dialog, update) {
             Future<void> submit(Future<void> Function() task) async {
               update(() {

@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/customer_lead.dart';
+import 'inventory_widget.dart';
 import 'owner_home.dart';
 import 'email_recovery_ui.dart';
 import 'promoter_deletion_dialog.dart';
@@ -844,13 +845,15 @@ class _LeadloopShellState extends State<LeadloopShell> {
   int _tab = 0;
   bool _ownerFollowupOpen = false;
   bool _ownerSalesOpen = false;
+  bool _ownerInventoryOpen = false;
   bool _ownerViewTouched = false;
   final WorkspaceStateStore _workspaceState = const WorkspaceStateStore();
   final ValueNotifier<int> _leadRevision = ValueNotifier(0);
   final ValueNotifier<List<LeadloopPromoterProfile>?> _promoterProfiles =
       ValueNotifier(null);
 
-  bool get _ownerModuleOpen => _ownerFollowupOpen || _ownerSalesOpen;
+  bool get _ownerModuleOpen =>
+      _ownerFollowupOpen || _ownerSalesOpen || _ownerInventoryOpen;
 
   void _ownerBack() => _openOwnerView(OwnerWorkspaceView.dashboard);
 
@@ -859,6 +862,7 @@ class _LeadloopShellState extends State<LeadloopShell> {
     _ownerFollowupOpen = view == OwnerWorkspaceView.followups ||
         view == OwnerWorkspaceView.promoters;
     _ownerSalesOpen = view == OwnerWorkspaceView.sales;
+    _ownerInventoryOpen = kIsWeb && view == OwnerWorkspaceView.inventory;
   }
 
   void _openOwnerView(OwnerWorkspaceView view) {
@@ -1197,7 +1201,9 @@ class _LeadloopShellState extends State<LeadloopShell> {
     final isAdmin = widget.role == LeadloopRole.admin;
     final compactHeader = MediaQuery.sizeOf(context).width < 720;
     final Widget workspaceBody;
-    if (isAdmin && _ownerSalesOpen) {
+    if (isAdmin && _ownerInventoryOpen) {
+      workspaceBody = InventoryWidgetScreen(adminDark: widget.isDarkMode);
+    } else if (isAdmin && _ownerSalesOpen) {
       workspaceBody = SalesTrackerScreen(
         backend: _salesBackend,
         ownerUid: widget.session.uid,
@@ -1213,6 +1219,9 @@ class _LeadloopShellState extends State<LeadloopShell> {
               onFollowup: () => _openOwnerView(OwnerWorkspaceView.followups),
               onSales: kIsWeb
                   ? () => _openOwnerView(OwnerWorkspaceView.sales)
+                  : null,
+              onInventory: kIsWeb
+                  ? () => _openOwnerView(OwnerWorkspaceView.inventory)
                   : null,
             );
           }
@@ -1243,11 +1252,13 @@ class _LeadloopShellState extends State<LeadloopShell> {
     }
     final workspaceKey = !isAdmin
         ? 'promoter'
-        : _ownerSalesOpen
-            ? 'sales'
-            : !_ownerModuleOpen
-                ? 'dashboard'
-                : 'followup-workspace';
+        : _ownerInventoryOpen
+            ? 'inventory'
+            : _ownerSalesOpen
+                ? 'sales'
+                : !_ownerModuleOpen
+                    ? 'dashboard'
+                    : 'followup-workspace';
     return PopScope(
       canPop: !isAdmin || !_ownerModuleOpen,
       onPopInvokedWithResult: (didPop, _) {

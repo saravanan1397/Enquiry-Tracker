@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
-import 'inventory_widget.dart';
 import 'inventory_workspace.dart';
 import 'models/customer_lead.dart';
 import 'services/follow_up_deadline_service.dart';
@@ -12,11 +11,13 @@ class OwnerHome extends StatelessWidget {
     required this.leads,
     required this.onFollowup,
     required this.onSales,
+    this.onInventory,
   });
 
   final List<CustomerLead> leads;
   final VoidCallback onFollowup;
   final VoidCallback? onSales;
+  final VoidCallback? onInventory;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -110,11 +111,7 @@ class OwnerHome extends StatelessWidget {
                         Color(0xFF173538),
                       ],
                       metrics: const [('WORKSPACE', 'IS')],
-                      onTap: () => Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const InventoryWidgetScreen(),
-                        ),
-                      ),
+                      onTap: onInventory,
                     );
                     if (constraints.maxWidth < 920) {
                       return Column(

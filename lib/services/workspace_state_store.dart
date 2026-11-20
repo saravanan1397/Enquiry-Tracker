@@ -1,6 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-enum OwnerWorkspaceView { dashboard, followups, sales, promoters }
+enum OwnerWorkspaceView { dashboard, followups, sales, promoters, inventory }
 
 class WorkspaceStateStore {
   const WorkspaceStateStore({FlutterSecureStorage? storage})

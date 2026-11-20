@@ -86,4 +86,50 @@ void main() {
     expect(find.byTooltip('Switch to dark theme'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('embedded inventory uses its host controls and theme',
+      (tester) async {
+    var dark = false;
+    Brightness? inventoryBrightness;
+    await tester.pumpWidget(MaterialApp(
+      home: StatefulBuilder(
+        builder: (context, setState) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Selvan Steel House'),
+            actions: [
+              IconButton(
+                tooltip: 'Admin theme',
+                onPressed: () => setState(() => dark = true),
+                icon: const Icon(Icons.dark_mode_outlined),
+              ),
+            ],
+          ),
+          body: InventoryWorkspace(
+            dark: dark,
+            embedded: true,
+            section: 'Overview',
+            location: null,
+            locations: inventoryLocations,
+            onSection: (_) {},
+            onLocation: (_) {},
+            onTheme: () {},
+            onRefresh: () {},
+            child: Builder(builder: (context) {
+              inventoryBrightness = Theme.of(context).brightness;
+              return const Text('Inventory Overview');
+            }),
+          ),
+        ),
+      ),
+    ));
+    expect(find.byType(Scaffold), findsOneWidget);
+    expect(find.text('Selvan Steel House'), findsOneWidget);
+    expect(find.text('Inventory Overview'), findsOneWidget);
+    expect(find.byTooltip('Back to admin dashboard'), findsNothing);
+    expect(find.byTooltip('Switch to dark theme'), findsNothing);
+    expect(find.byTooltip('Refresh inventory'), findsOneWidget);
+    await tester.tap(find.byTooltip('Admin theme'));
+    await tester.pumpAndSettle();
+    expect(inventoryBrightness, Brightness.dark);
+  });
 }

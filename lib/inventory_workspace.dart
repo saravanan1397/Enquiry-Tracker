@@ -59,6 +59,7 @@ class InventoryWorkspace extends StatefulWidget {
   const InventoryWorkspace({
     super.key,
     required this.dark,
+    this.embedded = false,
     required this.section,
     required this.location,
     required this.locations,
@@ -70,6 +71,7 @@ class InventoryWorkspace extends StatefulWidget {
   });
 
   final bool dark;
+  final bool embedded;
   final String section;
   final String? location;
   final Map<String, String> locations;
@@ -196,11 +198,12 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Row(
               children: [
-                IconButton(
-                  tooltip: 'Back to admin dashboard',
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back),
-                ),
+                if (!widget.embedded)
+                  IconButton(
+                    tooltip: 'Back to admin dashboard',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.arrow_back),
+                  ),
                 if (!compact)
                   const Padding(
                     padding: EdgeInsets.only(left: 9, right: 12),
@@ -241,15 +244,16 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
                     ),
                   ),
                 ),
-                IconButton(
-                  tooltip: widget.dark
-                      ? 'Switch to light theme'
-                      : 'Switch to dark theme',
-                  onPressed: widget.onTheme,
-                  icon: Icon(widget.dark
-                      ? Icons.light_mode_outlined
-                      : Icons.dark_mode_outlined),
-                ),
+                if (!widget.embedded)
+                  IconButton(
+                    tooltip: widget.dark
+                        ? 'Switch to light theme'
+                        : 'Switch to dark theme',
+                    onPressed: widget.onTheme,
+                    icon: Icon(widget.dark
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined),
+                  ),
                 IconButton(
                   tooltip: 'Refresh inventory',
                   onPressed: widget.onRefresh,
@@ -264,24 +268,25 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
   @override
   Widget build(BuildContext context) => Theme(
         data: inventoryTheme(widget.dark),
-        child: Builder(
-            builder: (context) => Scaffold(
-                  body: SafeArea(
-                    child: LayoutBuilder(builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 750;
-                      final workspace = Column(children: [
-                        _header(context, compact),
-                        if (compact) _navigation(compact: true),
-                        Expanded(child: widget.child),
-                      ]);
-                      if (compact) return workspace;
-                      return Row(children: [
-                        SizedBox(
-                            width: 207, child: _navigation(compact: false)),
-                        Expanded(child: workspace),
-                      ]);
-                    }),
-                  ),
-                )),
+        child: Builder(builder: (context) {
+          final layout = LayoutBuilder(builder: (context, constraints) {
+            final compact = constraints.maxWidth < 750;
+            final workspace = Column(children: [
+              _header(context, compact),
+              if (compact) _navigation(compact: true),
+              Expanded(child: widget.child),
+            ]);
+            if (compact) return workspace;
+            return Row(children: [
+              SizedBox(width: 207, child: _navigation(compact: false)),
+              Expanded(child: workspace),
+            ]);
+          });
+          return widget.embedded
+              ? Material(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: layout)
+              : Scaffold(body: SafeArea(child: layout));
+        }),
       );
 }
