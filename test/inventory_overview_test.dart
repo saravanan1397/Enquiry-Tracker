@@ -93,6 +93,44 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  testWidgets(
+      'movement filters share a desktop row and stock tables stay compact',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1800, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: InventoryWidgetScreen(store: _Store(withStock: true))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Physical Stock'));
+    await tester.pumpAndSettle();
+    final location = tester.getTopLeft(find.text('Location'));
+    final balance = tester.getTopLeft(find.text('Balance stock'));
+    expect(balance.dx - location.dx, lessThan(300));
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('1.00'), findsNothing);
+
+    await tester.tap(find.text('Stock Movements'));
+    await tester.pumpAndSettle();
+    final search = find.byKey(const ValueKey('inventory-view-search'));
+    final type = find.text('All types');
+    final date = find.text('Any date');
+    expect(tester.getCenter(search).dy, closeTo(tester.getCenter(type).dy, 12));
+    expect(tester.getCenter(search).dy, closeTo(tester.getCenter(date).dy, 12));
+    expect(
+        tester.getTopLeft(type).dx, greaterThan(tester.getTopRight(search).dx));
+    expect(tester.getTopLeft(date).dx, greaterThan(tester.getTopLeft(type).dx));
+    expect(
+        tester.getTopLeft(find.text('Balance')).dx -
+            tester.getTopLeft(find.text('Movement')).dx,
+        lessThan(390));
+
+    await tester.binding.setSurfaceSize(const Size(590, 900));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(type).dy,
+        greaterThan(tester.getBottomLeft(search).dy));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Physical Stock sets totals and subtracts outgoing units',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));

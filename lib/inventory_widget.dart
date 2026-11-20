@@ -295,8 +295,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             (value) => (value?.toString() ?? '').toLowerCase().contains(term));
   }
 
-  Widget _viewSearch() => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
+  Widget _viewSearch({double bottom = 12}) => Padding(
+        padding: EdgeInsets.only(bottom: bottom),
         child: TextField(
           key: const ValueKey('inventory-view-search'),
           controller: _search,
@@ -495,7 +495,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ]);
         }),
         const SizedBox(height: 14),
-        _viewSearch(),
+        if (_section != 'Stock Movements') _viewSearch(),
         if (_section == 'Reports') ...[
           const Text(
               'Stock value uses each product’s saved unit cost. A blank value means the cost is missing or the amount exceeds the supported range. Exports contain the rows shown.'),
@@ -514,7 +514,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 locationName(row.data()['location']),
                 row.data()['quantity'] as int,
               ],
-          ]),
+          ], compactWidth: 520),
         ],
         if (_section == 'Overview') ...[
           Text(
@@ -560,40 +560,49 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ], productRows),
         ],
         if (_section == 'Stock Movements') ...[
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 200,
-                child: DropdownButtonFormField<String>(
-                  initialValue: _movementType ?? '',
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Type'),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('All types')),
-                    for (final entry in inventoryMovementLabels.entries)
-                      DropdownMenuItem(
-                          value: entry.key, child: Text(entry.value)),
-                  ],
-                  onChanged: (value) => setState(
-                      () => _movementType = value == '' ? null : value),
+          LayoutBuilder(builder: (context, limits) {
+            final width = limits.maxWidth;
+            final compact = width < 640;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: compact ? width : (width * .42).clamp(260.0, 480.0),
+                  child: _viewSearch(bottom: 0),
                 ),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _pickDates(context),
-                icon: const Icon(Icons.date_range_outlined),
-                label: Text(_movementDates == null
-                    ? 'Any date'
-                    : '${MaterialLocalizations.of(context).formatCompactDate(_movementDates!.start)} – ${MaterialLocalizations.of(context).formatCompactDate(_movementDates!.end)}'),
-              ),
-              if (_movementDates != null)
-                TextButton(
-                    onPressed: () => setState(() => _movementDates = null),
-                    child: const Text('Clear dates')),
-            ],
-          ),
+                SizedBox(
+                  width: width.clamp(0.0, 192.0),
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _movementType ?? '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Type'),
+                    items: [
+                      const DropdownMenuItem(
+                          value: '', child: Text('All types')),
+                      for (final entry in inventoryMovementLabels.entries)
+                        DropdownMenuItem(
+                            value: entry.key, child: Text(entry.value)),
+                    ],
+                    onChanged: (value) => setState(
+                        () => _movementType = value == '' ? null : value),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _pickDates(context),
+                  icon: const Icon(Icons.date_range_outlined),
+                  label: Text(_movementDates == null
+                      ? 'Any date'
+                      : '${MaterialLocalizations.of(context).formatCompactDate(_movementDates!.start)} – ${MaterialLocalizations.of(context).formatCompactDate(_movementDates!.end)}'),
+                ),
+                if (_movementDates != null)
+                  TextButton(
+                      onPressed: () => setState(() => _movementDates = null),
+                      child: const Text('Clear dates')),
+              ],
+            );
+          }),
           const SizedBox(height: 12),
           _table([
             'When',
@@ -615,7 +624,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     : '${row.data()['delta']}',
                 '${row.data()['quantityAfter']}',
               ],
-          ]),
+          ], compactWidth: 880),
           const SizedBox(height: 14),
           Text('Drafts', style: Theme.of(context).textTheme.titleMedium),
           _table([
@@ -767,7 +776,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(dt))}';
   }
 
-  Widget _table(List<String> headings, List<List<Object>> rows) {
+  Widget _table(List<String> headings, List<List<Object>> rows,
+      {double? compactWidth}) {
     return LayoutBuilder(builder: (context, constraints) {
       final scheme = Theme.of(context).colorScheme;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -775,7 +785,9 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            constraints: BoxConstraints(
+                minWidth: constraints.maxWidth
+                    .clamp(0.0, compactWidth ?? constraints.maxWidth)),
             child: DataTable(
               headingRowHeight: 42,
               dataRowMinHeight: 37,
@@ -785,7 +797,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               headingTextStyle: TextStyle(
                   color: scheme.onSurface, fontWeight: FontWeight.w800),
               horizontalMargin: 14,
-              columnSpacing: 24,
+              columnSpacing: compactWidth == null ? 24 : 16,
               dividerThickness: 1,
               columns: headings
                   .map((text) => DataColumn(
@@ -797,18 +809,24 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                         'Balance stock',
                         'On hand',
                         'Reorder at',
+                        'Unit cost INR',
+                        'Stock value INR',
                         'Tracked stock'
                       ].contains(text)))
                   .toList(),
               rows: rows
-                  .map((row) => DataRow(
-                      cells: row
-                          .map((cell) => DataCell(cell is Widget
+                  .map((row) => DataRow(cells: [
+                        for (final (index, cell) in row.indexed)
+                          DataCell(cell is Widget
                               ? cell
-                              : Text(cell is double
+                              : Text(cell is num &&
+                                      headings[index].endsWith(' INR')
                                   ? cell.toStringAsFixed(2)
-                                  : cell.toString())))
-                          .toList()))
+                                  : cell is num &&
+                                          headings[index] == 'Balance stock'
+                                      ? cell.toStringAsFixed(0)
+                                      : cell.toString())),
+                      ]))
                   .toList(),
             ),
           ),
