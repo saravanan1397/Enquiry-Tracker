@@ -33,7 +33,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       };
   var _section = 'Overview';
   String? _location;
-  var _query = '';
+  final _search = TextEditingController();
   var _dark = false;
   var _themeChanged = false;
   String? _movementType;
@@ -47,6 +47,12 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     _loadLocations();
     _load();
     unawaited(_loadTheme());
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   void _loadLocations() {
@@ -120,7 +126,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               if (_section == section) return;
               setState(() {
                 _section = section;
-                _query = '';
+                _search.clear();
                 _load();
               });
             },
@@ -182,6 +188,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             ],
           ),
           const SizedBox(height: 12),
+          _viewSearch(),
           const Text(
               'Active locations appear in the stock dropdowns. Deleted locations remain in history.'),
           const SizedBox(height: 12),
@@ -191,18 +198,20 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Actions'
           ], [
             for (final location in _locations)
-              [
-                location.name,
-                location.active ? 'Active' : 'Deleted',
-                Wrap(children: [
-                  TextButton(
-                      onPressed: () => _editLocation(location),
-                      child: const Text('Edit')),
-                  TextButton(
-                      onPressed: () => _changeLocationStatus(location),
-                      child: Text(location.active ? 'Delete' : 'Restore')),
-                ]),
-              ],
+              if (_matchesSearch(
+                  [location.name, location.active ? 'Active' : 'Deleted']))
+                [
+                  location.name,
+                  location.active ? 'Active' : 'Deleted',
+                  Wrap(children: [
+                    TextButton(
+                        onPressed: () => _editLocation(location),
+                        child: const Text('Edit')),
+                    TextButton(
+                        onPressed: () => _changeLocationStatus(location),
+                        child: Text(location.active ? 'Delete' : 'Restore')),
+                  ]),
+                ],
           ]),
         ],
       );
@@ -239,6 +248,44 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     }
   }
 
+  String get _searchTerm => _search.text.trim().toLowerCase();
+
+  bool _matchesSearch(Iterable<Object?> values) {
+    final term = _searchTerm;
+    return term.isEmpty ||
+        values.any(
+            (value) => (value?.toString() ?? '').toLowerCase().contains(term));
+  }
+
+  Widget _viewSearch() => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: TextField(
+          key: const ValueKey('inventory-view-search'),
+          controller: _search,
+          textInputAction: TextInputAction.search,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.search),
+            labelText: switch (_section) {
+              'Overview' ||
+              'Products' =>
+                'Search products by name, SKU or category',
+              physicalStockSection => 'Search physical stock',
+              'Stock Movements' => 'Search movements and drafts',
+              'Reports' => 'Search stock report',
+              _ => 'Search locations',
+            },
+            suffixIcon: _search.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear view search',
+                    onPressed: () => setState(_search.clear),
+                    icon: const Icon(Icons.clear),
+                  ),
+          ),
+        ),
+      );
+
   Widget _content(BuildContext context, List<InventoryRows> data) {
     final products = data.first;
     final rows = data[1];
@@ -254,11 +301,24 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     };
     String locationName(Object? id) =>
         locationNames[id] ?? (id as String? ?? '—');
+    bool matchesRecord(InventoryRow row) {
+      final item = row.data();
+      final id = item['productId'] as String?;
+      return _matchesSearch([
+        productName(id),
+        byProduct[id]?['sku'],
+        byProduct[id]?['category'],
+        locationName(item['location']),
+        inventoryMovementTypes[item['type']],
+        item['note'],
+      ]);
+    }
+
     final title = _section == 'Overview' ? 'Inventory Overview' : _section;
     final reportHeadings = ['Product', 'Location', 'On hand', 'Reorder at'];
     final reportRows = <List<Object>>[
       for (final row in rows.docs.take(100))
-        if (_section == 'Reports')
+        if (_section == 'Reports' && matchesRecord(row))
           [
             productName(row.data()['productId'] as String?),
             locationName(row.data()['location']),
@@ -305,13 +365,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       return _section != 'Stock Movements' &&
           p?['active'] == true &&
           reorder != null &&
-          (row.data()['quantity'] as int) < reorder;
+          (row.data()['quantity'] as int) < reorder &&
+          matchesRecord(row);
     });
-    final normalizedQuery = _query.trim().toLowerCase();
     final productRows = <List<Object>>[
       for (final row in products.docs.take(100))
-        if (['name', 'sku'].any((key) =>
-            '${row.data()[key] ?? ''}'.toLowerCase().contains(normalizedQuery)))
+        if (_matchesSearch(
+            [productName(row.id), row.data()['sku'], row.data()['category']]))
           [
             '${row.data()['sku'] ?? ''}',
             productName(row.id),
@@ -354,9 +414,10 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ]);
         }),
         const SizedBox(height: 14),
+        _viewSearch(),
         if (_section == 'Reports') ...[
           const Text(
-              'Stock on hand by location · CSV contains the rows shown here.'),
+              'Stock on hand by location · Excel and CSV contain the rows shown here.'),
           const SizedBox(height: 12),
           _table(reportHeadings, reportRows),
         ],
@@ -372,7 +433,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Counted',
             'Variance'
           ], [
-            for (final row in visibleRows)
+            for (final row in visibleRows.where(matchesRecord))
               [
                 _time(row.data()['at']),
                 productName(row.data()['productId'] as String?),
@@ -385,7 +446,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         ],
         if (_section == 'Overview') ...[
           Text(
-              '${products.docs.take(100).length} products shown · ${stock.values.fold<int>(0, (a, b) => a + b)} units in the balances shown'),
+              '${productRows.length} products shown · ${stock.values.fold<int>(0, (a, b) => a + b)} total units for the location filter'),
           const SizedBox(height: 14),
           Text('Products', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
@@ -415,13 +476,6 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ]),
         ],
         if (_section == 'Products') ...[
-          TextFormField(
-            initialValue: _query,
-            decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                labelText: 'Search displayed products by name or SKU'),
-            onChanged: (value) => setState(() => _query = value),
-          ),
           _table([
             'SKU',
             'Product',
@@ -475,7 +529,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Change',
             'Balance'
           ], [
-            for (final row in visibleRows.where(_matchesMovement))
+            for (final row in visibleRows
+                .where((row) => _matchesMovement(row) && matchesRecord(row)))
               [
                 _time(row.data()['at']),
                 productName(row.data()['productId'] as String?),
@@ -495,7 +550,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Quantity',
             ''
           ], [
-            for (final row in data[2].docs.take(100))
+            for (final row in data[2].docs.take(100).where(matchesRecord))
               [
                 productName(row.data()['productId'] as String?),
                 locationName(row.data()['location']),
@@ -629,9 +684,11 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ),
         ),
         if (rows.isEmpty)
-          const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-              child: Text('No records to show.')),
+          Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+              child: Text(_searchTerm.isEmpty
+                  ? 'No records to show.'
+                  : 'No matching records.')),
       ]);
     });
   }

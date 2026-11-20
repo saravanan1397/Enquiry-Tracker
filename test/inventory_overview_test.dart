@@ -25,6 +25,8 @@ class _Rows implements InventoryRows {
 }
 
 class _Store implements InventoryStore {
+  _Store({this.withStock = false});
+  final bool withStock;
   InventoryMovement? posted;
   @override
   Future<InventoryRows> products() async => _Rows([
@@ -36,7 +38,35 @@ class _Store implements InventoryStore {
         }),
       ]);
   @override
-  Future<InventoryRows> balances({String? location}) async => _Rows([]);
+  Future<InventoryRows> balances({String? location}) async => _Rows([
+        if (withStock)
+          _Row('balance',
+              {'productId': 'p1', 'location': 'warehouse', 'quantity': 1}),
+      ]);
+  @override
+  Future<InventoryRows> counts({String? location}) =>
+      movements(location: location);
+  @override
+  Future<InventoryRows> movements({String? location}) async => _Rows([
+        _Row('movement', {
+          'productId': 'p1',
+          'location': 'warehouse',
+          'type': 'count',
+          'before': 2,
+          'quantityAfter': 1,
+          'delta': -1,
+          'note': 'Shelf check',
+        }),
+      ]);
+  @override
+  Future<InventoryRows> drafts({String? location}) async => _Rows([
+        _Row('draft', {
+          'productId': 'p1',
+          'location': 'warehouse',
+          'quantity': 3,
+          'note': 'Awaiting invoice',
+        }),
+      ]);
   @override
   Future<List<InventoryLocation>> locations() async =>
       mergeInventoryLocations(const []);
@@ -55,6 +85,50 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  testWidgets('each inventory view searches its records independently of menus',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: InventoryWidgetScreen(store: _Store(withStock: true))));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('inventory-view-search'));
+    for (final (section, query, shown) in [
+      ('Overview', 'test-1', 'Cookware Fixture'),
+      ('Products', 'cookware', 'Cookware Fixture'),
+      ('Physical Stock', 'warehouse', 'Cookware Fixture'),
+      ('Stock Movements', 'awaiting invoice', 'Resume'),
+      ('Reports', 'warehouse', 'Cookware Fixture'),
+      ('Locations', 'selvan hotel', 'Selvan Hotel Mart'),
+    ]) {
+      if (section != 'Overview') {
+        await tester.tap(find.text(section).first);
+        await tester.pumpAndSettle();
+      }
+      expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+      await tester.enterText(field, query);
+      await tester.pumpAndSettle();
+      expect(find.text(shown), findsWidgets);
+      expect(find.text('Stock Movements'), findsWidgets);
+      await tester.enterText(field, 'no match');
+      await tester.pumpAndSettle();
+      expect(find.text(shown), findsNothing);
+      expect(find.text('No matching records.'), findsWidgets);
+      if (section == 'Reports') {
+        expect(
+            tester
+                .widget<FilledButton>(
+                    find.widgetWithText(FilledButton, 'Export Excel'))
+                .onPressed,
+            isNull);
+      }
+      await tester.tap(find.byTooltip('Clear view search'));
+      await tester.pumpAndSettle();
+      expect(find.text(shown), findsWidgets);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
       'Overview shows unstocked products and edits stock at a chosen location',
       (tester) async {
