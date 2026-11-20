@@ -461,20 +461,20 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             '${stock[row.id] ?? '—'}',
             row.data()['active'] == true ? 'Active' : 'Archived',
             Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(
-                tooltip: 'Edit stock for ${productName(row.id)}',
-                icon: const Icon(Icons.edit_outlined, size: 19),
-                onPressed: row.data()['active'] != true
-                    ? null
-                    : () => _movement(products.docs,
-                        stockType: 'count', selectedProduct: row),
-              ),
               if (_section != 'Products')
                 IconButton(
-                  tooltip: 'Edit details for ${productName(row.id)}',
-                  icon: const Icon(Icons.edit_note_outlined, size: 21),
-                  onPressed: () => _product(row),
+                  tooltip: 'Edit stock for ${productName(row.id)}',
+                  icon: const Icon(Icons.edit_outlined, size: 19),
+                  onPressed: row.data()['active'] != true
+                      ? null
+                      : () => _movement(products.docs,
+                          stockType: 'count', selectedProduct: row),
                 ),
+              IconButton(
+                tooltip: 'Edit details for ${productName(row.id)}',
+                icon: const Icon(Icons.edit_note_outlined, size: 21),
+                onPressed: () => _product(row),
+              ),
             ]),
           ],
     ];
@@ -520,14 +520,26 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 if (productDocuments[row.data()['productId']]
                     case final InventoryRow product)
                   IconButton(
-                    tooltip: 'Edit details for ${productName(product.id)}',
-                    icon: const Icon(Icons.edit_note_outlined, size: 21),
-                    onPressed: () => _product(product),
+                    tooltip: 'Edit stock for ${productName(product.id)}',
+                    icon: const Icon(Icons.edit_outlined, size: 19),
+                    onPressed: product.data()['active'] == true &&
+                            _activeLocations.containsKey(row.data()['location'])
+                        ? () => _movement(products.docs,
+                            stockType: 'count',
+                            selectedProduct: product,
+                            selectedLocation: row.data()['location'] as String,
+                            selectedQuantity: row.data()['quantity'] as int)
+                        : null,
                   )
                 else
                   const SizedBox.shrink(),
               ],
-          ], compactWidth: 520),
+          ], centeredWidths: const [
+            190,
+            180,
+            114,
+            100
+          ]),
         ],
         if (_section == 'Overview') ...[
           Text(
@@ -551,6 +563,11 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 '${row.data()['quantity']}',
                 '${byProduct[row.data()['productId']]?['reorder']}'
               ],
+          ], centeredWidths: const [
+            190,
+            180,
+            110,
+            116
           ]),
         ],
         if (_section == 'Products') ...[
@@ -788,20 +805,25 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           'Actions'
         ],
         rows,
-        fixedWidths: const [92, 194, 126, 128, 114, 92, 126],
+        centeredWidths: const [92, 194, 126, 128, 118, 92, 126],
       );
 
   Widget _table(List<String> headings, List<List<Object>> rows,
-      {double? compactWidth, List<double>? fixedWidths}) {
+      {double? compactWidth, List<double>? centeredWidths}) {
     return LayoutBuilder(builder: (context, constraints) {
       final scheme = Theme.of(context).colorScheme;
+      final centered = centeredWidths != null;
+      final minimum = centeredWidths?.fold<double>(0, (a, b) => a + b) ?? 0.0;
+      final extraPerColumn = centered && constraints.maxWidth > minimum
+          ? (constraints.maxWidth - minimum) / headings.length
+          : 0.0;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Divider(height: 1),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-                minWidth: fixedWidths != null
+                minWidth: centered
                     ? 0
                     : constraints.maxWidth
                         .clamp(0.0, compactWidth ?? constraints.maxWidth)),
@@ -813,41 +835,43 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                   WidgetStatePropertyAll(scheme.surfaceContainerLow),
               headingTextStyle: TextStyle(
                   color: scheme.onSurface, fontWeight: FontWeight.w800),
-              horizontalMargin: 14,
+              horizontalMargin: centered ? 12 : 14,
               columnSpacing: compactWidth == null ? 24 : 16,
               dividerThickness: 1,
               columns: headings.indexed.map(((int, String) column) {
                 final (index, text) = column;
                 return DataColumn(
-                    label: fixedWidths == null
+                    label: !centered
                         ? Text(text)
                         : Flexible(
                             child: Text(text,
+                                textAlign: TextAlign.center,
                                 softWrap: true,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis)),
-                    columnWidth: fixedWidths == null
+                    headingRowAlignment:
+                        centered ? MainAxisAlignment.center : null,
+                    columnWidth: !centered
                         ? null
-                        : FixedColumnWidth(fixedWidths[index]),
-                    numeric: [
-                      'Quantity',
-                      'Change',
-                      'Balance',
-                      'Balance stock',
-                      'On hand',
-                      'Reorder at',
-                      'Unit cost INR',
-                      'Stock value INR',
-                      'Tracked stock'
-                    ].contains(text));
+                        : FixedColumnWidth(
+                            centeredWidths[index] + extraPerColumn),
+                    numeric: !centered &&
+                        [
+                          'Quantity',
+                          'Change',
+                          'Balance',
+                          'Balance stock',
+                          'On hand',
+                          'Reorder at',
+                          'Unit cost INR',
+                          'Stock value INR',
+                          'Tracked stock'
+                        ].contains(text));
               }).toList(),
               rows: rows
                   .map((row) => DataRow(cells: [
                         for (final (index, cell) in row.indexed)
-                          DataCell(cell is Widget
-                              ? cell
-                              : _tableText(
-                                  cell, headings[index], fixedWidths != null)),
+                          DataCell(_tableCell(cell, headings[index], centered)),
                       ]))
                   .toList(),
             ),
@@ -863,18 +887,21 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     });
   }
 
-  Widget _tableText(Object value, String heading, bool fixedWidth) {
+  Widget _tableCell(Object value, String heading, bool centered) {
+    if (value is Widget) return centered ? Center(child: value) : value;
     final text = value is num && heading.endsWith(' INR')
         ? value.toStringAsFixed(2)
         : value is num && heading == 'Balance stock'
             ? value.toStringAsFixed(0)
             : value.toString();
     final label = Text(text,
-        maxLines: fixedWidth ? 2 : null,
-        overflow: fixedWidth ? TextOverflow.ellipsis : null);
-    return fixedWidth && text.length >= 14
+        textAlign: centered ? TextAlign.center : null,
+        maxLines: centered ? 2 : null,
+        overflow: centered ? TextOverflow.ellipsis : null);
+    final shown = centered && text.length >= 14
         ? Tooltip(message: text, child: label)
         : label;
+    return centered ? Center(child: shown) : shown;
   }
 
   Future<void> _product([InventoryRow? row]) async {
@@ -940,9 +967,12 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   Future<void> _movement(List<InventoryRow> products,
       {InventoryRow? draft,
       String? stockType,
-      InventoryRow? selectedProduct}) async {
+      InventoryRow? selectedProduct,
+      String? selectedLocation,
+      int? selectedQuantity}) async {
     final values = draft?.data() ?? {};
-    var location = (values['location'] as String?) ?? _location;
+    var location =
+        selectedLocation ?? (values['location'] as String?) ?? _location;
     String? destination;
     if (!_activeLocations.containsKey(location)) location = null;
     var product = selectedProduct?.id ?? values['productId'] as String?;
@@ -953,8 +983,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       'transfer': 'Transfer to another branch'
     };
     if (!entryTypes.containsKey(type)) type = null;
-    final quantity =
-        TextEditingController(text: values['quantity']?.toString());
+    final quantity = TextEditingController(
+        text: (selectedQuantity ?? values['quantity'])?.toString());
     final note = TextEditingController(text: values['note'] as String?);
     InventoryMovement input() => InventoryMovement(
         type: type,
@@ -979,14 +1009,17 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         if (stockType == null)
           _select(
               'Movement type', type, entryTypes, (v) => update(() => type = v)),
-        _select(
-            type == 'transfer' ? 'Source branch' : 'Where is the stock kept?',
-            location,
-            _activeLocations,
-            (v) => update(() {
-                  location = v;
-                  if (destination == v) destination = null;
-                })),
+        if (selectedLocation != null)
+          Text('Location: ${_supplyLocation(selectedLocation)}')
+        else
+          _select(
+              type == 'transfer' ? 'Source branch' : 'Where is the stock kept?',
+              location,
+              _activeLocations,
+              (v) => update(() {
+                    location = v;
+                    if (destination == v) destination = null;
+                  })),
         if (type == 'transfer')
           _select(
               'Destination branch',

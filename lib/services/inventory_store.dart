@@ -138,6 +138,9 @@ class InventoryStore {
 
   Future<InventoryRows> products() => _products.limit(101).get(_server);
 
+  Future<InventoryRows> suppliers() =>
+      _suppliers.orderBy('name').limit(101).get(_server);
+
   Future<InventoryRows> legacyTransfers() => _db
       .collection('is_transfers')
       .where('status', isEqualTo: 'in_transit')

@@ -40,8 +40,6 @@ extension InventorySupplyStore on InventoryStore {
   CollectionReference<Map<String, dynamic>> get _transfers =>
       _db.collection('is_transfers');
 
-  Future<InventoryRows> suppliers() =>
-      _suppliers.orderBy('name').limit(101).get(InventoryStore._server);
   Future<InventoryRows> purchaseOrders() => _orders
       .orderBy('at', descending: true)
       .limit(101)

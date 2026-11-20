@@ -36,6 +36,7 @@ class _Store implements InventoryStore {
         _Row('p1', {
           'name': 'Cookware Fixture',
           'sku': 'TEST-1',
+          'category': 'Cookware',
           'barcode': '00001844',
           'unitCost': 2599,
           'active': true,
@@ -87,6 +88,8 @@ class _Store implements InventoryStore {
   @override
   Future<InventoryRows> legacyTransfers() async => _Rows([]);
   @override
+  Future<InventoryRows> suppliers() async => _Rows([]);
+  @override
   Future<void> transferStock(
       {required String id,
       required String outgoingId,
@@ -114,54 +117,78 @@ class _Store implements InventoryStore {
 
 void main() {
   testWidgets(
-      'product columns have the same fixed width on wide and narrow displays',
+      'product tables fill the desktop width and center headers over values',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(2200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(
         home: InventoryWidgetScreen(store: _Store(withStock: true))));
     await tester.pumpAndSettle();
-    expect(tester.getSize(find.byType(DataTable).first).width, 872);
+    final search = find.byKey(const ValueKey('inventory-view-search'));
+    expect(tester.getSize(find.byType(DataTable).first).width,
+        closeTo(tester.getSize(search).width, 1));
     await tester.tap(find.text('Products').first);
     await tester.pumpAndSettle();
     final table = find.byType(DataTable);
-    expect(tester.getSize(table).width, 872);
     expect(
-        tester.getTopLeft(find.text('Tracked stock')).dx -
-            tester.getTopLeft(find.text('Category')).dx,
-        lessThan(160));
+        tester.getSize(table).width, closeTo(tester.getSize(search).width, 1));
+    expect(tester.getCenter(find.text('Tracked stock')).dx,
+        closeTo(tester.getCenter(find.text('1')).dx, 1));
+    expect(tester.getCenter(find.text('Category')).dx,
+        closeTo(tester.getCenter(find.text('Cookware')).dx, 1));
+    expect(
+        tester.getCenter(find.text('Actions')).dx,
+        closeTo(
+            tester
+                .getCenter(find.byTooltip('Edit details for Cookware Fixture'))
+                .dx,
+            1));
     await tester.binding.setSurfaceSize(const Size(590, 900));
     await tester.pumpAndSettle();
-    expect(tester.getSize(table).width, 872);
+    expect(tester.getSize(table).width, 876);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-      'movement filters share a desktop row and stock tables stay compact',
+      'movement filters share a desktop row and stock cells stay centered',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1800, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(MaterialApp(
-        home: InventoryWidgetScreen(store: _Store(withStock: true))));
+    final store = _Store(withStock: true);
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Products').first);
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Edit details for Cookware Fixture'), findsNothing);
-    expect(find.byTooltip('Edit stock for Cookware Fixture'), findsOneWidget);
-    final category = tester.getTopLeft(find.text('Category'));
-    final tracked = tester.getTopLeft(find.text('Tracked stock'));
-    expect(tracked.dx - category.dx, lessThan(225));
-    final stock = tester.getTopRight(find.text('1'));
-    final status = tester.getTopLeft(find.text('Active'));
-    expect(status.dx - stock.dx, greaterThanOrEqualTo(20));
+    expect(find.byTooltip('Edit stock for Cookware Fixture'), findsNothing);
+    await tester.tap(find.byTooltip('Edit details for Cookware Fixture'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit Product'), findsOneWidget);
+    expect(find.text('Barcode (optional)'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Physical Stock'));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Edit details for Cookware Fixture'), findsOneWidget);
-    final location = tester.getTopLeft(find.text('Location'));
-    final balance = tester.getTopLeft(find.text('Balance stock'));
-    expect(balance.dx - location.dx, lessThan(300));
+    expect(find.byTooltip('Edit details for Cookware Fixture'), findsNothing);
+    final pencil = find.byTooltip('Edit stock for Cookware Fixture');
+    expect(pencil, findsOneWidget);
+    final physicalSearch = find.byKey(const ValueKey('inventory-view-search'));
+    expect(tester.getSize(find.byType(DataTable)).width,
+        closeTo(tester.getSize(physicalSearch).width, 1));
+    expect(tester.getCenter(find.text('Balance stock')).dx,
+        closeTo(tester.getCenter(find.text('1')).dx, 1));
     expect(find.text('1'), findsOneWidget);
     expect(find.text('1.00'), findsNothing);
+    await tester.tap(pencil);
+    await tester.pumpAndSettle();
+    expect(find.text('Location: SSH Warehouse'), findsOneWidget);
+    final quantity = find.widgetWithText(TextField, 'New quantity on hand');
+    expect(tester.widget<TextField>(quantity).controller!.text, '1');
+    await tester.enterText(quantity, '9');
+    await tester.tap(find.text('Save Stock'));
+    await tester.pumpAndSettle();
+    expect(store.posted?.location, 'warehouse');
+    expect(store.posted?.quantity, 9);
 
     await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
