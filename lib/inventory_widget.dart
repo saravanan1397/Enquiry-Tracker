@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'inventory_workspace.dart';
 import 'services/inventory_store.dart';
 
 class InventoryWidgetScreen extends StatefulWidget {
@@ -18,11 +22,37 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   var _section = 'Overview';
   String? _location;
   var _query = '';
+  var _dark = false;
+  var _themeChanged = false;
+  String? _movementType;
+  DateTimeRange? _movementDates;
+  static const _themeKey = 'inventory_workspace_theme';
+  static const _storage = FlutterSecureStorage();
 
   @override
   void initState() {
     super.initState();
     _load();
+    unawaited(_loadTheme());
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final saved = await _storage.read(key: _themeKey);
+      if (mounted && !_themeChanged && saved != null) {
+        setState(() => _dark = saved == 'dark');
+      }
+    } catch (_) {
+      // The workspace still supports in-session switching.
+    }
+  }
+
+  Future<void> _saveTheme(bool dark) async {
+    try {
+      await _storage.write(key: _themeKey, value: dark ? 'dark' : 'light');
+    } catch (_) {
+      // A local storage failure should not prevent switching themes.
+    }
   }
 
   void _load() {
@@ -42,63 +72,36 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Inventory System'),
-          actions: [
-            IconButton(
-              tooltip: 'Refresh inventory',
-              onPressed: _refresh,
-              icon: const Icon(Icons.refresh),
-            ),
-          ],
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(20),
+  Widget build(BuildContext context) => InventoryWorkspace(
+        dark: _dark,
+        section: _section,
+        location: _location,
+        onRefresh: _refresh,
+        onTheme: () {
+          setState(() {
+            _themeChanged = true;
+            _dark = !_dark;
+          });
+          unawaited(_saveTheme(_dark));
+        },
+        onSection: (section) {
+          if (_section == section) return;
+          setState(() {
+            _section = section;
+            _query = '';
+            _load();
+          });
+        },
+        onLocation: (value) {
+          if (_location == value) return;
+          setState(() {
+            _location = value;
+            _load();
+          });
+        },
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 26),
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final section in [
-                  'Overview',
-                  'Products',
-                  'Stock Movements'
-                ])
-                  ChoiceChip(
-                    label: Text(section),
-                    selected: _section == section,
-                    onSelected: (_) {
-                      if (_section == section) return;
-                      setState(() {
-                        _section = section;
-                        _query = '';
-                        _load();
-                      });
-                    },
-                  ),
-                SizedBox(
-                  width: 225,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _location,
-                    decoration:
-                        const InputDecoration(labelText: 'Stock location'),
-                    items: [
-                      const DropdownMenuItem<String>(
-                          child: Text('All locations')),
-                      for (final location in inventoryLocations.entries)
-                        DropdownMenuItem(
-                            value: location.key, child: Text(location.value)),
-                    ],
-                    onChanged: (value) => setState(() {
-                      _location = value;
-                      _load();
-                    }),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
             FutureBuilder<List<InventoryRows>>(
               future: _data,
               builder: (context, snapshot) {
@@ -116,14 +119,14 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     ],
                   );
                 }
-                return _content(snapshot.requireData);
+                return _content(context, snapshot.requireData);
               },
             ),
           ],
         ),
       );
 
-  Widget _content(List<InventoryRows> data) {
+  Widget _content(BuildContext context, List<InventoryRows> data) {
     final products = data.first;
     final rows = data[1];
     final byProduct = {for (final p in products.docs) p.id: p.data()};
@@ -162,15 +165,22 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          spacing: 16,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.headlineSmall),
+        LayoutBuilder(builder: (context, limits) {
+          final headline =
+              Text(title, style: Theme.of(context).textTheme.headlineSmall);
+          if (limits.maxWidth < 420) {
+            return Wrap(
+                spacing: 16,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [headline, action]);
+          }
+          return Row(children: [
+            Expanded(child: headline),
+            const SizedBox(width: 12),
             action
-          ],
-        ),
+          ]);
+        }),
         const SizedBox(height: 14),
         if (_section == 'Overview') ...[
           Text(
@@ -225,6 +235,41 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ]),
         ],
         if (_section == 'Stock Movements') ...[
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 200,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _movementType ?? '',
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Type'),
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('All types')),
+                    for (final entry in inventoryMovementTypes.entries)
+                      DropdownMenuItem(
+                          value: entry.key, child: Text(entry.value)),
+                  ],
+                  onChanged: (value) => setState(
+                      () => _movementType = value == '' ? null : value),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _pickDates(context),
+                icon: const Icon(Icons.date_range_outlined),
+                label: Text(_movementDates == null
+                    ? 'Any date'
+                    : '${MaterialLocalizations.of(context).formatCompactDate(_movementDates!.start)} – ${MaterialLocalizations.of(context).formatCompactDate(_movementDates!.end)}'),
+              ),
+              if (_movementDates != null)
+                TextButton(
+                    onPressed: () => setState(() => _movementDates = null),
+                    child: const Text('Clear dates')),
+            ],
+          ),
+          const SizedBox(height: 12),
           _table([
             'When',
             'Product',
@@ -233,13 +278,15 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Change',
             'Balance'
           ], [
-            for (final row in visibleRows)
+            for (final row in visibleRows.where(_matchesMovement))
               [
                 _time(row.data()['at']),
                 productName(row.data()['productId'] as String?),
                 locationName(row.data()['location']),
                 inventoryMovementTypes[row.data()['type']] ?? '—',
-                '${row.data()['delta']}',
+                (row.data()['delta'] as int) > 0
+                    ? '+${row.data()['delta']}'
+                    : '${row.data()['delta']}',
                 '${row.data()['quantityAfter']}',
               ],
           ]),
@@ -269,6 +316,32 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     );
   }
 
+  bool _matchesMovement(InventoryRow row) {
+    final data = row.data();
+    if (_movementType != null && data['type'] != _movementType) return false;
+    final range = _movementDates;
+    if (range == null) return true;
+    final stamp = data['at'];
+    if (stamp is! Timestamp) return false;
+    final dt = stamp.toDate().toLocal();
+    final exclusiveEnd =
+        DateTime(range.end.year, range.end.month, range.end.day + 1);
+    return !dt.isBefore(range.start) && dt.isBefore(exclusiveEnd);
+  }
+
+  Future<void> _pickDates(BuildContext context) async {
+    final now = DateTime.now();
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1, 12, 31),
+      initialDateRange: _movementDates,
+      builder: (context, child) =>
+          Theme(data: inventoryTheme(_dark), child: child!),
+    );
+    if (range != null && mounted) setState(() => _movementDates = range);
+  }
+
   String _time(Object? time) {
     if (time is! Timestamp) return '—';
     final dt = time.toDate().toLocal();
@@ -277,23 +350,53 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   Widget _table(List<String> headings, List<List<Object>> rows) {
-    if (rows.isEmpty)
-      return const Padding(
-          padding: EdgeInsets.symmetric(vertical: 14),
-          child: Text('No records to show.'));
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: headings.map((text) => DataColumn(label: Text(text))).toList(),
-        rows: rows
-            .map((row) => DataRow(
-                cells: row
-                    .map((cell) =>
-                        DataCell(cell is Widget ? cell : Text(cell.toString())))
-                    .toList()))
-            .toList(),
-      ),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final scheme = Theme.of(context).colorScheme;
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Divider(height: 1),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: DataTable(
+              headingRowHeight: 42,
+              dataRowMinHeight: 37,
+              dataRowMaxHeight: 48,
+              headingRowColor:
+                  WidgetStatePropertyAll(scheme.surfaceContainerLow),
+              headingTextStyle: TextStyle(
+                  color: scheme.onSurface, fontWeight: FontWeight.w800),
+              horizontalMargin: 14,
+              columnSpacing: 24,
+              dividerThickness: 1,
+              columns: headings
+                  .map((text) => DataColumn(
+                      label: Text(text),
+                      numeric: [
+                        'Quantity',
+                        'Change',
+                        'Balance',
+                        'On hand',
+                        'Reorder at',
+                        'Tracked stock'
+                      ].contains(text)))
+                  .toList(),
+              rows: rows
+                  .map((row) => DataRow(
+                      cells: row
+                          .map((cell) => DataCell(
+                              cell is Widget ? cell : Text(cell.toString())))
+                          .toList()))
+                  .toList(),
+            ),
+          ),
+        ),
+        if (rows.isEmpty)
+          const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+              child: Text('No records to show.')),
+      ]);
+    });
   }
 
   Future<void> _product([InventoryRow? row]) async {
@@ -428,65 +531,67 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (dialog) => StatefulBuilder(builder: (dialog, update) {
-        Future<void> submit(Future<void> Function() task) async {
-          update(() {
-            busy = true;
-            error = null;
-          });
-          try {
-            await task();
-            if (dialog.mounted) Navigator.of(dialog).pop(true);
-          } catch (e) {
-            if (dialog.mounted)
+      builder: (dialog) => Theme(
+          data: inventoryTheme(_dark),
+          child: StatefulBuilder(builder: (dialog, update) {
+            Future<void> submit(Future<void> Function() task) async {
               update(() {
-                busy = false;
-                error = e is FormatException
-                    ? e.message
-                    : 'Could not save. Check your connection and admin access.';
+                busy = true;
+                error = null;
               });
-          }
-        }
+              try {
+                await task();
+                if (dialog.mounted) Navigator.of(dialog).pop(true);
+              } catch (e) {
+                if (dialog.mounted)
+                  update(() {
+                    busy = false;
+                    error = e is FormatException
+                        ? e.message
+                        : 'Could not save. Check your connection and admin access.';
+                  });
+              }
+            }
 
-        return PopScope(
-          canPop: !busy,
-          child: AlertDialog(
-            title: Text(title),
-            content: SizedBox(
-              width: 460,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (saveDraft != null)
-                      const Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: Text('Fields are optional for drafts.')),
-                    ...fields(update),
-                    if (error != null)
-                      Text(error!,
-                          style: TextStyle(
-                              color: Theme.of(dialog).colorScheme.error)),
-                  ],
+            return PopScope(
+              canPop: !busy,
+              child: AlertDialog(
+                title: Text(title),
+                content: SizedBox(
+                  width: 460,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (saveDraft != null)
+                          const Padding(
+                              padding: EdgeInsets.only(bottom: 8),
+                              child: Text('Fields are optional for drafts.')),
+                        ...fields(update),
+                        if (error != null)
+                          Text(error!,
+                              style: TextStyle(
+                                  color: Theme.of(dialog).colorScheme.error)),
+                      ],
+                    ),
+                  ),
                 ),
+                actions: [
+                  TextButton(
+                      onPressed: busy ? null : () => Navigator.of(dialog).pop(),
+                      child: const Text('Cancel')),
+                  if (saveDraft != null)
+                    OutlinedButton(
+                        onPressed: busy ? null : () => submit(saveDraft),
+                        child: const Text('Save Draft')),
+                  FilledButton(
+                      onPressed: busy ? null : () => submit(save),
+                      child: Text(busy ? 'Saving…' : action)),
+                ],
               ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: busy ? null : () => Navigator.of(dialog).pop(),
-                  child: const Text('Cancel')),
-              if (saveDraft != null)
-                OutlinedButton(
-                    onPressed: busy ? null : () => submit(saveDraft),
-                    child: const Text('Save Draft')),
-              FilledButton(
-                  onPressed: busy ? null : () => submit(save),
-                  child: Text(busy ? 'Saving…' : action)),
-            ],
-          ),
-        );
-      }),
+            );
+          })),
     );
     return result == true;
   }
