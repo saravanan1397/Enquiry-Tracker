@@ -570,7 +570,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Tracked stock',
             'Status',
             'Actions'
-          ], productRows),
+          ], productRows, compactWidth: 860, columnSpacing: 24),
         ],
         if (_section == inventoryHistorySection) ...[
           LayoutBuilder(builder: (context, limits) {
@@ -794,7 +794,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   Widget _table(List<String> headings, List<List<Object>> rows,
-      {double? compactWidth}) {
+      {double? compactWidth, double? columnSpacing}) {
     return LayoutBuilder(builder: (context, constraints) {
       final scheme = Theme.of(context).colorScheme;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -814,7 +814,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               headingTextStyle: TextStyle(
                   color: scheme.onSurface, fontWeight: FontWeight.w800),
               horizontalMargin: 14,
-              columnSpacing: compactWidth == null ? 24 : 16,
+              columnSpacing: columnSpacing ?? (compactWidth == null ? 24 : 16),
               dividerThickness: 1,
               columns: headings
                   .map((text) => DataColumn(

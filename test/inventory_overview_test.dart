@@ -125,6 +125,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Edit details for Cookware Fixture'), findsNothing);
     expect(find.byTooltip('Edit stock for Cookware Fixture'), findsOneWidget);
+    final category = tester.getTopLeft(find.text('Category'));
+    final tracked = tester.getTopLeft(find.text('Tracked stock'));
+    expect(tracked.dx - category.dx, lessThan(225));
+    final stock = tester.getTopRight(find.text('1'));
+    final status = tester.getTopLeft(find.text('Active'));
+    expect(status.dx - stock.dx, greaterThanOrEqualTo(20));
     await tester.tap(find.text('Physical Stock'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Edit details for Cookware Fixture'), findsOneWidget);
