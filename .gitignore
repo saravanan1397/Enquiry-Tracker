@@ -11,5 +11,6 @@ apk/
 .firebase/
 
 # Local backup credentials must never be committed.
+/Inventory Backup/
 Git secrets.txt
 sshtrackingapp-*.json

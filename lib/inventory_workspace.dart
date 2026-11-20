@@ -9,7 +9,7 @@ const inventorySections = [
   'Locations',
 ];
 const physicalStockSection = 'Physical Stock';
-const inventoryTitle = 'SSH Centralized Inventory';
+const inventoryTitle = 'Centralized Inventory';
 
 ThemeData inventoryTheme(bool dark) {
   final brightness = dark ? Brightness.dark : Brightness.light;
