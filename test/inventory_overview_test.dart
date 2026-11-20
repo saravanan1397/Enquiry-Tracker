@@ -27,6 +27,7 @@ class _Rows implements InventoryRows {
 class _Store implements InventoryStore {
   _Store({this.withStock = false});
   final bool withStock;
+  int? stock;
   InventoryMovement? posted;
   @override
   Future<InventoryRows> products() async => _Rows([
@@ -39,9 +40,12 @@ class _Store implements InventoryStore {
       ]);
   @override
   Future<InventoryRows> balances({String? location}) async => _Rows([
-        if (withStock)
-          _Row('balance',
-              {'productId': 'p1', 'location': 'warehouse', 'quantity': 1}),
+        if (withStock || stock != null)
+          _Row('balance', {
+            'productId': 'p1',
+            'location': 'warehouse',
+            'quantity': stock ?? 1
+          }),
       ]);
   @override
   Future<InventoryRows> counts({String? location}) =>
@@ -77,6 +81,8 @@ class _Store implements InventoryStore {
   @override
   Future<void> post(InventoryMovement entry,
       {required String movementId, String? draftId}) async {
+    final before = stock ?? (withStock ? 1 : 0);
+    stock = before + entry.deltaFor(before);
     posted = entry;
   }
 
@@ -85,6 +91,48 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  testWidgets('Physical Stock sets totals and subtracts outgoing units',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store(withStock: true);
+    await tester.pumpWidget(MaterialApp(
+        home: InventoryWidgetScreen(store: store, adminDark: false)));
+    await tester.pumpAndSettle();
+    expect(find.text('Back up now'), findsOneWidget);
+    expect(find.text('Restore from backup'), findsOneWidget);
+    await tester.tap(find.text('Physical Stock'));
+    await tester.pumpAndSettle();
+    expect(find.text('Balance stock'), findsOneWidget);
+    expect(find.text('Expected'), findsNothing);
+    expect(find.text('Variance'), findsNothing);
+
+    Future<void> enterStock(
+        String button, String field, String value, String save) async {
+      await tester.tap(find.text(button));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Not selected').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SSH Warehouse').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Not selected').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cookware Fixture').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, field), value);
+      await tester.tap(find.text(save));
+      await tester.pumpAndSettle();
+    }
+
+    await enterStock('Set Total Stock', 'Total stock', '100', 'Save Total');
+    expect(find.text('100'), findsOneWidget);
+    await enterStock(
+        'Subtract Outgoing Stock', 'Outgoing stock', '25', 'Subtract Stock');
+    expect(find.text('75'), findsOneWidget);
+    expect(store.posted?.type, 'sale');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('each inventory view searches its records independently of menus',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));

@@ -228,26 +228,35 @@ class InventoryStore {
     final product = _products.doc(entry.productId);
     final balance = _balances.doc('${entry.location}_${entry.productId}');
     final movement = _movements.doc(movementId);
-    await _db.runTransaction<void>((tx) async {
+    // Return input errors from the transaction without writes. Throwing inside
+    // the web transaction callback can hide the original validation message.
+    final validation = await _db.runTransaction<String?>((tx) async {
       final alreadyPosted = await tx.get(movement);
       if (alreadyPosted.exists) {
         if (alreadyPosted.data()?['actor'] != actor)
-          throw const FormatException('This movement ID is already used.');
-        return;
+          return 'This movement ID is already used.';
+        return null;
       }
       final item = await tx.get(product);
-      if (item.data()?['active'] != true)
-        throw const FormatException('Choose an active product.');
+      if (item.data()?['active'] != true) return 'Choose an active product.';
       final location = await tx.get(_locations.doc(entry.location));
       final isActive = location.exists
           ? (location.data()?['active'] == true)
           : inventoryLocations.containsKey(entry.location);
       if (!isActive) {
-        throw const FormatException('Choose an active stock location.');
+        return 'Choose an active stock location.';
       }
       final stock = await tx.get(balance);
       final before = stock.data()?['quantity'] as int? ?? 0;
-      final change = entry.deltaFor(before);
+      final int change;
+      try {
+        change = entry.deltaFor(before);
+      } on FormatException catch (error) {
+        if (error.message == 'Not enough stock at this location.') {
+          return 'Not enough stock at this location. Available: $before.';
+        }
+        return error.message;
+      }
       final next = before + change;
       final stamp = FieldValue.serverTimestamp();
       tx.set(balance, {
@@ -267,6 +276,8 @@ class InventoryStore {
         'at': stamp,
       });
       if (draftId != null) tx.delete(_drafts.doc(draftId));
+      return null;
     });
+    if (validation != null) throw FormatException(validation);
   }
 }

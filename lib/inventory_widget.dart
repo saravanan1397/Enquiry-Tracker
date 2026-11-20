@@ -3,15 +3,35 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'inventory_workspace.dart';
 import 'services/export_file_downloader.dart';
 import 'services/inventory_report_export.dart';
 import 'services/inventory_store.dart';
+
+String inventorySaveError(Object error) {
+  if (error is FormatException) return error.message;
+  if (error is FirebaseException) {
+    return switch (error.code) {
+      'permission-denied' =>
+        'Firestore rejected this save (permission-denied). Check the inventory rules and admin access.',
+      'unauthenticated' =>
+        'Your admin session has expired. Sign in and try again.',
+      'unavailable' ||
+      'deadline-exceeded' =>
+        'Firestore did not respond. Check your connection and try again.',
+      'aborted' => 'Stock changed while saving. Refresh and try again.',
+      _ => 'Could not save to Firestore (${error.code}).',
+    };
+  }
+  return 'Could not save the inventory change.';
+}
 
 class InventoryWidgetScreen extends StatefulWidget {
   const InventoryWidgetScreen({super.key, this.store, this.adminDark});
@@ -91,9 +111,9 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     }
     _data = Future.wait([
       _store.products(),
-      if (['Overview', 'Products', 'Reports'].contains(_section))
+      if (['Overview', 'Products', 'Reports', physicalStockSection]
+          .contains(_section))
         _store.balances(location: _location),
-      if (_section == physicalStockSection) _store.counts(location: _location),
       if (_section == 'Stock Movements') ...[
         _store.movements(location: _location),
         _store.drafts(location: _location),
@@ -346,13 +366,35 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                             excel: true),
                     child: const Text('Export Excel')),
               ])
-            : FilledButton(
-                onPressed: () => _movement(
-                    products.docs, null, _section == physicalStockSection),
-                child: Text(_section == physicalStockSection
-                    ? 'Record Count'
-                    : 'Record Movement'),
-              );
+            : Wrap(spacing: 8, runSpacing: 8, children: [
+                if (_section == physicalStockSection) ...[
+                  OutlinedButton(
+                    onPressed: () =>
+                        _movement(products.docs, stockType: 'sale'),
+                    child: const Text('Subtract Outgoing Stock'),
+                  ),
+                  FilledButton(
+                    onPressed: () =>
+                        _movement(products.docs, stockType: 'count'),
+                    child: const Text('Set Total Stock'),
+                  ),
+                ] else ...[
+                  if (widget.adminDark != null && _section == 'Overview') ...[
+                    OutlinedButton(
+                      onPressed: () => _launchTrustedAction('backup'),
+                      child: const Text('Back up now'),
+                    ),
+                    OutlinedButton(
+                      onPressed: () => _launchTrustedAction('restore'),
+                      child: const Text('Restore from backup'),
+                    ),
+                  ],
+                  FilledButton(
+                    onPressed: () => _movement(products.docs),
+                    child: const Text('Record Movement'),
+                  ),
+                ],
+              ]);
     final visibleRows = rows.docs.take(100).toList();
     final stock = <String, int>{};
     if (['Overview', 'Products'].contains(_section)) {
@@ -388,7 +430,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 icon: const Icon(Icons.edit_outlined, size: 19),
                 onPressed: row.data()['active'] != true
                     ? null
-                    : () => _movement(products.docs, null, true, row),
+                    : () => _movement(products.docs,
+                        stockType: 'count', selectedProduct: row),
               ),
               IconButton(
                 tooltip: 'Edit details for ${productName(row.id)}',
@@ -426,25 +469,16 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           _table(reportHeadings, reportRows),
         ],
         if (_section == physicalStockSection) ...[
-          const Text(
-              'A physical count records the difference and updates stock when posted.'),
-          const SizedBox(height: 12),
           _table([
-            'When',
             'Product',
             'Location',
-            'Expected',
-            'Counted',
-            'Variance'
+            'Balance stock'
           ], [
             for (final row in visibleRows.where(matchesRecord))
               [
-                _time(row.data()['at']),
                 productName(row.data()['productId'] as String?),
                 locationName(row.data()['location']),
-                '${row.data()['before']}',
-                '${row.data()['quantityAfter']}',
-                '${row.data()['delta']}',
+                row.data()['quantity'] as int,
               ],
           ]),
         ],
@@ -560,7 +594,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 locationName(row.data()['location']),
                 '${row.data()['quantity'] ?? '—'}',
                 TextButton(
-                    onPressed: () => _movement(products.docs, row),
+                    onPressed: () => _movement(products.docs, draft: row),
                     child: const Text('Resume')),
               ],
           ]),
@@ -570,6 +604,23 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               'Showing the first 100 records in each list. Choose a location to narrow stock results.'),
       ],
     );
+  }
+
+  Future<void> _launchTrustedAction(String action) async {
+    try {
+      if (await launchUrl(Uri(scheme: 'centralized-inventory', host: action),
+          webOnlyWindowName: '_self')) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'Continue in the trusted Windows backup helper. After restoring, refresh Inventory.')));
+        return;
+      }
+    } catch (_) {}
+    if (mounted)
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Open Inventory on the trusted Windows PC to use backup and restore.')));
   }
 
   Future<void> _exportReport(List<String> headers, List<List<Object>> rows,
@@ -672,6 +723,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                         'Quantity',
                         'Change',
                         'Balance',
+                        'Balance stock',
                         'On hand',
                         'Reorder at',
                         'Tracked stock'
@@ -732,15 +784,15 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   Future<void> _movement(List<InventoryRow> products,
-      [InventoryRow? draft,
-      bool countOnly = false,
-      InventoryRow? selectedProduct]) async {
+      {InventoryRow? draft,
+      String? stockType,
+      InventoryRow? selectedProduct}) async {
     final values = draft?.data() ?? {};
     var location = (values['location'] as String?) ?? _location;
     if (!_activeLocations.containsKey(location)) location = null;
     var product = selectedProduct?.id ?? values['productId'] as String?;
     if (!products.take(100).any((p) => p.id == product)) product = null;
-    var type = countOnly ? 'count' : values['type'] as String?;
+    var type = stockType ?? values['type'] as String?;
     if (!inventoryMovementTypes.containsKey(type)) type = null;
     final quantity =
         TextEditingController(text: values['quantity']?.toString());
@@ -756,11 +808,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final result = await _editor(
       title: selectedProduct != null
           ? 'Edit Stock'
-          : countOnly
-              ? 'Record Physical Count'
-              : 'Record Movement',
+          : switch (stockType) {
+              'count' => 'Set Total Stock',
+              'sale' => 'Subtract Outgoing Stock',
+              _ => 'Record Movement',
+            },
       fields: (update) => [
-        if (!countOnly)
+        if (stockType == null)
           _select('Movement type', type, inventoryMovementTypes,
               (v) => update(() => type = v)),
         _select('Where is the stock kept?', location, _activeLocations,
@@ -786,20 +840,24 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             quantity,
             selectedProduct != null
                 ? 'New quantity on hand'
-                : countOnly
-                    ? 'Counted quantity'
-                    : 'Quantity',
+                : switch (stockType) {
+                    'count' => 'Total stock',
+                    'sale' => 'Outgoing stock',
+                    _ => 'Quantity',
+                  },
             number: true),
-        _input(note, 'Note'),
+        if (stockType == null) _input(note, 'Note'),
       ],
       action: selectedProduct != null
           ? 'Save Stock'
-          : countOnly
-              ? 'Post Count'
-              : 'Post Movement',
+          : switch (stockType) {
+              'count' => 'Save Total',
+              'sale' => 'Subtract Stock',
+              _ => 'Post Movement',
+            },
       save: () =>
           _store.post(input(), movementId: movementId, draftId: draft?.id),
-      saveDraft: selectedProduct != null
+      saveDraft: stockType != null
           ? null
           : () => _store.saveDraft(input(), id: draftId),
     );
@@ -871,9 +929,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 if (dialog.mounted)
                   update(() {
                     busy = false;
-                    error = e is FormatException
-                        ? e.message
-                        : 'Could not save. Check your connection and admin access.';
+                    error = inventorySaveError(e);
                   });
               }
             }
