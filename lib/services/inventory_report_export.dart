@@ -51,11 +51,12 @@ Uint8List buildInventoryWorkbook(
 <cols>
   <col min="1" max="2" width="32" customWidth="1"/>
   <col min="3" max="4" width="14" customWidth="1"/>
+  <col min="5" max="6" width="22" customWidth="1"/>
 </cols><sheetData>''');
   for (final (index, row) in [headers, ...rows].indexed) {
     sheet.write('<row r="${index + 1}">');
     for (final value in row) {
-      if (value is int) {
+      if (value is num && value.isFinite) {
         sheet.write('<c><v>$value</v></c>');
       } else {
         final literal =

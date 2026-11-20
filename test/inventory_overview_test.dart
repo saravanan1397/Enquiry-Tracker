@@ -34,6 +34,8 @@ class _Store implements InventoryStore {
         _Row('p1', {
           'name': 'Cookware Fixture',
           'sku': 'TEST-1',
+          'barcode': '00001844',
+          'unitCost': 2599,
           'active': true,
           'reorder': 2
         }),
@@ -151,7 +153,7 @@ void main() {
     final field = find.byKey(const ValueKey('inventory-view-search'));
     for (final (section, query, shown) in [
       ('Overview', 'test-1', 'Cookware Fixture'),
-      ('Products', 'cookware', 'Cookware Fixture'),
+      ('Products', '00001844', 'Cookware Fixture'),
       ('Physical Stock', 'warehouse', 'Cookware Fixture'),
       ('Stock Movements', 'awaiting invoice', 'Resume'),
       ('Reports', 'warehouse', 'Cookware Fixture'),
@@ -160,6 +162,10 @@ void main() {
       if (section != 'Overview') {
         await tester.tap(find.text(section).first);
         await tester.pumpAndSettle();
+      }
+      if (section == 'Reports') {
+        expect(find.text('Stock value INR'), findsOneWidget);
+        expect(find.text('25.99'), findsNWidgets(2));
       }
       expect(tester.widget<TextField>(field).controller!.text, isEmpty);
       await tester.enterText(field, query);
@@ -183,6 +189,27 @@ void main() {
       expect(find.text(shown), findsWidgets);
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('stock movement dropdown offers a separate transfer destination',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: _Store())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stock Movements'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Record Movement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Not selected').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Transfer to another branch').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Source branch'), findsOneWidget);
+    expect(find.text('Destination branch'), findsOneWidget);
+    expect(find.text('Dispatch Transfer'), findsOneWidget);
+    expect(find.text('Save Draft'), findsNothing);
   });
 
   testWidgets(

@@ -12,6 +12,9 @@ void main() {
       'Stock Movements',
       'Reports',
       'Locations',
+      'Suppliers',
+      'Purchasing',
+      'Transfers',
     ]);
   });
 

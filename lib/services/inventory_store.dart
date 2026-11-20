@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+part 'inventory_supply_store.dart';
+
 typedef InventoryRow = QueryDocumentSnapshot<Map<String, dynamic>>;
 typedef InventoryRows = QuerySnapshot<Map<String, dynamic>>;
 
@@ -43,6 +45,12 @@ const inventoryMovementTypes = {
   'damage': 'Damage',
   'adjustment': 'Adjustment',
   'count': 'Physical count',
+};
+const inventoryMovementLabels = {
+  ...inventoryMovementTypes,
+  'purchase_receipt': 'Purchase receipt',
+  'transfer_out': 'Transfer dispatched',
+  'transfer_in': 'Transfer received',
 };
 
 class InventoryMovement {
@@ -192,6 +200,9 @@ class InventoryStore {
       required String name,
       required String sku,
       required String category,
+      String barcode = '',
+      String? supplierId,
+      int? unitCost,
       required int? reorder,
       required bool active}) {
     if (reorder != null && (reorder < 0 || reorder > 1000000)) {
@@ -202,6 +213,9 @@ class InventoryStore {
       'name': name.trim(),
       'sku': sku.trim(),
       'category': category.trim(),
+      'barcode': barcode.trim(),
+      'supplierId': supplierId,
+      'unitCost': unitCost,
       'reorder': reorder,
       'active': active,
       'actor': _uid,

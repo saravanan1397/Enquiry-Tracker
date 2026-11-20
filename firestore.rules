@@ -208,9 +208,20 @@ service cloud.firestore {
     function inventoryText(text) {
       return text is string && text.size() <= 160;
     }
+    function inventoryCost(cost) {
+      return cost == null || (cost is int && cost >= 0 && cost <= 999999999);
+    }
+    function inventoryActiveSupplier(id) {
+      return inventoryId(id) &&
+        get(/databases/$(database)/documents/is_suppliers/$(id)).data.active == true;
+    }
     function inventoryProduct(data) {
-      return data.keys().hasOnly(['name','sku','category','reorder','active','actor','at'])
+      let supplier = data.get('supplierId', null);
+      return data.keys().hasOnly(['name','sku','category','reorder','active','actor','at','barcode','supplierId','unitCost'])
         && inventoryText(data.name) && inventoryText(data.sku) && inventoryText(data.category)
+        && inventoryText(data.get('barcode', '')) && inventoryCost(data.get('unitCost', null))
+        && (supplier == null || (inventoryId(supplier)
+            && exists(/databases/$(database)/documents/is_suppliers/$(supplier))))
         && (data.reorder == null || (data.reorder is int && data.reorder >= 0 && data.reorder <= 1000000))
         && data.active is bool && data.actor == request.auth.uid && data.at == request.time;
     }
@@ -229,19 +240,50 @@ service cloud.firestore {
         && data.quantityAfter == data.before + data.delta
         && (data.type == 'count' ? data.quantity >= 0 && data.quantityAfter == data.quantity
           : data.type == 'adjustment' ? data.quantity != 0 && data.delta == data.quantity
-          : data.quantity > 0 && (data.type in ['sale','supplier_return','damage']
+          : data.quantity > 0 && (data.type in ['sale','supplier_return','damage','transfer_out']
             ? data.delta == -data.quantity : data.delta == data.quantity));
     }
     function inventoryPrior(path) {
       return exists(path) ? get(path).data.quantity : 0;
     }
+    function inventoryPairedMovement(id, workflow, kind, product, location, units) {
+      let path = /databases/$(database)/documents/is_movements/$(id);
+      let move = getAfter(path).data;
+      return inventoryId(id) && !exists(path) && move.workflowId == workflow
+        && move.type == kind && move.productId == product && move.location == location
+        && move.quantity == units && move.at == request.time && move.actor == request.auth.uid;
+    }
+    function inventoryOrderLinked(id, data) {
+      let path = /databases/$(database)/documents/is_orders/$(data.workflowId);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      return after.lastReceiptId == id && after.productId == data.productId
+        && after.location == data.location && after.received - before.received == data.quantity
+        && after.updatedAt == request.time;
+    }
+    function inventoryTransferLinked(id, data) {
+      let path = /databases/$(database)/documents/is_transfers/$(data.workflowId);
+      let after = getAfter(path).data;
+      return after.productId == data.productId && after.quantity == data.quantity
+        && (data.type == 'transfer_out'
+          ? !exists(path) && after.status == 'in_transit' && after.dispatchId == id
+              && after.from == data.location && after.at == request.time
+          : get(path).data.status == 'in_transit' && after.status == 'received'
+              && after.receiveId == id && after.to == data.location && after.receivedAt == request.time);
+    }
+    function inventoryMovementLink(id, data) {
+      return inventoryType(data.type) ? !('workflowId' in data)
+        : inventoryId(data.workflowId) && (data.type == 'purchase_receipt'
+          ? inventoryOrderLinked(id, data)
+          : data.type in ['transfer_out','transfer_in'] && inventoryTransferLinked(id, data));
+    }
     function inventoryMovement(movementId, data) {
       let path = /databases/$(database)/documents/is_balances/$(data.balanceId);
       let after = getAfter(path).data;
       return data.keys().hasOnly(['type','location','productId','quantity','note','balanceId',
-          'before','delta','quantityAfter','actor','at'])
+          'before','delta','quantityAfter','actor','at','workflowId'])
         && inventoryId(movementId) && inventoryId(data.productId)
-        && inventoryLocation(data.location) && inventoryType(data.type)
+        && inventoryLocation(data.location) && inventoryMovementLink(movementId, data)
         && data.balanceId == data.location + '_' + data.productId
         && inventoryText(data.note) && data.actor == request.auth.uid && data.at == request.time
         && inventoryDelta(data) && data.before == inventoryPrior(path)
@@ -286,6 +328,64 @@ service cloud.firestore {
     match /is_movements/{id} {
       allow read: if isAdmin();
       allow create: if isAdmin() && inventoryMovement(id, request.resource.data);
+    }
+
+    match /is_suppliers/{id} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && inventoryId(id)
+        && request.resource.data.keys().hasOnly(['name','phone','email','notes','active','actor','at'])
+        && inventoryText(request.resource.data.name) && request.resource.data.name.size() > 0
+        && inventoryText(request.resource.data.phone) && inventoryText(request.resource.data.email)
+        && inventoryText(request.resource.data.notes) && request.resource.data.active is bool
+        && request.resource.data.actor == request.auth.uid && request.resource.data.at == request.time;
+    }
+
+    function inventoryNewOrder(data) {
+      return data.keys().hasOnly(['supplierId','productId','location','quantity','received',
+          'unitCost','reference','status','lastReceiptId','actor','at','updatedAt'])
+        && inventoryActiveSupplier(data.supplierId) && inventoryId(data.productId)
+        && get(/databases/$(database)/documents/is_products/$(data.productId)).data.active == true
+        && inventoryLocation(data.location) && data.quantity is int
+        && data.quantity >= 1 && data.quantity <= 1000000 && data.received == 0
+        && inventoryCost(data.unitCost) && inventoryText(data.reference)
+        && data.status == 'ordered' && data.lastReceiptId == null
+        && data.actor == request.auth.uid && data.at == request.time && data.updatedAt == request.time;
+    }
+    function inventoryUpdateOrder(id, old, data) {
+      return old.status in ['ordered','partial'] && data.updatedAt == request.time
+        && data.diff(old).affectedKeys().hasOnly(['received','status','lastReceiptId','updatedAt'])
+        && (data.status == 'cancelled'
+          ? data.received == old.received && data.lastReceiptId == old.lastReceiptId
+          : data.received is int && data.received > old.received && data.received <= old.quantity
+            && data.status == (data.received == old.quantity ? 'received' : 'partial')
+            && inventoryPairedMovement(data.lastReceiptId,id,'purchase_receipt',
+                old.productId,old.location,data.received - old.received));
+    }
+    match /is_orders/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && inventoryId(id) && inventoryNewOrder(request.resource.data);
+      allow update: if isAdmin() && inventoryId(id) && inventoryUpdateOrder(id,resource.data,request.resource.data);
+    }
+
+    function inventoryNewTransfer(id, data) {
+      return data.keys().hasOnly(['productId','from','to','quantity','status','dispatchId',
+          'receiveId','receiptActor','receivedAt','actor','at'])
+        && inventoryId(data.productId) && inventoryLocation(data.from) && inventoryLocation(data.to)
+        && data.from != data.to && data.quantity is int && data.quantity >= 1 && data.quantity <= 1000000
+        && data.status == 'in_transit' && data.receiveId == null && data.receiptActor == null
+        && data.receivedAt == null && data.actor == request.auth.uid && data.at == request.time
+        && inventoryPairedMovement(data.dispatchId,id,'transfer_out',data.productId,data.from,data.quantity);
+    }
+    function inventoryReceiveTransfer(id, old, data) {
+      return old.status == 'in_transit' && data.status == 'received'
+        && data.diff(old).affectedKeys().hasOnly(['status','receiveId','receiptActor','receivedAt'])
+        && data.receivedAt == request.time && data.receiptActor == request.auth.uid
+        && inventoryPairedMovement(data.receiveId,id,'transfer_in',old.productId,old.to,old.quantity);
+    }
+    match /is_transfers/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && inventoryId(id) && inventoryNewTransfer(id,request.resource.data);
+      allow update: if isAdmin() && inventoryId(id) && inventoryReceiveTransfer(id,resource.data,request.resource.data);
     }
 
     // Deny every collection not explicitly listed above.

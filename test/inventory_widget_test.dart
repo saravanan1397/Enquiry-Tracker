@@ -3,6 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import '../lib/services/inventory_store.dart';
 
 void main() {
+  test('unit cost preserves paise and rejects invalid prices', () {
+    expect(inventoryCostPaise('25.99'), 2599);
+    expect(inventoryCostPaise('0.1'), 10);
+    expect(inventoryCostPaise(''), isNull);
+    expect(inventoryRupees(2599), '25.99');
+    expect(() => inventoryCostPaise('-1'), throwsFormatException);
+    expect(() => inventoryCostPaise('25.999'), throwsFormatException);
+  });
   test('renaming and deleting locations preserve existing stock keys', () {
     final locations = mergeInventoryLocations(const [
       InventoryLocation('warehouse', 'Main Warehouse'),
