@@ -53,12 +53,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(inside, Brightness.dark);
     expect(find.byTooltip('Switch to light theme'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'loc');
-    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsNothing);
     expect(find.text('Locations'), findsOneWidget);
-    expect(find.text('Products'), findsNothing);
-    await tester.tap(find.byTooltip('Clear menu search'));
-    await tester.pumpAndSettle();
     expect(find.text('Products'), findsOneWidget);
     expect(Theme.of(tester.element(find.byType(InventoryWorkspace))).brightness,
         Brightness.light);
@@ -83,6 +79,7 @@ void main() {
     expect(find.text(inventoryTitle), findsNothing);
     expect(find.text('Products content'), findsOneWidget);
     expect(find.text('Selvan Hotel Mart'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
     expect(find.byTooltip('Switch to dark theme'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

@@ -55,7 +55,7 @@ ThemeData inventoryTheme(bool dark) {
   ));
 }
 
-class InventoryWorkspace extends StatefulWidget {
+class InventoryWorkspace extends StatelessWidget {
   const InventoryWorkspace({
     super.key,
     required this.dark,
@@ -80,92 +80,39 @@ class InventoryWorkspace extends StatefulWidget {
   final VoidCallback onTheme, onRefresh;
   final Widget child;
 
-  @override
-  State<InventoryWorkspace> createState() => _InventoryWorkspaceState();
-}
-
-class _InventoryWorkspaceState extends State<InventoryWorkspace> {
   static const _navy = Color(0xFF0F1B30);
   static const _teal = Color(0xFF00766D);
-  final _menuSearch = TextEditingController();
-  var _query = '';
-
-  @override
-  void dispose() {
-    _menuSearch.dispose();
-    super.dispose();
-  }
 
   Widget _navigation({required bool compact}) {
-    final search = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-      child: TextField(
-        controller: _menuSearch,
-        onChanged: (value) =>
-            setState(() => _query = value.trim().toLowerCase()),
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          hintText: 'Search menu',
-          hintStyle: const TextStyle(color: Color(0xFFC5D4E5)),
-          prefixIcon:
-              const Icon(Icons.search, color: Color(0xFFC5D4E5), size: 19),
-          suffixIcon: _query.isEmpty
-              ? null
-              : IconButton(
-                  tooltip: 'Clear menu search',
-                  icon: const Icon(Icons.clear,
-                      size: 17, color: Color(0xFFC5D4E5)),
-                  onPressed: () {
-                    _menuSearch.clear();
-                    setState(() => _query = '');
-                  },
-                ),
-          fillColor: const Color(0xFF202F45),
-          filled: true,
-        ),
-      ),
-    );
     final items = [
       for (final item in inventorySections)
-        if (item.toLowerCase().contains(_query))
-          Semantics(
-            selected: item == widget.section,
-            child: TextButton(
-              style: TextButton.styleFrom(
-                backgroundColor:
-                    item == widget.section ? _teal : Colors.transparent,
-                foregroundColor: Colors.white,
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                minimumSize: Size(compact ? 0 : double.infinity, 44),
-                shape: const RoundedRectangleBorder(),
-              ),
-              onPressed: () => widget.onSection(item),
-              child: Text(item,
-                  style: TextStyle(
-                      fontWeight: item == widget.section
-                          ? FontWeight.w700
-                          : FontWeight.w500)),
+        Semantics(
+          selected: item == section,
+          child: TextButton(
+            style: TextButton.styleFrom(
+              backgroundColor: item == section ? _teal : Colors.transparent,
+              foregroundColor: Colors.white,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              minimumSize: Size(compact ? 0 : double.infinity, 44),
+              shape: const RoundedRectangleBorder(),
             ),
+            onPressed: () => onSection(item),
+            child: Text(item,
+                style: TextStyle(
+                    fontWeight:
+                        item == section ? FontWeight.w700 : FontWeight.w500)),
           ),
+        ),
     ];
-    final empty = const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child:
-          Text('No matching menus', style: TextStyle(color: Color(0xFFC5D4E5))),
-    );
     if (compact)
       return Material(
         color: _navy,
-        child:
-            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          search,
-          if (items.isEmpty)
-            empty
-          else
-            SingleChildScrollView(
-                scrollDirection: Axis.horizontal, child: Row(children: items)),
-        ]),
+        child: SizedBox(
+          width: double.infinity,
+          child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal, child: Row(children: items)),
+        ),
       );
     return Material(
       color: _navy,
@@ -180,8 +127,7 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
                     color: Colors.white,
                     fontWeight: FontWeight.w800)),
           ),
-          search,
-          if (items.isEmpty) empty else ...items,
+          ...items,
         ],
       ),
     );
@@ -198,7 +144,7 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Row(
               children: [
-                if (!widget.embedded)
+                if (!embedded)
                   IconButton(
                     tooltip: 'Back to admin dashboard',
                     onPressed: () => Navigator.of(context).maybePop(),
@@ -217,13 +163,9 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
                       constraints: const BoxConstraints(maxWidth: 230),
                       child: DropdownButtonFormField<String>(
                         key: ValueKey(
-                            widget.locations.containsKey(widget.location)
-                                ? widget.location
-                                : ''),
+                            locations.containsKey(location) ? location : ''),
                         initialValue:
-                            widget.locations.containsKey(widget.location)
-                                ? widget.location
-                                : '',
+                            locations.containsKey(location) ? location : '',
                         isExpanded: true,
                         decoration: InputDecoration(
                           hintText: 'All locations',
@@ -232,31 +174,30 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
                         items: [
                           const DropdownMenuItem(
                               value: '', child: Text('All locations')),
-                          for (final entry in widget.locations.entries)
+                          for (final entry in locations.entries)
                             DropdownMenuItem(
                                 value: entry.key,
                                 child: Text(entry.value,
                                     overflow: TextOverflow.ellipsis)),
                         ],
                         onChanged: (value) =>
-                            widget.onLocation(value == '' ? null : value),
+                            onLocation(value == '' ? null : value),
                       ),
                     ),
                   ),
                 ),
-                if (!widget.embedded)
+                if (!embedded)
                   IconButton(
-                    tooltip: widget.dark
-                        ? 'Switch to light theme'
-                        : 'Switch to dark theme',
-                    onPressed: widget.onTheme,
-                    icon: Icon(widget.dark
+                    tooltip:
+                        dark ? 'Switch to light theme' : 'Switch to dark theme',
+                    onPressed: onTheme,
+                    icon: Icon(dark
                         ? Icons.light_mode_outlined
                         : Icons.dark_mode_outlined),
                   ),
                 IconButton(
                   tooltip: 'Refresh inventory',
-                  onPressed: widget.onRefresh,
+                  onPressed: onRefresh,
                   icon: const Icon(Icons.refresh),
                 ),
               ],
@@ -267,14 +208,14 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
 
   @override
   Widget build(BuildContext context) => Theme(
-        data: inventoryTheme(widget.dark),
+        data: inventoryTheme(dark),
         child: Builder(builder: (context) {
           final layout = LayoutBuilder(builder: (context, constraints) {
             final compact = constraints.maxWidth < 750;
             final workspace = Column(children: [
               _header(context, compact),
               if (compact) _navigation(compact: true),
-              Expanded(child: widget.child),
+              Expanded(child: child),
             ]);
             if (compact) return workspace;
             return Row(children: [
@@ -282,7 +223,7 @@ class _InventoryWorkspaceState extends State<InventoryWorkspace> {
               Expanded(child: workspace),
             ]);
           });
-          return widget.embedded
+          return embedded
               ? Material(
                   color: Theme.of(context).scaffoldBackgroundColor,
                   child: layout)
