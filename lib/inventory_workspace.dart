@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'services/inventory_store.dart';
-
-const inventorySections = ['Overview', 'Products', 'Stock Movements'];
+const inventorySections = [
+  'Overview',
+  'Products',
+  'Locations',
+  'Stock Movements',
+  'Stock Counts',
+  'Reports'
+];
+const inventoryTitle = 'SSH Centralized Inventory';
 
 ThemeData inventoryTheme(bool dark) {
   final brightness = dark ? Brightness.dark : Brightness.light;
@@ -54,6 +60,7 @@ class InventoryWorkspace extends StatelessWidget {
     required this.dark,
     required this.section,
     required this.location,
+    required this.locations,
     required this.onSection,
     required this.onLocation,
     required this.onTheme,
@@ -64,6 +71,7 @@ class InventoryWorkspace extends StatelessWidget {
   final bool dark;
   final String section;
   final String? location;
+  final Map<String, String> locations;
   final ValueChanged<String> onSection;
   final ValueChanged<String?> onLocation;
   final VoidCallback onTheme, onRefresh;
@@ -107,7 +115,7 @@ class InventoryWorkspace extends StatelessWidget {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(18, 23, 10, 24),
-            child: Text('IS Inventory System',
+            child: Text(inventoryTitle,
                 style: TextStyle(
                     fontSize: 15,
                     color: Colors.white,
@@ -147,7 +155,10 @@ class InventoryWorkspace extends StatelessWidget {
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 230),
                       child: DropdownButtonFormField<String>(
-                        initialValue: location ?? '',
+                        key: ValueKey(
+                            locations.containsKey(location) ? location : ''),
+                        initialValue:
+                            locations.containsKey(location) ? location : '',
                         isExpanded: true,
                         decoration: InputDecoration(
                           hintText: 'All locations',
@@ -156,7 +167,7 @@ class InventoryWorkspace extends StatelessWidget {
                         items: [
                           const DropdownMenuItem(
                               value: '', child: Text('All locations')),
-                          for (final entry in inventoryLocations.entries)
+                          for (final entry in locations.entries)
                             DropdownMenuItem(
                                 value: entry.key,
                                 child: Text(entry.value,

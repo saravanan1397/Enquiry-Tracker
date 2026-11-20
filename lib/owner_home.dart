@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'inventory_widget.dart';
+import 'inventory_workspace.dart';
 import 'models/customer_lead.dart';
 import 'services/follow_up_deadline_service.dart';
 
@@ -91,7 +92,7 @@ class OwnerHome extends StatelessWidget {
                       onTap: onSales,
                     );
                     final inventoryCard = _ModuleCard(
-                      title: 'Inventory System',
+                      title: inventoryTitle,
                       eyebrow: 'INVENTORY',
                       description: 'Stock by location, purchases and transfers',
                       footer:

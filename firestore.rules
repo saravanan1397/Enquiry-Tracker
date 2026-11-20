@@ -193,7 +193,10 @@ service cloud.firestore {
 
     // Inventory uses a separate namespace and the existing admin session.
     function inventoryLocation(location) {
-      return location in ['avadi', 'warehouse', 'tnhb', 'hotelmart'];
+      let path = /databases/$(database)/documents/is_locations/$(location);
+      return location is string && (location in ['avadi', 'warehouse', 'tnhb', 'hotelmart'] || inventoryId(location))
+        && (exists(path) ? get(path).data.active == true
+                        : location in ['avadi', 'warehouse', 'tnhb', 'hotelmart']);
     }
     function inventoryType(type) {
       return type in ['opening', 'receipt', 'sale', 'customer_return',
@@ -257,6 +260,15 @@ service cloud.firestore {
         && data.at == request.time && !exists(path)
         && movement.balanceId == balanceId && movement.quantityAfter == data.quantity
         && movement.actor == request.auth.uid && movement.at == request.time;
+    }
+    match /is_locations/{id} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && (inventoryId(id) || id in ['avadi','warehouse','tnhb','hotelmart'])
+        && request.resource.data.keys().hasOnly(['name','active','actor','at'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120 && request.resource.data.active is bool
+        && request.resource.data.actor == request.auth.uid && request.resource.data.at == request.time;
     }
     match /is_products/{id} {
       allow read: if isAdmin();

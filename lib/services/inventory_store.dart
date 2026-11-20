@@ -11,6 +11,29 @@ const inventoryLocations = {
   'hotelmart': 'Selvan Hotel Mart',
 };
 
+class InventoryLocation {
+  const InventoryLocation(this.id, this.name, {this.active = true});
+  final String id, name;
+  final bool active;
+}
+
+List<InventoryLocation> mergeInventoryLocations(
+    Iterable<InventoryLocation> stored) {
+  final byId = {
+    for (final entry in inventoryLocations.entries)
+      entry.key: InventoryLocation(entry.key, entry.value),
+  };
+  for (final location in stored) {
+    byId[location.id] = location;
+  }
+  return byId.values.toList()
+    ..sort((a, b) {
+      if (a.active != b.active) return a.active ? -1 : 1;
+      final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      return byName != 0 ? byName : a.id.compareTo(b.id);
+    });
+}
+
 const inventoryMovementTypes = {
   'opening': 'Opening stock',
   'receipt': 'Stock in',
@@ -45,7 +68,8 @@ class InventoryMovement {
   int deltaFor(int current) {
     final q = quantity;
     if (!inventoryMovementTypes.containsKey(type) ||
-        !inventoryLocations.containsKey(location) ||
+        location == null ||
+        location!.isEmpty ||
         productId == null ||
         productId!.isEmpty ||
         q == null) {
@@ -97,11 +121,45 @@ class InventoryStore {
       _db.collection('is_movements');
   CollectionReference<Map<String, dynamic>> get _drafts =>
       _db.collection('is_drafts');
+  CollectionReference<Map<String, dynamic>> get _locations =>
+      _db.collection('is_locations');
 
   String newMovementId() => _movements.doc().id;
   String newDraftId() => _drafts.doc().id;
 
   Future<InventoryRows> products() => _products.limit(101).get(_server);
+
+  Future<List<InventoryLocation>> locations() async {
+    final stored = <InventoryLocation>[];
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      Query<Map<String, dynamic>> query =
+          _locations.orderBy(FieldPath.documentId).limit(100);
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final page = await query.get(_server);
+      for (final doc in page.docs) {
+        stored.add(InventoryLocation(doc.id, doc.data()['name'] as String,
+            active: doc.data()['active'] == true));
+      }
+      if (page.docs.length < 100) return mergeInventoryLocations(stored);
+      cursor = page.docs.last;
+    }
+  }
+
+  Future<void> saveLocation(
+      {String? id, required String name, bool active = true}) {
+    final value = name.trim();
+    if (value.isEmpty || value.length > 120) {
+      throw const FormatException(
+          'Enter a location name up to 120 characters.');
+    }
+    return _locations.doc(id).set({
+      'name': value,
+      'active': active,
+      'actor': _uid,
+      'at': FieldValue.serverTimestamp(),
+    });
+  }
 
   Future<InventoryRows> balances({String? location}) => (location == null
           ? _balances
@@ -112,6 +170,14 @@ class InventoryStore {
   Future<InventoryRows> movements({String? location}) => (location == null
           ? _movements.orderBy('at', descending: true)
           : _movements.where('location', isEqualTo: location))
+      .limit(101)
+      .get(_server);
+
+  Future<InventoryRows> counts({String? location}) => (location == null
+          ? _movements.where('type', isEqualTo: 'count')
+          : _movements
+              .where('type', isEqualTo: 'count')
+              .where('location', isEqualTo: location))
       .limit(101)
       .get(_server);
 
@@ -172,6 +238,13 @@ class InventoryStore {
       final item = await tx.get(product);
       if (item.data()?['active'] != true)
         throw const FormatException('Choose an active product.');
+      final location = await tx.get(_locations.doc(entry.location));
+      final isActive = location.exists
+          ? (location.data()?['active'] == true)
+          : inventoryLocations.containsKey(entry.location);
+      if (!isActive) {
+        throw const FormatException('Choose an active stock location.');
+      }
       final stock = await tx.get(balance);
       final before = stock.data()?['quantity'] as int? ?? 0;
       final change = entry.deltaFor(before);

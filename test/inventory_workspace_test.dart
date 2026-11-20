@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../lib/inventory_workspace.dart';
+import '../lib/services/inventory_store.dart';
 
 void main() {
   testWidgets('desktop uses a sidebar and toggles only the workspace theme',
@@ -18,6 +19,7 @@ void main() {
                 dark: dark,
                 section: section,
                 location: location,
+                locations: inventoryLocations,
                 onSection: (value) => setState(() => section = value),
                 onLocation: (value) => setState(() => location = value),
                 onTheme: () => setState(() => dark = !dark),
@@ -28,7 +30,7 @@ void main() {
                 }),
               )),
     ));
-    expect(find.text('IS Inventory System'), findsOneWidget);
+    expect(find.text(inventoryTitle), findsOneWidget);
     expect(tester.getTopLeft(find.text('Stock Movements')).dx, lessThan(207));
     expect(tester.getTopLeft(find.text('Showing Overview')).dx,
         greaterThanOrEqualTo(207));
@@ -53,13 +55,14 @@ void main() {
       dark: false,
       section: 'Products',
       location: 'hotelmart',
+      locations: inventoryLocations,
       onSection: (_) {},
       onLocation: (_) {},
       onTheme: () {},
       onRefresh: () {},
       child: const Text('Products content'),
     )));
-    expect(find.text('IS Inventory System'), findsNothing);
+    expect(find.text(inventoryTitle), findsNothing);
     expect(find.text('Products content'), findsOneWidget);
     expect(find.text('Selvan Hotel Mart'), findsOneWidget);
     expect(find.byTooltip('Switch to dark theme'), findsOneWidget);

@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'inventory_workspace.dart';
 import 'services/inventory_store.dart';
@@ -19,6 +22,12 @@ class InventoryWidgetScreen extends StatefulWidget {
 class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   late final InventoryStore _store = widget.store ?? InventoryStore();
   late Future<List<InventoryRows>> _data;
+  late Future<List<InventoryLocation>> _locationData;
+  List<InventoryLocation> _locations = mergeInventoryLocations(const []);
+  Map<String, String> get _activeLocations => {
+        for (final location in _locations)
+          if (location.active) location.id: location.name,
+      };
   var _section = 'Overview';
   String? _location;
   var _query = '';
@@ -32,8 +41,16 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLocations();
     _load();
     unawaited(_loadTheme());
+  }
+
+  void _loadLocations() {
+    _locationData = _store.locations().then((locations) {
+      if (mounted) _locations = locations;
+      return locations;
+    });
   }
 
   Future<void> _loadTheme() async {
@@ -56,10 +73,15 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   void _load() {
+    if (_section == 'Locations') {
+      _data = Future.value(const []);
+      return;
+    }
     _data = Future.wait([
       _store.products(),
-      if (_section == 'Overview' || _section == 'Products')
+      if (['Overview', 'Products', 'Reports'].contains(_section))
         _store.balances(location: _location),
+      if (_section == 'Stock Counts') _store.counts(location: _location),
       if (_section == 'Stock Movements') ...[
         _store.movements(location: _location),
         _store.drafts(location: _location),
@@ -68,63 +90,151 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   void _refresh() {
-    if (mounted) setState(_load);
+    if (mounted)
+      setState(() {
+        _loadLocations();
+        _load();
+      });
   }
 
   @override
-  Widget build(BuildContext context) => InventoryWorkspace(
-        dark: _dark,
-        section: _section,
-        location: _location,
-        onRefresh: _refresh,
-        onTheme: () {
-          setState(() {
-            _themeChanged = true;
-            _dark = !_dark;
-          });
-          unawaited(_saveTheme(_dark));
-        },
-        onSection: (section) {
-          if (_section == section) return;
-          setState(() {
-            _section = section;
-            _query = '';
-            _load();
-          });
-        },
-        onLocation: (value) {
-          if (_location == value) return;
-          setState(() {
-            _location = value;
-            _load();
-          });
-        },
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(22, 24, 22, 26),
-          children: [
-            FutureBuilder<List<InventoryRows>>(
-              future: _data,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError || !snapshot.hasData) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                          'Inventory could not be loaded. Check your connection and admin access.'),
-                      TextButton(
-                          onPressed: _refresh, child: const Text('Try again')),
-                    ],
-                  );
-                }
-                return _content(context, snapshot.requireData);
-              },
+  Widget build(BuildContext context) => FutureBuilder<List<InventoryLocation>>(
+      future: _locationData,
+      builder: (context, locationSnapshot) => InventoryWorkspace(
+            dark: _dark,
+            section: _section,
+            location: _location,
+            locations: _activeLocations,
+            onRefresh: _refresh,
+            onTheme: () {
+              setState(() {
+                _themeChanged = true;
+                _dark = !_dark;
+              });
+              unawaited(_saveTheme(_dark));
+            },
+            onSection: (section) {
+              if (_section == section) return;
+              setState(() {
+                _section = section;
+                _query = '';
+                _load();
+              });
+            },
+            onLocation: (value) {
+              if (_location == value) return;
+              setState(() {
+                _location = value;
+                _load();
+              });
+            },
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(22, 24, 22, 26),
+              children: [
+                FutureBuilder<List<InventoryRows>>(
+                  future: _data,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done ||
+                        locationSnapshot.connectionState !=
+                            ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError ||
+                        !snapshot.hasData ||
+                        locationSnapshot.hasError) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                              'Inventory could not be loaded. Check your connection and admin access.'),
+                          TextButton(
+                              onPressed: _refresh,
+                              child: const Text('Try again')),
+                        ],
+                      );
+                    }
+                    return _section == 'Locations'
+                        ? _locationsContent(context)
+                        : _content(context, snapshot.requireData);
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
+          ));
+
+  Widget _locationsContent(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text('Locations',
+                  style: Theme.of(context).textTheme.headlineSmall),
+              FilledButton.icon(
+                  onPressed: _editLocation,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Location')),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+              'Active locations appear in the stock dropdowns. Deleted locations remain in history.'),
+          const SizedBox(height: 12),
+          _table([
+            'Location',
+            'Status',
+            'Actions'
+          ], [
+            for (final location in _locations)
+              [
+                location.name,
+                location.active ? 'Active' : 'Deleted',
+                Wrap(children: [
+                  TextButton(
+                      onPressed: () => _editLocation(location),
+                      child: const Text('Edit')),
+                  TextButton(
+                      onPressed: () => _changeLocationStatus(location),
+                      child: Text(location.active ? 'Delete' : 'Restore')),
+                ]),
+              ],
+          ]),
+        ],
       );
+
+  Future<void> _editLocation([InventoryLocation? location]) async {
+    final name = TextEditingController(text: location?.name);
+    final saved = await _editor(
+      title: location == null ? 'Add Location' : 'Edit Location',
+      fields: (_) => [_input(name, 'Location name')],
+      action: 'Save Location',
+      save: () => _store.saveLocation(
+          id: location?.id, name: name.text, active: location?.active ?? true),
+    );
+    name.dispose();
+    if (saved) _refresh();
+  }
+
+  Future<void> _changeLocationStatus(InventoryLocation location) async {
+    final removing = location.active;
+    final saved = await _editor(
+      title: removing ? 'Delete location?' : 'Restore location?',
+      fields: (_) => [
+        Text(removing
+            ? 'Remove ${location.name} from new stock entries? Existing stock and movement history will be preserved.'
+            : 'Show ${location.name} in the stock dropdowns again?')
+      ],
+      action: removing ? 'Delete Location' : 'Restore Location',
+      save: () => _store.saveLocation(
+          id: location.id, name: location.name, active: !removing),
+    );
+    if (saved && mounted) {
+      if (removing && _location == location.id) _location = null;
+      _refresh();
+    }
+  }
 
   Widget _content(BuildContext context, List<InventoryRows> data) {
     final products = data.first;
@@ -136,17 +246,41 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             : id == null || id.isEmpty
                 ? '—'
                 : 'Unnamed product';
-    String locationName(Object? id) => inventoryLocations[id] ?? '—';
+    final locationNames = {
+      for (final location in _locations) location.id: location.name
+    };
+    String locationName(Object? id) =>
+        locationNames[id] ?? (id as String? ?? '—');
     final title = _section == 'Overview' ? 'Inventory Overview' : _section;
+    final reportHeadings = ['Product', 'Location', 'On hand', 'Reorder at'];
+    final reportRows = [
+      for (final row in rows.docs.take(100))
+        if (_section == 'Reports')
+          [
+            productName(row.data()['productId'] as String?),
+            locationName(row.data()['location']),
+            '${row.data()['quantity']}',
+            '${byProduct[row.data()['productId']]?['reorder'] ?? ''}',
+          ],
+    ];
     final action = _section == 'Products'
         ? FilledButton(onPressed: _product, child: const Text('Add Product'))
-        : FilledButton(
-            onPressed: () => _movement(products.docs),
-            child: const Text('Record Movement'),
-          );
+        : _section == 'Reports'
+            ? FilledButton(
+                onPressed: reportRows.isEmpty
+                    ? null
+                    : () => _exportReport(reportHeadings, reportRows),
+                child: const Text('Export CSV'))
+            : FilledButton(
+                onPressed: () =>
+                    _movement(products.docs, null, _section == 'Stock Counts'),
+                child: Text(_section == 'Stock Counts'
+                    ? 'Record Count'
+                    : 'Record Movement'),
+              );
     final visibleRows = rows.docs.take(100).toList();
     final stock = <String, int>{};
-    if (_section != 'Stock Movements') {
+    if (['Overview', 'Products'].contains(_section)) {
       for (final row in visibleRows) {
         final item = row.data();
         final id = item['productId'] as String;
@@ -182,6 +316,35 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ]);
         }),
         const SizedBox(height: 14),
+        if (_section == 'Reports') ...[
+          const Text(
+              'Stock on hand by location · CSV contains the rows shown here.'),
+          const SizedBox(height: 12),
+          _table(reportHeadings, reportRows),
+        ],
+        if (_section == 'Stock Counts') ...[
+          const Text(
+              'A physical count records the difference and updates stock when posted.'),
+          const SizedBox(height: 12),
+          _table([
+            'When',
+            'Product',
+            'Location',
+            'Expected',
+            'Counted',
+            'Variance'
+          ], [
+            for (final row in visibleRows)
+              [
+                _time(row.data()['at']),
+                productName(row.data()['productId'] as String?),
+                locationName(row.data()['location']),
+                '${row.data()['before']}',
+                '${row.data()['quantityAfter']}',
+                '${row.data()['delta']}',
+              ],
+          ]),
+        ],
         if (_section == 'Overview') ...[
           Text(
               '${products.docs.take(100).length} products shown · ${stock.values.fold<int>(0, (a, b) => a + b)} units in the balances shown'),
@@ -316,6 +479,32 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     );
   }
 
+  Future<void> _exportReport(
+      List<String> headers, List<List<String>> rows) async {
+    String cell(String value) {
+      final safe =
+          RegExp(r'^\s*[=+@-]|^[\t\r\n]').hasMatch(value) ? "'$value" : value;
+      return '"${safe.replaceAll('"', '""')}"';
+    }
+
+    final content =
+        [headers, ...rows].map((row) => row.map(cell).join(',')).join('\r\n');
+    try {
+      await SharePlus.instance.share(ShareParams(
+        files: [
+          XFile.fromData(Uint8List.fromList(utf8.encode('\uFEFF$content')),
+              mimeType: 'text/csv')
+        ],
+        fileNameOverrides: ['ssh-inventory-stock.csv'],
+        downloadFallbackEnabled: true,
+      ));
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not export the inventory report.')));
+    }
+  }
+
   bool _matchesMovement(InventoryRow row) {
     final data = row.data();
     if (_movementType != null && data['type'] != _movementType) return false;
@@ -434,13 +623,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   }
 
   Future<void> _movement(List<InventoryRow> products,
-      [InventoryRow? draft]) async {
+      [InventoryRow? draft, bool countOnly = false]) async {
     final values = draft?.data() ?? {};
     var location = (values['location'] as String?) ?? _location;
-    if (!inventoryLocations.containsKey(location)) location = null;
+    if (!_activeLocations.containsKey(location)) location = null;
     var product = values['productId'] as String?;
     if (!products.take(100).any((p) => p.id == product)) product = null;
-    var type = values['type'] as String?;
+    var type = countOnly ? 'count' : values['type'] as String?;
     if (!inventoryMovementTypes.containsKey(type)) type = null;
     final quantity =
         TextEditingController(text: values['quantity']?.toString());
@@ -454,11 +643,12 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final movementId = _store.newMovementId();
     final draftId = draft?.id ?? _store.newDraftId();
     final result = await _editor(
-      title: 'Record Movement',
+      title: countOnly ? 'Record Physical Count' : 'Record Movement',
       fields: (update) => [
-        _select('Movement type', type, inventoryMovementTypes,
-            (v) => update(() => type = v)),
-        _select('Where is the stock kept?', location, inventoryLocations,
+        if (!countOnly)
+          _select('Movement type', type, inventoryMovementTypes,
+              (v) => update(() => type = v)),
+        _select('Where is the stock kept?', location, _activeLocations,
             (v) => update(() => location = v)),
         _select(
             'Product',
@@ -470,10 +660,11 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     : '${p.data()['name']}'
             },
             (v) => update(() => product = v)),
-        _input(quantity, 'Quantity', number: true),
+        _input(quantity, countOnly ? 'Counted quantity' : 'Quantity',
+            number: true),
         _input(note, 'Note'),
       ],
-      action: 'Post Movement',
+      action: countOnly ? 'Post Count' : 'Post Movement',
       save: () =>
           _store.post(input(), movementId: movementId, draftId: draft?.id),
       saveDraft: () => _store.saveDraft(input(), id: draftId),
