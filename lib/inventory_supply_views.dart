@@ -381,7 +381,7 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
       const Text(
           'The source was already debited. Complete an older transfer only once its stock has arrived.'),
       _table(['Product', 'From', 'To', 'Quantity', 'Actions'], rows,
-          compactWidth: 880),
+          centeredWidths: const [190, 174, 174, 112, 184]),
     ]);
   }
 

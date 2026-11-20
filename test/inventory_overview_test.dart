@@ -173,8 +173,9 @@ void main() {
     final pencil = find.byTooltip('Edit stock for Cookware Fixture');
     expect(pencil, findsOneWidget);
     final physicalSearch = find.byKey(const ValueKey('inventory-view-search'));
-    expect(tester.getSize(find.byType(DataTable)).width,
-        closeTo(tester.getSize(physicalSearch).width, 1));
+    final contentWidth = tester.getSize(physicalSearch).width;
+    expect(
+        tester.getSize(find.byType(DataTable)).width, closeTo(contentWidth, 1));
     expect(tester.getCenter(find.text('Balance stock')).dx,
         closeTo(tester.getCenter(find.text('1')).dx, 1));
     expect(find.text('1'), findsOneWidget);
@@ -192,6 +193,7 @@ void main() {
 
     await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
+    expect(find.text('Record Movement'), findsNothing);
     final search = find.byKey(const ValueKey('inventory-view-search'));
     final type = find.text('All types');
     final date = find.text('Any date');
@@ -200,15 +202,18 @@ void main() {
     expect(
         tester.getTopLeft(type).dx, greaterThan(tester.getTopRight(search).dx));
     expect(tester.getTopLeft(date).dx, greaterThan(tester.getTopLeft(type).dx));
-    expect(
-        tester.getTopLeft(find.text('Balance')).dx -
-            tester.getTopLeft(find.text('Movement')).dx,
-        lessThan(390));
+    final historyTable = find.byType(DataTable).first;
+    expect(tester.getSize(historyTable).width, closeTo(contentWidth, 1));
+    expect(tester.getCenter(find.text('Movement')).dx,
+        closeTo(tester.getCenter(find.text('Physical count')).dx, 1));
+    expect(tester.getCenter(find.text('Balance')).dx,
+        closeTo(tester.getCenter(find.text('1')).dx, 1));
 
     await tester.binding.setSurfaceSize(const Size(590, 900));
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(type).dy,
         greaterThan(tester.getBottomLeft(search).dy));
+    expect(tester.getSize(historyTable).width, 884);
     expect(tester.takeException(), isNull);
   });
 
@@ -233,6 +238,7 @@ void main() {
     await tester.tap(find.text('Physical Stock'));
     await tester.pumpAndSettle();
     expect(find.text('Balance stock'), findsOneWidget);
+    expect(find.text('Set Total Stock'), findsNothing);
     expect(find.text('Expected'), findsNothing);
     expect(find.text('Variance'), findsNothing);
 
@@ -253,7 +259,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    await enterStock('Set Total Stock', 'Total stock', '100', 'Save Total');
+    await tester.tap(find.byTooltip('Edit stock for Cookware Fixture'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'New quantity on hand'), '100');
+    await tester.tap(find.text('Save Stock'));
+    await tester.pumpAndSettle();
     expect(find.text('100'), findsOneWidget);
     await enterStock(
         'Subtract Outgoing Stock', 'Outgoing stock', '25', 'Subtract Stock');
@@ -310,7 +321,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('transfer asks once and stays on History after confirmation',
+  testWidgets(
+      'transfer asks once and stays on Physical Stock after confirmation',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -318,7 +330,8 @@ void main() {
     await tester
         .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('History'));
+    expect(find.text('Record Movement'), findsNothing);
+    await tester.tap(find.text('Physical Stock'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Record Movement'));
     await tester.pumpAndSettle();

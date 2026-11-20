@@ -405,9 +405,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     child: const Text('Subtract Outgoing Stock'),
                   ),
                   FilledButton(
-                    onPressed: () =>
-                        _movement(products.docs, stockType: 'count'),
-                    child: const Text('Set Total Stock'),
+                    onPressed: () => _movement(products.docs),
+                    child: const Text('Record Movement'),
                   ),
                 ] else ...[
                   if (widget.adminDark != null && _section == 'Overview') ...[
@@ -420,10 +419,6 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                       child: const Text('Restore from backup'),
                     ),
                   ],
-                  FilledButton(
-                    onPressed: () => _movement(products.docs),
-                    child: const Text('Record Movement'),
-                  ),
                 ],
               ]);
     final visibleRows = rows.docs.take(100).toList();
@@ -638,7 +633,14 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     : '${row.data()['delta']}',
                 '${row.data()['quantityAfter']}',
               ],
-          ], compactWidth: 880),
+          ], centeredWidths: const [
+            192,
+            190,
+            164,
+            158,
+            90,
+            90
+          ]),
           if (data[3].docs.isNotEmpty) ...[
             const SizedBox(height: 14),
             _olderTransferActions(context, data[3], productDocuments),
@@ -649,7 +651,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Product',
             'Location',
             'Quantity',
-            ''
+            'Actions'
           ], [
             for (final row in data[2].docs.take(100).where(matchesRecord))
               [
@@ -660,6 +662,11 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     onPressed: () => _movement(products.docs, draft: row),
                     child: const Text('Resume')),
               ],
+          ], centeredWidths: const [
+            190,
+            174,
+            122,
+            133
           ]),
         ],
         if (data.any((query) => query.size > 100))
@@ -809,7 +816,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       );
 
   Widget _table(List<String> headings, List<List<Object>> rows,
-      {double? compactWidth, List<double>? centeredWidths}) {
+      {List<double>? centeredWidths}) {
     return LayoutBuilder(builder: (context, constraints) {
       final scheme = Theme.of(context).colorScheme;
       final centered = centeredWidths != null;
@@ -822,11 +829,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-                minWidth: centered
-                    ? 0
-                    : constraints.maxWidth
-                        .clamp(0.0, compactWidth ?? constraints.maxWidth)),
+            constraints:
+                BoxConstraints(minWidth: centered ? 0 : constraints.maxWidth),
             child: DataTable(
               headingRowHeight: 42,
               dataRowMinHeight: 37,
@@ -836,7 +840,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               headingTextStyle: TextStyle(
                   color: scheme.onSurface, fontWeight: FontWeight.w800),
               horizontalMargin: centered ? 12 : 14,
-              columnSpacing: compactWidth == null ? 24 : 16,
+              columnSpacing: 24,
               dividerThickness: 1,
               columns: headings.indexed.map(((int, String) column) {
                 final (index, text) = column;
@@ -1000,7 +1004,6 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       title: selectedProduct != null
           ? 'Edit Stock'
           : switch (stockType) {
-              'count' => 'Set Total Stock',
               'sale' => 'Subtract Outgoing Stock',
               'transfer' => 'New Transfer',
               _ => 'Record Movement',
@@ -1052,7 +1055,6 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             selectedProduct != null
                 ? 'New quantity on hand'
                 : switch (stockType) {
-                    'count' => 'Total stock',
                     'sale' => 'Outgoing stock',
                     _ => 'Quantity',
                   },
@@ -1062,7 +1064,6 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       action: selectedProduct != null
           ? 'Save Stock'
           : switch (stockType) {
-              'count' => 'Save Total',
               'sale' => 'Subtract Stock',
               _ => 'Post Movement',
             },
