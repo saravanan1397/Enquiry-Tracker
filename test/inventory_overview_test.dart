@@ -29,6 +29,8 @@ class _Store implements InventoryStore {
   final bool withStock;
   int? stock;
   InventoryMovement? posted;
+  final transfers = <(String, String, String, int)>[];
+  int _movementNumber = 0;
   @override
   Future<InventoryRows> products() async => _Rows([
         _Row('p1', {
@@ -77,9 +79,27 @@ class _Store implements InventoryStore {
   Future<List<InventoryLocation>> locations() async =>
       mergeInventoryLocations(const []);
   @override
-  String newMovementId() => 'movement-test';
+  String newMovementId() => 'movement-test-${_movementNumber++}';
   @override
   String newDraftId() => 'draft-test';
+  @override
+  String newTransferId() => 'transfer-test';
+  @override
+  Future<InventoryRows> legacyTransfers() async => _Rows([]);
+  @override
+  Future<void> transferStock(
+      {required String id,
+      required String outgoingId,
+      required String incomingId,
+      required String from,
+      required String to,
+      required String product,
+      required int quantity,
+      String? draftId}) async {
+    if (outgoingId == incomingId) throw StateError('Transfer IDs match.');
+    transfers.add((from, to, product, quantity));
+  }
+
   @override
   Future<void> post(InventoryMovement entry,
       {required String movementId, String? draftId}) async {
@@ -101,15 +121,20 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: InventoryWidgetScreen(store: _Store(withStock: true))));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Products').first);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Edit details for Cookware Fixture'), findsNothing);
+    expect(find.byTooltip('Edit stock for Cookware Fixture'), findsOneWidget);
     await tester.tap(find.text('Physical Stock'));
     await tester.pumpAndSettle();
+    expect(find.byTooltip('Edit details for Cookware Fixture'), findsOneWidget);
     final location = tester.getTopLeft(find.text('Location'));
     final balance = tester.getTopLeft(find.text('Balance stock'));
     expect(balance.dx - location.dx, lessThan(300));
     expect(find.text('1'), findsOneWidget);
     expect(find.text('1.00'), findsNothing);
 
-    await tester.tap(find.text('Stock Movements'));
+    await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
     final search = find.byKey(const ValueKey('inventory-view-search'));
     final type = find.text('All types');
@@ -193,7 +218,7 @@ void main() {
       ('Overview', 'test-1', 'Cookware Fixture'),
       ('Products', '00001844', 'Cookware Fixture'),
       ('Physical Stock', 'warehouse', 'Cookware Fixture'),
-      ('Stock Movements', 'awaiting invoice', 'Resume'),
+      ('History', 'awaiting invoice', 'Resume'),
       ('Reports', 'warehouse', 'Cookware Fixture'),
       ('Locations', 'selvan hotel', 'Selvan Hotel Mart'),
     ]) {
@@ -209,7 +234,7 @@ void main() {
       await tester.enterText(field, query);
       await tester.pumpAndSettle();
       expect(find.text(shown), findsWidgets);
-      expect(find.text('Stock Movements'), findsWidgets);
+      expect(find.text('History'), findsWidgets);
       await tester.enterText(field, 'no match');
       await tester.pumpAndSettle();
       expect(find.text(shown), findsNothing);
@@ -229,14 +254,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('stock movement dropdown offers a separate transfer destination',
+  testWidgets('transfer asks once and stays on History after confirmation',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store();
     await tester
-        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: _Store())));
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Stock Movements'));
+    await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Record Movement'));
     await tester.pumpAndSettle();
@@ -246,8 +272,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Source branch'), findsOneWidget);
     expect(find.text('Destination branch'), findsOneWidget);
-    expect(find.text('Dispatch Transfer'), findsOneWidget);
+    expect(find.text('Transfer Stock'), findsOneWidget);
     expect(find.text('Save Draft'), findsNothing);
+    await tester.tap(find.text('Not selected').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SSH Warehouse').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Not selected').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SSH TNHB').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Not selected').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cookware Fixture').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Quantity'), '4');
+    await tester.tap(find.text('Transfer Stock'));
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm transfer'), findsOneWidget);
+    expect(store.transfers, isEmpty);
+    await tester.tap(find.text('No'));
+    await tester.pumpAndSettle();
+    expect(store.transfers, isEmpty);
+    await tester.tap(find.text('Transfer Stock'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Yes, transfer'));
+    await tester.pumpAndSettle();
+    expect(store.transfers, [('warehouse', 'tnhb', 'p1', 4)]);
+    expect(find.text('Record Movement'), findsOneWidget);
+    expect(find.text('Confirm transfer'), findsNothing);
   });
 
   testWidgets(

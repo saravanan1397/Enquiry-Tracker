@@ -118,9 +118,10 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       if (['Overview', 'Products', 'Reports', physicalStockSection]
           .contains(_section))
         _store.balances(location: _location),
-      if (_section == 'Stock Movements') ...[
+      if (_section == inventoryHistorySection) ...[
         _store.movements(location: _location),
         _store.drafts(location: _location),
+        _store.legacyTransfers(),
       ],
       if (_section == 'Purchasing') ...[
         _store.purchaseOrders(),
@@ -309,7 +310,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               'Products' =>
                 'Search products by name, SKU, barcode or category',
               physicalStockSection => 'Search physical stock',
-              'Stock Movements' => 'Search movements and drafts',
+              inventoryHistorySection => 'Search movements and drafts',
               'Reports' => 'Search stock report',
               'Suppliers' => 'Search suppliers',
               'Purchasing' => 'Search purchase orders',
@@ -331,6 +332,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final products = data.first;
     final rows = data[1];
     final byProduct = {for (final p in products.docs) p.id: p.data()};
+    final productDocuments = {for (final p in products.docs) p.id: p};
     String productName(String? id) =>
         (byProduct[id]?['name'] as String?)?.trim().isNotEmpty == true
             ? byProduct[id]!['name'] as String
@@ -437,7 +439,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final low = visibleRows.where((row) {
       final p = byProduct[row.data()['productId']];
       final reorder = p?['reorder'] as int?;
-      return _section != 'Stock Movements' &&
+      return _section != inventoryHistorySection &&
           p?['active'] == true &&
           reorder != null &&
           (row.data()['quantity'] as int) < reorder &&
@@ -467,11 +469,12 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     : () => _movement(products.docs,
                         stockType: 'count', selectedProduct: row),
               ),
-              IconButton(
-                tooltip: 'Edit details for ${productName(row.id)}',
-                icon: const Icon(Icons.edit_note_outlined, size: 21),
-                onPressed: () => _product(row),
-              ),
+              if (_section != 'Products')
+                IconButton(
+                  tooltip: 'Edit details for ${productName(row.id)}',
+                  icon: const Icon(Icons.edit_note_outlined, size: 21),
+                  onPressed: () => _product(row),
+                ),
             ]),
           ],
     ];
@@ -495,7 +498,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ]);
         }),
         const SizedBox(height: 14),
-        if (_section != 'Stock Movements') _viewSearch(),
+        if (_section != inventoryHistorySection) _viewSearch(),
         if (_section == 'Reports') ...[
           const Text(
               'Stock value uses each product’s saved unit cost. A blank value means the cost is missing or the amount exceeds the supported range. Exports contain the rows shown.'),
@@ -506,13 +509,23 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           _table([
             'Product',
             'Location',
-            'Balance stock'
+            'Balance stock',
+            'Actions'
           ], [
             for (final row in visibleRows.where(matchesRecord))
               [
                 productName(row.data()['productId'] as String?),
                 locationName(row.data()['location']),
                 row.data()['quantity'] as int,
+                if (productDocuments[row.data()['productId']]
+                    case final InventoryRow product)
+                  IconButton(
+                    tooltip: 'Edit details for ${productName(product.id)}',
+                    icon: const Icon(Icons.edit_note_outlined, size: 21),
+                    onPressed: () => _product(product),
+                  )
+                else
+                  const SizedBox.shrink(),
               ],
           ], compactWidth: 520),
         ],
@@ -559,7 +572,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Actions'
           ], productRows),
         ],
-        if (_section == 'Stock Movements') ...[
+        if (_section == inventoryHistorySection) ...[
           LayoutBuilder(builder: (context, limits) {
             final width = limits.maxWidth;
             final compact = width < 640;
@@ -625,6 +638,10 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 '${row.data()['quantityAfter']}',
               ],
           ], compactWidth: 880),
+          if (data[3].docs.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _olderTransferActions(context, data[3], productDocuments),
+          ],
           const SizedBox(height: 14),
           Text('Drafts', style: Theme.of(context).textTheme.titleMedium),
           _table([
@@ -928,6 +945,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         note: note.text);
     final movementId = _store.newMovementId();
     String? transferId;
+    String? incomingId;
     final draftId = draft?.id ?? _store.newDraftId();
     final result = await _editor(
       title: selectedProduct != null
@@ -996,15 +1014,49 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               'sale' => 'Subtract Stock',
               _ => 'Post Movement',
             },
-      actionLabel: () => type == 'transfer' ? 'Dispatch Transfer' : null,
+      actionLabel: () => type == 'transfer' ? 'Transfer Stock' : null,
+      confirmBeforeSave: (dialog) async {
+        if (type != 'transfer') return true;
+        final units = _optionalInt(quantity.text);
+        if (location == null ||
+            destination == null ||
+            product == null ||
+            units == null ||
+            units < 1 ||
+            units > 1000000) {
+          throw const FormatException(
+              'Choose a source, destination, product, and a quantity from 1 to 1,000,000.');
+        }
+        final name = products.where((row) => row.id == product).firstOrNull;
+        return await showDialog<bool>(
+              context: dialog,
+              builder: (confirmation) => AlertDialog(
+                title: const Text('Confirm transfer'),
+                content: Text(
+                    'Transfer $units units of ${name == null ? 'this product' : _supplyName(name)} from ${_supplyLocation(location)} to ${_supplyLocation(destination)} now?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(confirmation).pop(false),
+                    child: const Text('No'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(confirmation).pop(true),
+                    child: const Text('Yes, transfer'),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+      },
       save: () => type == 'transfer'
-          ? _store.dispatchTransfer(
+          ? _store.transferStock(
               id: transferId ??= _store.newTransferId(),
-              movementId: movementId,
-              from: location,
-              to: destination,
-              product: product,
-              quantity: _optionalInt(quantity.text),
+              outgoingId: movementId,
+              incomingId: incomingId ??= _store.newMovementId(),
+              from: location!,
+              to: destination!,
+              product: product!,
+              quantity: _optionalInt(quantity.text)!,
               draftId: draft?.id)
           : _store.post(input(), movementId: movementId, draftId: draft?.id),
       showDraft: () => type != 'transfer',
@@ -1061,6 +1113,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     required String action,
     String? Function()? actionLabel,
     required Future<void> Function() save,
+    Future<bool> Function(BuildContext)? confirmBeforeSave,
     Future<void> Function()? saveDraft,
     bool Function()? showDraft,
   }) async {
@@ -1072,12 +1125,21 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       builder: (dialog) => Theme(
           data: inventoryTheme(_workspaceDark),
           child: StatefulBuilder(builder: (dialog, update) {
-            Future<void> submit(Future<void> Function() task) async {
+            Future<void> submit(Future<void> Function() task,
+                {bool confirm = false}) async {
               update(() {
                 busy = true;
                 error = null;
               });
               try {
+                if (confirm && confirmBeforeSave != null) {
+                  final accepted = await confirmBeforeSave(dialog);
+                  if (!dialog.mounted) return;
+                  if (!accepted) {
+                    update(() => busy = false);
+                    return;
+                  }
+                }
                 await task();
                 if (dialog.mounted) Navigator.of(dialog).pop(true);
               } catch (e) {
@@ -1122,7 +1184,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                         onPressed: busy ? null : () => submit(saveDraft),
                         child: const Text('Save Draft')),
                   FilledButton(
-                      onPressed: busy ? null : () => submit(save),
+                      onPressed:
+                          busy ? null : () => submit(save, confirm: true),
                       child: Text(
                           busy ? 'Saving…' : actionLabel?.call() ?? action)),
                 ],

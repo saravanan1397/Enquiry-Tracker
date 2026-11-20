@@ -4,13 +4,14 @@ const inventorySections = [
   'Overview',
   'Products',
   physicalStockSection,
-  'Stock Movements',
+  inventoryHistorySection,
+  'Transfers',
   'Reports',
   'Locations',
   'Suppliers',
   'Purchasing',
-  'Transfers',
 ];
+const inventoryHistorySection = 'History';
 const physicalStockSection = 'Physical Stock';
 const inventoryTitle = 'Centralized Inventory';
 

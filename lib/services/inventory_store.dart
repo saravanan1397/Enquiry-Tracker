@@ -49,8 +49,8 @@ const inventoryMovementTypes = {
 const inventoryMovementLabels = {
   ...inventoryMovementTypes,
   'purchase_receipt': 'Purchase receipt',
-  'transfer_out': 'Transfer dispatched',
-  'transfer_in': 'Transfer received',
+  'transfer_out': 'Transfer out',
+  'transfer_in': 'Transfer in',
 };
 
 class InventoryMovement {
@@ -134,8 +134,34 @@ class InventoryStore {
 
   String newMovementId() => _movements.doc().id;
   String newDraftId() => _drafts.doc().id;
+  String newTransferId() => _transfers.doc().id;
 
   Future<InventoryRows> products() => _products.limit(101).get(_server);
+
+  Future<InventoryRows> legacyTransfers() => _db
+      .collection('is_transfers')
+      .where('status', isEqualTo: 'in_transit')
+      .limit(101)
+      .get(_server);
+
+  Future<void> transferStock(
+          {required String id,
+          required String outgoingId,
+          required String incomingId,
+          required String from,
+          required String to,
+          required String product,
+          required int quantity,
+          String? draftId}) =>
+      _transferNow(
+          id: id,
+          outgoingId: outgoingId,
+          incomingId: incomingId,
+          from: from,
+          to: to,
+          product: product,
+          quantity: quantity,
+          draftId: draftId);
 
   Future<List<InventoryLocation>> locations() async {
     final stored = <InventoryLocation>[];

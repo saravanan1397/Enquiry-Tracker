@@ -9,12 +9,12 @@ void main() {
       'Overview',
       'Products',
       'Physical Stock',
-      'Stock Movements',
+      'History',
+      'Transfers',
       'Reports',
       'Locations',
       'Suppliers',
       'Purchasing',
-      'Transfers',
     ]);
   });
 
@@ -45,12 +45,12 @@ void main() {
               )),
     ));
     expect(find.text(inventoryTitle), findsOneWidget);
-    expect(tester.getTopLeft(find.text('Stock Movements')).dx, lessThan(207));
+    expect(tester.getTopLeft(find.text('History')).dx, lessThan(207));
     expect(tester.getTopLeft(find.text('Showing Overview')).dx,
         greaterThanOrEqualTo(207));
-    await tester.tap(find.text('Stock Movements'));
+    await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
-    expect(find.text('Showing Stock Movements'), findsOneWidget);
+    expect(find.text('Showing History'), findsOneWidget);
     expect(inside, Brightness.light);
     await tester.tap(find.byTooltip('Switch to dark theme'));
     await tester.pumpAndSettle();

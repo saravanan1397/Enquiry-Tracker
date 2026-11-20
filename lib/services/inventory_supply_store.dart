@@ -72,7 +72,6 @@ extension InventorySupplyStore on InventoryStore {
   }
 
   String newPurchaseOrderId() => _orders.doc().id;
-  String newTransferId() => _transfers.doc().id;
 
   Future<void> createPurchaseOrder(
       {required String? supplier,
@@ -173,55 +172,93 @@ extension InventorySupplyStore on InventoryStore {
     });
   }
 
-  Future<void> dispatchTransfer(
+  Future<void> _transferNow(
       {required String id,
-      required String movementId,
-      required String? from,
-      required String? to,
-      required String? product,
-      required int? quantity,
+      required String outgoingId,
+      required String incomingId,
+      required String from,
+      required String to,
+      required String product,
+      required int quantity,
       String? draftId}) async {
-    if (from == null ||
-        to == null ||
-        product == null ||
-        quantity == null ||
-        quantity < 1 ||
-        quantity > 1000000) {
+    if (quantity < 1 || quantity > 1000000) {
       throw const FormatException(
           'Choose an origin, destination, product, and a positive quantity.');
     }
     if (from == to)
       throw const FormatException('Choose two different locations.');
-    final transfer = _transfers.doc(id), movement = _movements.doc(movementId);
+    if (outgoingId == incomingId)
+      throw const FormatException('Transfer movement IDs must differ.');
+    final transfer = _transfers.doc(id);
+    final outgoing = _movements.doc(outgoingId),
+        incoming = _movements.doc(incomingId);
+    final actor = _uid;
     await _transaction((tx) async {
       final already = (await tx.get(transfer)).data();
       if (already != null) {
-        return already['dispatchId'] == movementId && already['actor'] == _uid
+        return already['dispatchId'] == outgoingId &&
+                already['receiveId'] == incomingId &&
+                already['status'] == 'received' &&
+                already['actor'] == actor &&
+                already['from'] == from &&
+                already['to'] == to &&
+                already['quantity'] == quantity &&
+                already['productId'] == product
             ? null
             : 'Transfer ID already used.';
       }
-      if ((await tx.get(movement)).exists) return 'Movement ID already used.';
+      if ((await tx.get(outgoing)).exists || (await tx.get(incoming)).exists) {
+        return 'Movement ID already used.';
+      }
+      if ((await tx.get(_products.doc(product))).data()?['active'] != true) {
+        return 'Choose an active product.';
+      }
+      if (!await _activeBranch(tx, from)) return 'Choose an active source.';
       if (!await _activeBranch(tx, to)) return 'Choose an active destination.';
-      final error = await _linkedMovement(tx,
-          movement: movement,
+      final source = _balances.doc('${from}_${product}');
+      final destination = _balances.doc('${to}_${product}');
+      final sourceBefore =
+          (await tx.get(source)).data()?['quantity'] as int? ?? 0;
+      final destinationBefore =
+          (await tx.get(destination)).data()?['quantity'] as int? ?? 0;
+      final error = inventoryStockChangeError(sourceBefore, -quantity) ??
+          inventoryStockChangeError(destinationBefore, quantity);
+      if (error != null) return error;
+      final stamp = FieldValue.serverTimestamp();
+      _writeLinkedMovement(tx,
+          balance: source,
+          movement: outgoing,
           type: 'transfer_out',
           id: id,
           product: product,
           location: from,
-          units: quantity);
-      if (error != null) return error;
+          units: quantity,
+          before: sourceBefore,
+          delta: -quantity,
+          stamp: stamp);
+      _writeLinkedMovement(tx,
+          balance: destination,
+          movement: incoming,
+          type: 'transfer_in',
+          id: id,
+          product: product,
+          location: to,
+          units: quantity,
+          before: destinationBefore,
+          delta: quantity,
+          stamp: stamp);
       tx.set(transfer, {
         'productId': product,
         'from': from,
         'to': to,
         'quantity': quantity,
-        'status': 'in_transit',
-        'dispatchId': movementId,
-        'receiveId': null,
-        'receiptActor': null,
-        'receivedAt': null,
-        'actor': _uid,
-        'at': FieldValue.serverTimestamp()
+        'status': 'received',
+        'dispatchId': outgoingId,
+        'receiveId': incomingId,
+        'receiptActor': actor,
+        'receivedAt': stamp,
+        'actor': actor,
+        'at': stamp,
       });
       if (draftId != null) tx.delete(_drafts.doc(draftId));
       return null;
@@ -285,7 +322,31 @@ extension InventorySupplyStore on InventoryStore {
     final delta = type == 'transfer_out' ? -units : units;
     final error = inventoryStockChangeError(before, delta);
     if (error != null) return error;
-    final stamp = FieldValue.serverTimestamp();
+    _writeLinkedMovement(tx,
+        balance: balance,
+        movement: movement,
+        type: type,
+        id: id,
+        product: product,
+        location: location,
+        units: units,
+        before: before,
+        delta: delta,
+        stamp: FieldValue.serverTimestamp());
+    return null;
+  }
+
+  void _writeLinkedMovement(Transaction tx,
+      {required DocumentReference<Map<String, dynamic>> balance,
+      required DocumentReference<Map<String, dynamic>> movement,
+      required String type,
+      required String id,
+      required String product,
+      required String location,
+      required int units,
+      required int before,
+      required int delta,
+      required FieldValue stamp}) {
     tx.set(balance, {
       'productId': product,
       'location': location,
@@ -307,6 +368,5 @@ extension InventorySupplyStore on InventoryStore {
       'actor': _uid,
       'at': stamp
     });
-    return null;
   }
 }

@@ -315,7 +315,7 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
       'Transfers',
       'New Transfer',
       () => _movement(data[0].docs, stockType: 'transfer'),
-      'Dispatch removes stock from the source. Confirm arrival to add it to the destination.',
+      'New transfers update both branches after one confirmation. Older pending transfers can be reviewed in History.',
       [
         'Product',
         'From',
@@ -324,7 +324,6 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
         'Status',
         'Dispatched',
         'Received',
-        'Actions'
       ],
       [
         for (final row in data[1].docs.take(100))
@@ -345,25 +344,54 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
               _transferStatus[row.data()['status']] ?? '—',
               _time(row.data()['at']),
               _time(row.data()['receivedAt']),
-              if (row.data()['status'] == 'in_transit')
-                TextButton(
-                    onPressed: () => _receiveTransfer(row),
-                    child: const Text('Confirm arrival'))
-              else
-                const SizedBox.shrink(),
             ],
       ],
       truncated: data[1].size > 100,
     );
   }
 
-  Future<void> _receiveTransfer(InventoryRow row) async {
+  Widget _olderTransferActions(BuildContext context, InventoryRows transfers,
+      Map<String, InventoryRow> products) {
+    final rows = <List<Object>>[];
+    for (final row in transfers.docs.take(100)) {
+      final data = row.data();
+      final product = products[data['productId']];
+      final name = product == null ? 'Unknown product' : _supplyName(product);
+      final from = _supplyLocation(data['from']);
+      final to = _supplyLocation(data['to']);
+      if ((_location == null ||
+              data['from'] == _location ||
+              data['to'] == _location) &&
+          _matchesSearch([name, from, to, 'In transit'])) {
+        rows.add([
+          name,
+          from,
+          to,
+          data['quantity'] as int,
+          TextButton(
+              onPressed: () => _finishOlderTransfer(row),
+              child: const Text('Finish older transfer'))
+        ]);
+      }
+    }
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Older transfers still in transit',
+          style: Theme.of(context).textTheme.titleMedium),
+      const Text(
+          'The source was already debited. Complete an older transfer only once its stock has arrived.'),
+      _table(['Product', 'From', 'To', 'Quantity', 'Actions'], rows,
+          compactWidth: 880),
+    ]);
+  }
+
+  Future<void> _finishOlderTransfer(InventoryRow row) async {
     final movement = _store.newMovementId();
     final saved = await _editor(
-        title: 'Confirm Stock Arrival',
+        title: 'Finish older transfer',
         fields: (_) => [
               Text(
-                  'Add ${row.data()['quantity']} units to ${_supplyLocation(row.data()['to'])}? Confirm only when the stock has arrived.'),
+                  'Add ${row.data()['quantity']} units to ${_supplyLocation(row.data()['to'])}? The source will not be debited again.'),
             ],
         action: 'Confirm Arrival',
         save: () => _store.receiveTransfer(row.id, movement));

@@ -57,20 +57,34 @@ await commit(movement(id('V'),'sale',source,12,1,-1));
 assert.equal(await quantity(source),11);
 
 const dispatchId=id('D');
-const dispatch=write('is_transfers/'+transfer,{productId:product,from:source,to:destination,quantity:4,status:'in_transit',
-  dispatchId,receiveId:null,receiptActor:null,receivedAt:null,actor:uid,at:stamp});
-await commit([dispatch],token,403);
-await commit(movement(dispatchId,'transfer_out',source,11,4,-4,transfer),token,403);
-await commit([...movement(dispatchId,'transfer_out',source,11,4,-4,transfer),dispatch]);
-assert.equal(await quantity(source),7);
-await request(db+'/'+balancePath(destination),{credential:'owner'},404);
-
 const arrive=id('A');
-const confirm=write('is_transfers/'+transfer,{status:'received',receiveId:arrive,receiptActor:uid,receivedAt:stamp},{update:true});
-await commit([...movement(arrive,'transfer_in',destination,0,3,3,transfer),confirm],token,403);
-await commit([...movement(arrive,'transfer_in',destination,0,4,4,transfer),confirm]);
-await commit([...movement(arrive,'transfer_in',destination,4,4,4,transfer),confirm],token,403);
+const record=write('is_transfers/'+transfer,{productId:product,from:source,to:destination,quantity:4,status:'received',
+  dispatchId,receiveId:arrive,receiptActor:uid,receivedAt:stamp,actor:uid,at:stamp});
+await commit([record],token,403);
+await commit(movement(dispatchId,'transfer_out',source,11,4,-4,transfer),token,403);
+const outbound=movement(dispatchId,'transfer_out',source,11,4,-4,transfer);
+const inbound=movement(arrive,'transfer_in',destination,0,4,4,transfer);
+await commit([...outbound,record],token,403);
+await commit([...inbound,record],token,403);
+await commit([...outbound,...movement(arrive,'transfer_in',destination,0,3,3,transfer),record],token,403);
+assert.equal(await quantity(source),11);
+await request(db+'/'+balancePath(destination),{credential:'owner'},404);
+await commit([...outbound,...inbound,record]);
+await commit([...outbound,...inbound,record],token,403);
+assert.equal(await quantity(source),7);
 assert.equal(await quantity(destination),4);
+
+const older=id('L'), oldDispatch=id('J'), oldReceipt=id('K'), oldDestination='hotelmart';
+const oldRecord=write('is_transfers/'+older,{productId:product,from:source,to:oldDestination,quantity:1,status:'in_transit',
+  dispatchId:oldDispatch,receiveId:null,receiptActor:null,receivedAt:null,actor:uid,at:stamp});
+const oldOutbound=movement(oldDispatch,'transfer_out',source,7,1,-1,older);
+await commit([...oldOutbound,oldRecord],token,403);
+// Seed a record created by the pre-upgrade workflow; source stock is already debited.
+await commit([...oldOutbound,oldRecord],'owner');
+const finishOlder=write('is_transfers/'+older,{status:'received',receiveId:oldReceipt,receiptActor:uid,receivedAt:stamp},{update:true});
+await commit([...movement(oldReceipt,'transfer_in',oldDestination,0,1,1,older),finishOlder]);
+assert.equal(await quantity(source),6);
+assert.equal(await quantity(oldDestination),1);
 
 await commit([write('is_orders/'+order,{supplierId:supplier,productId:product,location:destination,quantity:6,received:0,unitCost:2599,
   reference:'P-001',status:'ordered',lastReceiptId:null,actor:uid,at:stamp,updatedAt:stamp})]);
@@ -94,4 +108,4 @@ await commit([write('is_orders/'+first,purchaseLine(product)),write('is_orders/'
 await commit([write('is_orders/'+first,{status:'cancelled',updatedAt:stamp},{update:true})]);
 assert.equal(await quantity(destination),10);
 await commit([write('is_orders/'+second,{status:'received',received:2,lastReceiptId:id('R'),updatedAt:stamp},{update:true})],token,403);
-console.log('Verified legacy stock, supplier rules, transfer dispatch and one-time receipt, and partial/full purchasing with over-receipt denied.');
+console.log('Verified that immediate transfers post both branches or neither, cannot be repeated, preserve older transfers, and do not break purchasing.');

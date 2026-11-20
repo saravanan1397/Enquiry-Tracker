@@ -265,10 +265,11 @@ service cloud.firestore {
       let path = /databases/$(database)/documents/is_transfers/$(data.workflowId);
       let after = getAfter(path).data;
       return after.productId == data.productId && after.quantity == data.quantity
+        && after.status == 'received'
         && (data.type == 'transfer_out'
-          ? !exists(path) && after.status == 'in_transit' && after.dispatchId == id
+          ? !exists(path) && after.dispatchId == id
               && after.from == data.location && after.at == request.time
-          : get(path).data.status == 'in_transit' && after.status == 'received'
+          : (!exists(path) ? after.at == request.time : get(path).data.status == 'in_transit')
               && after.receiveId == id && after.to == data.location && after.receivedAt == request.time);
     }
     function inventoryMovementLink(id, data) {
@@ -372,9 +373,11 @@ service cloud.firestore {
           'receiveId','receiptActor','receivedAt','actor','at'])
         && inventoryId(data.productId) && inventoryLocation(data.from) && inventoryLocation(data.to)
         && data.from != data.to && data.quantity is int && data.quantity >= 1 && data.quantity <= 1000000
-        && data.status == 'in_transit' && data.receiveId == null && data.receiptActor == null
-        && data.receivedAt == null && data.actor == request.auth.uid && data.at == request.time
-        && inventoryPairedMovement(data.dispatchId,id,'transfer_out',data.productId,data.from,data.quantity);
+        && data.status == 'received' && data.dispatchId != data.receiveId
+        && data.actor == request.auth.uid && data.receiptActor == request.auth.uid
+        && data.at == request.time && data.receivedAt == request.time
+        && inventoryPairedMovement(data.dispatchId,id,'transfer_out',data.productId,data.from,data.quantity)
+        && inventoryPairedMovement(data.receiveId,id,'transfer_in',data.productId,data.to,data.quantity);
     }
     function inventoryReceiveTransfer(id, old, data) {
       return old.status == 'in_transit' && data.status == 'received'
