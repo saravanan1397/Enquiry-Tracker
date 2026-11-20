@@ -90,19 +90,14 @@ class OwnerHome extends StatelessWidget {
                       ],
                       onTap: onSales,
                     );
-                    final inventoryUrl = inventoryWidgetUrl(
-                        const String.fromEnvironment('IS_WIDGET_URL'));
                     final inventoryCard = _ModuleCard(
                       title: 'Inventory System',
                       eyebrow: 'INVENTORY',
                       description: 'Stock by location, purchases and transfers',
-                      footer: inventoryUrl == null
-                          ? 'The Inventory System needs a hosted connection.'
-                          : 'Inventory uses a separate sign-in.',
+                      footer:
+                          'Open stock records using your current admin sign-in.',
                       icon: Icons.inventory_2_outlined,
-                      actionLabel: inventoryUrl == null
-                          ? 'Not connected'
-                          : 'Open inventory',
+                      actionLabel: 'Open inventory',
                       lightAccent: const Color(0xFF176E70),
                       darkAccent: const Color(0xFF82D4CF),
                       lightGradient: const [
@@ -114,14 +109,11 @@ class OwnerHome extends StatelessWidget {
                         Color(0xFF173538),
                       ],
                       metrics: const [('WORKSPACE', 'IS')],
-                      onTap: inventoryUrl == null
-                          ? null
-                          : () => Navigator.of(context).push<void>(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      InventoryWidgetScreen(url: inventoryUrl),
-                                ),
-                              ),
+                      onTap: () => Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const InventoryWidgetScreen(),
+                        ),
+                      ),
                     );
                     if (constraints.maxWidth < 920) {
                       return Column(

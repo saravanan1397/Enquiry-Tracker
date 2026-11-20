@@ -191,6 +191,91 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Inventory uses a separate namespace and the existing admin session.
+    function inventoryLocation(location) {
+      return location in ['avadi', 'warehouse', 'tnhb', 'hotelmart'];
+    }
+    function inventoryType(type) {
+      return type in ['opening', 'receipt', 'sale', 'customer_return',
+                      'supplier_return', 'damage', 'adjustment', 'count'];
+    }
+    function inventoryId(id) {
+      return id is string && id.matches('^[A-Za-z0-9]{20}$');
+    }
+    function inventoryText(text) {
+      return text is string && text.size() <= 160;
+    }
+    function inventoryProduct(data) {
+      return data.keys().hasOnly(['name','sku','category','reorder','active','actor','at'])
+        && inventoryText(data.name) && inventoryText(data.sku) && inventoryText(data.category)
+        && (data.reorder == null || (data.reorder is int && data.reorder >= 0 && data.reorder <= 1000000))
+        && data.active is bool && data.actor == request.auth.uid && data.at == request.time;
+    }
+    function inventoryDraft(data) {
+      return data.keys().hasOnly(['type','location','productId','quantity','note','actor','at'])
+        && (data.type == null || inventoryType(data.type))
+        && (data.location == null || inventoryLocation(data.location))
+        && (data.productId == null || inventoryId(data.productId))
+        && (data.quantity == null || (data.quantity is int && data.quantity >= -1000000 && data.quantity <= 1000000))
+        && inventoryText(data.note) && data.actor == request.auth.uid && data.at == request.time;
+    }
+    function inventoryDelta(data) {
+      return data.quantity is int && data.quantity >= -1000000 && data.quantity <= 1000000
+        && data.delta is int && data.before is int && data.quantityAfter is int
+        && data.before >= 0 && data.quantityAfter >= 0 && data.quantityAfter <= 1000000000
+        && data.quantityAfter == data.before + data.delta
+        && (data.type == 'count' ? data.quantity >= 0 && data.quantityAfter == data.quantity
+          : data.type == 'adjustment' ? data.quantity != 0 && data.delta == data.quantity
+          : data.quantity > 0 && (data.type in ['sale','supplier_return','damage']
+            ? data.delta == -data.quantity : data.delta == data.quantity));
+    }
+    function inventoryPrior(path) {
+      return exists(path) ? get(path).data.quantity : 0;
+    }
+    function inventoryMovement(movementId, data) {
+      let path = /databases/$(database)/documents/is_balances/$(data.balanceId);
+      let after = getAfter(path).data;
+      return data.keys().hasOnly(['type','location','productId','quantity','note','balanceId',
+          'before','delta','quantityAfter','actor','at'])
+        && inventoryId(movementId) && inventoryId(data.productId)
+        && inventoryLocation(data.location) && inventoryType(data.type)
+        && data.balanceId == data.location + '_' + data.productId
+        && inventoryText(data.note) && data.actor == request.auth.uid && data.at == request.time
+        && inventoryDelta(data) && data.before == inventoryPrior(path)
+        && after.lastMovementId == movementId && after.productId == data.productId
+        && after.location == data.location && after.quantity == data.quantityAfter
+        && after.at == request.time
+        && get(/databases/$(database)/documents/is_products/$(data.productId)).data.active == true;
+    }
+    function inventoryBalance(balanceId, data) {
+      let path = /databases/$(database)/documents/is_movements/$(data.lastMovementId);
+      let movement = getAfter(path).data;
+      return data.keys().hasOnly(['productId','location','quantity','lastMovementId','at'])
+        && inventoryId(data.productId) && inventoryId(data.lastMovementId)
+        && inventoryLocation(data.location) && balanceId == data.location + '_' + data.productId
+        && data.quantity is int && data.quantity >= 0 && data.quantity <= 1000000000
+        && data.at == request.time && !exists(path)
+        && movement.balanceId == balanceId && movement.quantityAfter == data.quantity
+        && movement.actor == request.auth.uid && movement.at == request.time;
+    }
+    match /is_products/{id} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && inventoryId(id) && inventoryProduct(request.resource.data);
+    }
+    match /is_drafts/{id} {
+      allow create: if isAdmin() && inventoryId(id) && inventoryDraft(request.resource.data);
+      allow read, delete: if isAdmin() && resource.data.actor == request.auth.uid;
+      allow update: if isAdmin() && resource.data.actor == request.auth.uid && inventoryDraft(request.resource.data);
+    }
+    match /is_balances/{id} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && inventoryBalance(id, request.resource.data);
+    }
+    match /is_movements/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && inventoryMovement(id, request.resource.data);
+    }
+
     // Deny every collection not explicitly listed above.
     match /{document=**} {
       allow read, write: if false;

@@ -32,9 +32,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Flutter web app
-        env:
-          IS_WIDGET_URL: ${{ vars.IS_WIDGET_URL }}
-        run: flutter build web --release --no-wasm-dry-run --base-href "/${{ github.event.repository.name }}/" --dart-define="IS_WIDGET_URL=$IS_WIDGET_URL"
+        run: flutter build web --release --no-wasm-dry-run --base-href "/${{ github.event.repository.name }}/"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
