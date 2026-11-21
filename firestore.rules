@@ -292,16 +292,19 @@ service cloud.firestore {
         && after.lastMovementId == movementId && after.productId == data.productId
         && after.location == data.location && after.quantity == data.quantityAfter
         && after.at == request.time
-        && (exists(product)
-          ? inventoryDelta(data) && get(product).data.active == true
-          : !exists(path) && inventoryInitialLocation(product, data));
+        && ((exists(product) && get(product).data.active == true && inventoryDelta(data))
+          || inventoryProductFormMovement(product, path, data));
     }
-    function inventoryInitialLocation(product, data) {
-      let created = getAfter(product).data;
-      return data.type == 'opening' && data.quantity is int && data.quantity == 0
-        && data.before is int && data.before == 0 && data.delta is int && data.delta == 0
-        && data.quantityAfter == 0 && created.actor == request.auth.uid
-        && created.at == request.time;
+    function inventoryProductFormMovement(product, balance, data) {
+      let saved = getAfter(product).data;
+      return saved.actor == request.auth.uid && saved.at == request.time
+        && !('deletedAt' in saved)
+        && ((data.type == 'opening' && !exists(balance)
+            && ((data.quantity == 0 && data.quantity is int
+                && data.delta == 0 && data.delta is int && data.quantityAfter == 0)
+              || (saved.active == true && inventoryDelta(data))))
+          || (data.type == 'count' && exists(product) && exists(balance)
+            && saved.active == true && inventoryDelta(data)));
     }
     function inventoryBalance(balanceId, data) {
       let path = /databases/$(database)/documents/is_movements/$(data.lastMovementId);

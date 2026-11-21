@@ -518,6 +518,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                       case final InventoryRow product)
                     Row(mainAxisSize: MainAxisSize.min, children: [
                       Flexible(
+                        flex: 2,
                         child: Tooltip(
                           message: 'Edit stock for ${productName(product.id)}',
                           child: OutlinedButton(
@@ -543,6 +544,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                       ),
                       const SizedBox(width: 8),
                       Flexible(
+                        flex: 3,
                         child: Tooltip(
                           message:
                               'Set stock at a chosen branch for ${productName(product.id)}',
@@ -556,7 +558,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                                     stockType: 'count',
                                     selectedProduct: product)
                                 : null,
-                            child: const Text('Add New Stock',
+                            child: const Text('Add stock in new location',
                                 textAlign: TextAlign.center),
                           ),
                         ),
@@ -569,7 +571,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             190,
             180,
             114,
-            340
+            410
           ]),
         ],
         if (_section == 'Overview') ...[
@@ -1012,18 +1014,25 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
 
   Future<void> _product([InventoryRow? row]) async {
     final InventoryRows suppliers;
+    final Map<String, int> stockByLocation;
     try {
-      suppliers = await _store.suppliers();
+      (suppliers, stockByLocation) = await (
+        _store.suppliers(),
+        row == null
+            ? Future.value(const <String, int>{})
+            : _store.productStockByLocation(row.id),
+      ).wait;
     } catch (error) {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(
-                'Could not load suppliers. ${inventorySaveError(error)}')));
+                'Could not load product options. ${inventorySaveError(error)}')));
       return;
     }
     if (!mounted) return;
     final values = row?.data() ?? {};
     final name = TextEditingController(text: values['name'] as String?);
+    final quantity = TextEditingController();
     final sku = TextEditingController(text: values['sku'] as String?);
     final category = TextEditingController(text: values['category'] as String?);
     final reorder = TextEditingController(text: values['reorder']?.toString());
@@ -1036,15 +1045,44 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       supplierOptions[supplier] = 'Previously assigned supplier';
     }
     var active = values['active'] != false;
-    String? storageLocation =
-        _activeLocations.containsKey(_location) ? _location : null;
+    final assigned =
+        stockByLocation.keys.where(_activeLocations.containsKey).toList();
+    String? storageLocation = row == null
+        ? (_activeLocations.containsKey(_location) ? _location : null)
+        : (assigned.contains(_location)
+            ? _location
+            : assigned.length == 1
+                ? assigned.single
+                : null);
     final result = await _editor(
       title: row == null ? 'Add Product' : 'Edit Product',
       fields: (update) => [
         _input(name, 'Product name'),
-        if (row == null)
-          _select('Where is the product stored? (required)', storageLocation,
-              _activeLocations, (v) => update(() => storageLocation = v)),
+        _select(
+            row == null
+                ? 'Where is the product stored? (required)'
+                : 'Where is the product stored?',
+            storageLocation,
+            _activeLocations,
+            (v) => update(() {
+                  if (storageLocation != null && v != storageLocation)
+                    quantity.clear();
+                  storageLocation = v;
+                })),
+        if (row != null && storageLocation != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(stockByLocation.containsKey(storageLocation)
+                ? 'Current stock here: ${stockByLocation[storageLocation]}'
+                : 'No stock is recorded at this location yet.'),
+          ),
+        _input(quantity, 'Total quantity in hand (optional)', number: true),
+        if (row != null)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text('Leave quantity blank to keep existing stock. '
+                'Stock at other locations is not moved.'),
+          ),
         _input(sku, 'SKU'),
         _input(barcode, 'Barcode (optional)'),
         _input(category, 'Category'),
@@ -1059,12 +1097,16 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       ],
       action: 'Save Product',
       save: () {
-        if (row == null && !_activeLocations.containsKey(storageLocation)) {
+        final stockQuantity = _optionalInt(quantity.text);
+        if ((row == null || stockQuantity != null || storageLocation != null) &&
+            !_activeLocations.containsKey(storageLocation)) {
           throw const FormatException('Choose where the product is stored.');
         }
         return _store.saveProduct(
             id: row?.id,
-            storageLocation: row == null ? storageLocation : null,
+            storageLocation: storageLocation,
+            stockQuantity: stockQuantity,
+            expectedStockQuantity: stockByLocation[storageLocation],
             name: name.text,
             sku: sku.text,
             category: category.text,
@@ -1075,7 +1117,15 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             active: active);
       },
     );
-    for (final controller in [name, sku, category, reorder, barcode, cost]) {
+    for (final controller in [
+      name,
+      quantity,
+      sku,
+      category,
+      reorder,
+      barcode,
+      cost
+    ]) {
       controller.dispose();
     }
     if (result) _refresh();

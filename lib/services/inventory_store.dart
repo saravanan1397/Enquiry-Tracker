@@ -289,6 +289,8 @@ class InventoryStore {
   Future<void> saveProduct(
       {String? id,
       String? storageLocation,
+      int? stockQuantity,
+      int? expectedStockQuantity,
       required String name,
       required String sku,
       required String category,
@@ -301,8 +303,17 @@ class InventoryStore {
       throw const FormatException(
           'Use a non-negative reorder level up to 1,000,000.');
     }
-    if (id == null && (storageLocation == null || storageLocation.isEmpty)) {
+    if ((id == null || stockQuantity != null) &&
+        (storageLocation == null || storageLocation.isEmpty)) {
       throw const FormatException('Choose where the product is stored.');
+    }
+    if (stockQuantity != null &&
+        (stockQuantity < 0 || stockQuantity > 1000000)) {
+      throw const FormatException('Enter a quantity from 0 to 1,000,000.');
+    }
+    if (!active && stockQuantity != null) {
+      throw const FormatException(
+          'Make the product active before setting stock.');
     }
     final product = _products.doc(id);
     final actor = _uid;
@@ -319,33 +330,73 @@ class InventoryStore {
       'actor': actor,
       'at': stamp,
     };
-    if (id != null) return product.set(details);
-
+    final balance = storageLocation == null
+        ? null
+        : _balances.doc('${storageLocation}_${product.id}');
     final movement = _movements.doc();
-    final balance = _balances.doc('${storageLocation}_${product.id}');
+    Map<String, dynamic> stock(int quantity) => {
+          'productId': product.id,
+          'location': storageLocation,
+          'quantity': quantity,
+          'lastMovementId': movement.id,
+          'at': stamp,
+        };
+    Map<String, dynamic> change(int? before, int quantity) => {
+          'type': before == null ? 'opening' : 'count',
+          'location': storageLocation,
+          'productId': product.id,
+          'quantity': quantity,
+          'note': id == null
+              ? 'Stock set during product creation.'
+              : 'Stock set in Edit Product.',
+          'balanceId': balance!.id,
+          'before': before ?? 0,
+          'delta': quantity - (before ?? 0),
+          'quantityAfter': quantity,
+          'actor': actor,
+          'at': stamp,
+        };
+
+    if (id != null) {
+      return _db.runTransaction<String?>((tx) async {
+        final current = await tx.get(product);
+        if (!current.exists || current.data()?['deletedAt'] != null) {
+          return 'This product is no longer available to edit.';
+        }
+        final before = balance == null
+            ? null
+            : (await tx.get(balance)).data()?['quantity'] as int?;
+        if (stockQuantity != null && before != expectedStockQuantity) {
+          return 'Stock changed while editing. Reopen the product and try again.';
+        }
+        tx.update(product, details);
+        if (balance != null &&
+            (before == null ||
+                (stockQuantity != null && stockQuantity != before))) {
+          final quantity = stockQuantity ?? 0;
+          tx.set(balance, stock(quantity));
+          tx.set(movement, change(before, quantity));
+        }
+        return null;
+      }).then((problem) {
+        if (problem != null) throw FormatException(problem);
+      });
+    }
+
+    final quantity = stockQuantity ?? 0;
     final batch = _db.batch();
     batch.set(product, details);
-    batch.set(balance, {
-      'productId': product.id,
-      'location': storageLocation,
-      'quantity': 0,
-      'lastMovementId': movement.id,
-      'at': stamp,
-    });
-    batch.set(movement, {
-      'type': 'opening',
-      'location': storageLocation,
-      'productId': product.id,
-      'quantity': 0,
-      'note': 'Storage location assigned during product creation.',
-      'balanceId': balance.id,
-      'before': 0,
-      'delta': 0,
-      'quantityAfter': 0,
-      'actor': actor,
-      'at': stamp,
-    });
+    batch.set(balance!, stock(quantity));
+    batch.set(movement, change(null, quantity));
     return batch.commit();
+  }
+
+  Future<Map<String, int>> productStockByLocation(String id) async {
+    final rows = await _reportRows(_balances.where('productId', isEqualTo: id));
+    return {
+      for (final row in rows)
+        row.data()['location'] as String: row.data()['quantity'] as int,
+    };
   }
 
   Future<void> saveDraft(InventoryMovement entry, {required String id}) {

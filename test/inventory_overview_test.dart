@@ -31,6 +31,8 @@ class _Store implements InventoryStore {
   int? stock;
   bool recycled = false;
   String? addedName, addedLocation;
+  int? addedQuantity;
+  (String?, int?, int?)? editedStock;
   InventoryMovement? posted;
   final transfers = <(String, String, String, int)>[];
   int _movementNumber = 0;
@@ -52,6 +54,8 @@ class _Store implements InventoryStore {
   Future<void> saveProduct({
     String? id,
     String? storageLocation,
+    int? stockQuantity,
+    int? expectedStockQuantity,
     required String name,
     required String sku,
     required String category,
@@ -61,10 +65,22 @@ class _Store implements InventoryStore {
     required int? reorder,
     required bool active,
   }) async {
-    expect(id, isNull);
+    if (id != null) {
+      editedStock = (storageLocation, stockQuantity, expectedStockQuantity);
+      if (storageLocation == 'warehouse' && stockQuantity != null) {
+        stock = stockQuantity;
+      }
+      return;
+    }
     addedName = name;
     addedLocation = storageLocation;
+    addedQuantity = stockQuantity;
   }
+
+  @override
+  Future<Map<String, int>> productStockByLocation(String id) async => {
+        if (id == 'p1' && (withStock || stock != null)) 'warehouse': stock ?? 1,
+      };
 
   @override
   Future<InventoryRows> deletedProducts() async =>
@@ -88,7 +104,7 @@ class _Store implements InventoryStore {
           _Row('newBalance', {
             'productId': 'p2',
             'location': addedLocation,
-            'quantity': 0,
+            'quantity': addedQuantity ?? 0,
           }),
       ]);
   @override
@@ -207,6 +223,37 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  testWidgets('Edit Product shows branch stock and saves a new total',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store(withStock: true);
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Products'));
+    await tester.pumpAndSettle();
+    final edit = find.byTooltip('Edit details for Cookware Fixture');
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    expect(find.text('Where is the product stored?'), findsOneWidget);
+    expect(find.text('Current stock here: 1'), findsOneWidget);
+    await tester.tap(find.text('Save Product'));
+    await tester.pumpAndSettle();
+    expect(store.editedStock, ('warehouse', null, 1));
+    expect(store.stock, isNull);
+
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Total quantity in hand (optional)'),
+        '7');
+    await tester.tap(find.text('Save Product'));
+    await tester.pumpAndSettle();
+    expect(store.editedStock, ('warehouse', 7, 1));
+    expect(store.stock, 7);
+  });
+
   testWidgets('Add Product requires a location and shows zero stock there',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -435,7 +482,8 @@ void main() {
     expect(find.byTooltip('Edit details for Cookware Fixture'), findsNothing);
     final editStock = find.widgetWithText(OutlinedButton, 'Edit stock');
     expect(editStock, findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Add New Stock'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Add stock in new location'),
+        findsOneWidget);
     final physicalSearch = find.byKey(const ValueKey('inventory-view-search'));
     final contentWidth = tester.getSize(physicalSearch).width;
     expect(
@@ -651,7 +699,8 @@ void main() {
     expect(find.text('Actions'), findsNothing);
     await tester.tap(find.text('Physical Stocks'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Add New Stock'));
+    await tester
+        .tap(find.widgetWithText(FilledButton, 'Add stock in new location'));
     await tester.pumpAndSettle();
     expect(find.text('Edit Stock'), findsOneWidget);
     await tester.tap(find.text('Not selected'));
