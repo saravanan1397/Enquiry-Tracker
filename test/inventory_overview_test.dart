@@ -122,7 +122,37 @@ class _Store implements InventoryStore {
   @override
   Future<InventoryRows> legacyTransfers() async => _Rows([]);
   @override
-  Future<InventoryRows> suppliers() async => _Rows([]);
+  Future<InventoryRows> suppliers() async => _Rows([
+        _Row('supplier', {
+          'name': 'Sample Supplier',
+          'phone': '0123456789',
+          'email': 'example@example.test',
+          'notes': 'Sample notes',
+          'active': true,
+        }),
+      ]);
+  @override
+  Future<InventoryRows> purchaseOrders() async => _Rows([
+        _Row('order', {
+          'reference': 'PO-1',
+          'supplierId': 'supplier',
+          'productId': 'p1',
+          'location': 'warehouse',
+          'quantity': 3,
+          'received': 1,
+          'status': 'partial',
+        }),
+      ]);
+  @override
+  Future<InventoryRows> branchTransfers() async => _Rows([
+        _Row('transfer', {
+          'productId': 'p1',
+          'from': 'warehouse',
+          'to': 'tnhb',
+          'quantity': 1,
+          'status': 'received',
+        }),
+      ]);
   @override
   Future<void> transferStock(
       {required String id,
@@ -215,14 +245,69 @@ void main() {
     expect(table.rows.length, 2);
     final damage = table.columns.indexWhere((column) =>
         column.label is Text && (column.label as Text).data == 'Damaged');
-    expect((table.rows.first.cells[damage].child as Text).data, '0');
-    expect((table.rows.last.cells[damage].child as Text).data, '3');
+    String? value(DataRow row) =>
+        ((row.cells[damage].child as Center).child as Text).data;
+    expect(value(table.rows.first), '0');
+    expect(value(table.rows.last), '3');
     await tester.tap(find.text('All locations'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('SSH Warehouse').last);
     await tester.pumpAndSettle();
     expect(find.text('Damaged'), findsNothing);
     expect(find.text('Physical count'), findsOneWidget);
+  });
+
+  testWidgets('tables align headers and cells in every inventory section',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1800, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store(withStock: true);
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
+    await tester.pumpAndSettle();
+
+    void checkTables() {
+      final tables =
+          tester.widgetList<DataTable>(find.byType(DataTable)).toList();
+      expect(tables, isNotEmpty);
+      for (final table in tables) {
+        expect(table.rows, isNotEmpty);
+        for (final (index, column) in table.columns.indexed) {
+          final label = column.label is Flexible
+              ? (column.label as Flexible).child
+              : column.label;
+          expect((label as Text).textAlign, TextAlign.center);
+          final position = tester.getCenter(find.byWidget(label)).dx;
+          final cell = table.rows.first.cells[index].child as Center;
+          expect(
+              tester.getCenter(find.byWidget(cell)).dx, closeTo(position, 1));
+          if (cell.child case final Text text) {
+            expect(text.textAlign, TextAlign.center);
+          }
+        }
+      }
+    }
+
+    checkTables(); // Physical Stocks is the starting view.
+    for (final section in [
+      'Overview',
+      'History',
+      'Transfers',
+      'Reports',
+      'Locations',
+      'Suppliers',
+      'Purchase',
+      'Products',
+    ]) {
+      await tester.tap(find.text(section).first);
+      await tester.pumpAndSettle();
+      checkTables();
+    }
+    store.recycled = true;
+    await tester.tap(find.text('Recycle Bin'));
+    await tester.pumpAndSettle();
+    checkTables();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

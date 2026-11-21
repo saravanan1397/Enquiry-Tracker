@@ -743,7 +743,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       const Text('Stock value uses the saved unit cost. A blank balance means '
           'no balance was recorded; a blank value means it could not be calculated.'),
       const SizedBox(height: 12),
-      _table(headings, rows, numericHeadings: headings.skip(6).toSet()),
+      _table(headings, rows),
     ]);
   }
 
@@ -894,12 +894,12 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       );
 
   Widget _table(List<String> headings, List<List<Object>> rows,
-      {List<double>? centeredWidths, Set<String> numericHeadings = const {}}) {
+      {List<double>? centeredWidths}) {
     return LayoutBuilder(builder: (context, constraints) {
       final scheme = Theme.of(context).colorScheme;
-      final centered = centeredWidths != null;
+      final fixedWidths = centeredWidths != null;
       final minimum = centeredWidths?.fold<double>(0, (a, b) => a + b) ?? 0.0;
-      final extraPerColumn = centered && constraints.maxWidth > minimum
+      final extraPerColumn = fixedWidths && constraints.maxWidth > minimum
           ? (constraints.maxWidth - minimum) / headings.length
           : 0.0;
       return Material(
@@ -913,8 +913,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: ConstrainedBox(
-              constraints:
-                  BoxConstraints(minWidth: centered ? 0 : constraints.maxWidth),
+              constraints: BoxConstraints(
+                  minWidth: fixedWidths ? 0 : constraints.maxWidth),
               child: DataTable(
                 headingRowHeight: 38,
                 dataRowMinHeight: 44,
@@ -930,45 +930,28 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                     states.contains(WidgetState.hovered)
                         ? scheme.surfaceContainerLow
                         : null),
-                horizontalMargin: centered ? 12 : 14,
+                horizontalMargin: 12,
                 columnSpacing: 24,
                 dividerThickness: 1,
                 columns: headings.indexed.map(((int, String) column) {
                   final (index, text) = column;
+                  final label = Text(text,
+                      textAlign: TextAlign.center,
+                      softWrap: true,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis);
                   return DataColumn(
-                      label: !centered
-                          ? Text(text)
-                          : Flexible(
-                              child: Text(text,
-                                  textAlign: TextAlign.center,
-                                  softWrap: true,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis)),
-                      headingRowAlignment:
-                          centered ? MainAxisAlignment.center : null,
-                      columnWidth: !centered
-                          ? null
-                          : FixedColumnWidth(
-                              centeredWidths[index] + extraPerColumn),
-                      numeric: !centered &&
-                          (numericHeadings.contains(text) ||
-                              [
-                                'Quantity',
-                                'Change',
-                                'Balance',
-                                'Balance stock',
-                                'In hand',
-                                'Reorder at',
-                                'Unit cost INR',
-                                'Stock value INR',
-                                'Tracked stock'
-                              ].contains(text)));
+                      label: fixedWidths ? Flexible(child: label) : label,
+                      headingRowAlignment: MainAxisAlignment.center,
+                      columnWidth: fixedWidths
+                          ? FixedColumnWidth(
+                              centeredWidths[index] + extraPerColumn)
+                          : null);
                 }).toList(),
                 rows: rows
                     .map((row) => DataRow(cells: [
                           for (final (index, cell) in row.indexed)
-                            DataCell(
-                                _tableCell(cell, headings[index], centered)),
+                            DataCell(_tableCell(cell, headings[index])),
                         ]))
                     .toList(),
               ),
@@ -986,8 +969,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     });
   }
 
-  Widget _tableCell(Object value, String heading, bool centered) {
-    if (value is Widget) return centered ? Center(child: value) : value;
+  Widget _tableCell(Object value, String heading) {
+    if (value is Widget) return Center(child: value);
     final text = value is num && heading.endsWith(' INR')
         ? value.toStringAsFixed(2)
         : value is num && heading == 'Balance stock'
@@ -995,15 +978,14 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             : value.toString();
     final isStatus = heading == 'Status' && text.isNotEmpty;
     final label = Text(text,
-        textAlign: centered ? TextAlign.center : null,
+        textAlign: TextAlign.center,
         style: heading == 'Product' || isStatus
             ? const TextStyle(fontWeight: FontWeight.w600)
             : null,
-        maxLines: centered ? 2 : null,
-        overflow: centered ? TextOverflow.ellipsis : null);
-    final shown = centered && text.length >= 14
-        ? Tooltip(message: text, child: label)
-        : label;
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis);
+    final shown =
+        text.length >= 14 ? Tooltip(message: text, child: label) : label;
     final content = isStatus
         ? Builder(builder: (context) {
             final scheme = Theme.of(context).colorScheme;
@@ -1019,7 +1001,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             );
           })
         : shown;
-    return centered ? Center(child: content) : content;
+    return Center(child: content);
   }
 
   Future<void> _product([InventoryRow? row]) async {

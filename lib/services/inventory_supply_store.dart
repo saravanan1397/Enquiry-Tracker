@@ -40,15 +40,6 @@ extension InventorySupplyStore on InventoryStore {
   CollectionReference<Map<String, dynamic>> get _transfers =>
       _db.collection('is_transfers');
 
-  Future<InventoryRows> purchaseOrders() => _orders
-      .orderBy('at', descending: true)
-      .limit(101)
-      .get(InventoryStore._server);
-  Future<InventoryRows> branchTransfers() => _transfers
-      .orderBy('at', descending: true)
-      .limit(101)
-      .get(InventoryStore._server);
-
   Future<void> saveSupplier(
       {String? id,
       required String name,
