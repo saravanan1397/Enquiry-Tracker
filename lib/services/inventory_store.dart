@@ -5,6 +5,22 @@ part 'inventory_supply_store.dart';
 
 typedef InventoryRow = QueryDocumentSnapshot<Map<String, dynamic>>;
 typedef InventoryRows = QuerySnapshot<Map<String, dynamic>>;
+
+int compareInventoryLabels(String a, String b) =>
+    a.trim().toLowerCase().compareTo(b.trim().toLowerCase());
+
+String inventoryProductName(Object? value) =>
+    value is String && value.trim().isNotEmpty ? value : 'Unnamed product';
+
+List<InventoryRow> inventoryProductsByName(Iterable<InventoryRow> products) =>
+    products.toList()
+      ..sort((a, b) {
+        final order = compareInventoryLabels(
+            inventoryProductName(a.data()['name']),
+            inventoryProductName(b.data()['name']));
+        return order != 0 ? order : a.id.compareTo(b.id);
+      });
+
 typedef InventoryReportSource = ({
   List<InventoryRow> products,
   List<InventoryRow> balances,

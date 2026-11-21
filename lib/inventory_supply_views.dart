@@ -70,10 +70,23 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
           _viewSearch(),
           Text(note),
           const SizedBox(height: 12),
-          _table(columns, rows),
+          _table(columns, _sortSupplyProductRows(columns, rows)),
           if (truncated) const Text('Showing the first 100 records.'),
         ],
       );
+
+  List<List<Object>> _sortSupplyProductRows(
+      List<String> columns, List<List<Object>> rows) {
+    final productColumn = columns.indexOf('Product');
+    if (productColumn < 0) return rows;
+    final sorted = rows.indexed.toList()
+      ..sort((a, b) {
+        final nameOrder = compareInventoryLabels(
+            a.$2[productColumn].toString(), b.$2[productColumn].toString());
+        return nameOrder != 0 ? nameOrder : a.$1.compareTo(b.$1);
+      });
+    return [for (final (_, row) in sorted) row];
+  }
 
   String _supplyLocation(Object? id) {
     for (final location in _locations) {
@@ -83,14 +96,14 @@ extension _InventorySupplyViews on _InventoryWidgetScreenState {
   }
 
   String _supplyName(InventoryRow row) {
-    final name = row.data()['name'] as String?;
-    return name == null || name.trim().isEmpty ? 'Unnamed product' : name;
+    return inventoryProductName(row.data()['name']);
   }
 
   Map<String, String> _supplyChoices(InventoryRows rows,
           {bool products = false, String? include}) =>
       {
-        for (final row in rows.docs)
+        for (final row
+            in products ? inventoryProductsByName(rows.docs) : rows.docs)
           if (row.data()['active'] == true || row.id == include)
             row.id: products ? _supplyName(row) : row.data()['name'] as String,
       };

@@ -20,7 +20,7 @@ InventoryReport buildInventoryReport(
         products[product]?['deletedAt'] != null) return null;
     final values = products[product];
     if (!matches([
-      _reportProductName(values?['name']),
+      inventoryProductName(values?['name']),
       values?['sku'],
       values?['category'],
       values?['barcode'],
@@ -68,6 +68,17 @@ InventoryReport buildInventoryReport(
     ...inventoryMovementLabels.keys.where(present.contains),
     ...extra,
   ];
+  final sortedKeys = keys.toList()
+    ..sort((a, b) {
+      final nameOrder = compareInventoryLabels(
+          inventoryProductName(products[a.product]?['name']),
+          inventoryProductName(products[b.product]?['name']));
+      if (nameOrder != 0) return nameOrder;
+      final idOrder = a.product.compareTo(b.product);
+      if (idOrder != 0) return idOrder;
+      return compareInventoryLabels(locations[a.location] ?? a.location,
+          locations[b.location] ?? b.location);
+    });
   return (
     headings: [
       'Product',
@@ -80,9 +91,9 @@ InventoryReport buildInventoryReport(
         type == 'damage' ? 'Damaged' : inventoryMovementLabels[type] ?? type,
     ],
     rows: [
-      for (final key in keys)
+      for (final key in sortedKeys)
         [
-          _reportProductName(products[key.product]?['name']),
+          inventoryProductName(products[key.product]?['name']),
           locations[key.location] ?? key.location,
           balances[key] ?? '',
           products[key.product]?['reorder'] ?? '',
@@ -97,9 +108,6 @@ InventoryReport buildInventoryReport(
     ],
   );
 }
-
-String _reportProductName(Object? value) =>
-    value is String && value.trim().isNotEmpty ? value : 'Unnamed product';
 
 Object inventoryStockValue(int? cost, int quantity) {
   if (cost == null || (cost > 0 && quantity > 9007199254740991 ~/ cost)) {

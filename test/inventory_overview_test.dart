@@ -394,8 +394,9 @@ void main() {
     expect(headings.length, 6 + inventoryMovementLabels.length - 2);
     expect(headings, isNot(contains('Opening stock')));
     expect(headings, isNot(contains('Physical count')));
-    final warehouse = report.rows.first;
-    final tnhb = report.rows.last;
+    final warehouse =
+        report.rows.firstWhere((row) => row[1] == 'SSH Warehouse');
+    final tnhb = report.rows.firstWhere((row) => row[1] == 'SSH TNHB');
     expect(warehouse[headings.indexOf('Stock out')], 1002);
     expect(warehouse[headings.indexOf('Damaged')], 0);
     expect(tnhb[headings.indexOf('Damaged')], 3);
@@ -428,14 +429,47 @@ void main() {
         column.label is Text && (column.label as Text).data == 'Damaged');
     String? value(DataRow row) =>
         ((row.cells[damage].child as Center).child as Text).data;
-    expect(value(table.rows.first), '0');
-    expect(value(table.rows.last), '3');
+    expect(value(table.rows.first), '3'); // Same product, locations A–Z.
+    expect(value(table.rows.last), '0');
     await tester.tap(find.text('All locations'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('SSH Warehouse').last);
     await tester.pumpAndSettle();
     expect(find.text('Damaged'), findsNothing);
     expect(find.text('Physical count'), findsNothing);
+  });
+
+  testWidgets(
+      'product lists, report and movement picker use case-insensitive A–Z',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1500, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store(withStock: true)
+      ..addedName = 'apple kettle'
+      ..addedLocation = 'warehouse';
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
+    await tester.pumpAndSettle();
+    void checkOrder() {
+      expect(tester.getCenter(find.text('apple kettle').first).dy,
+          lessThan(tester.getCenter(find.text('Cookware Fixture').first).dy));
+    }
+
+    checkOrder(); // Physical Stocks.
+    await tester.tap(find.text('Record Movement'));
+    await tester.pumpAndSettle();
+    final picker = tester.widget<DropdownButton<String>>(find.descendant(
+        of: find.byKey(const ValueKey('Product')),
+        matching: find.byType(DropdownButton<String>)));
+    expect(picker.items!.map((item) => (item.child as Text).data),
+        ['Not selected', 'apple kettle', 'Cookware Fixture']);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    for (final section in ['Products', 'Overview', 'Reports']) {
+      await tester.tap(find.text(section).first);
+      await tester.pumpAndSettle();
+      checkOrder();
+    }
   });
 
   testWidgets('tables align headers and cells in every inventory section',

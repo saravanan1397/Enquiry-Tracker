@@ -445,6 +445,17 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             ],
           ]);
     final visibleRows = rows.docs.take(100).toList();
+    int compareStockRows(InventoryRow a, InventoryRow b) {
+      final aId = a.data()['productId'] as String?;
+      final bId = b.data()['productId'] as String?;
+      final names = compareInventoryLabels(productName(aId), productName(bId));
+      if (names != 0) return names;
+      final ids = (aId ?? '').compareTo(bId ?? '');
+      if (ids != 0) return ids;
+      return compareInventoryLabels(locationName(a.data()['location']),
+          locationName(b.data()['location']));
+    }
+
     final stock = <String, int>{};
     if (['Overview', 'Products'].contains(_section)) {
       for (final row in visibleRows) {
@@ -463,9 +474,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           reorder != null &&
           (row.data()['quantity'] as int) < reorder &&
           matchesRecord(row);
-    });
+    }).toList()
+      ..sort(compareStockRows);
+    final physicalRows = _section == physicalStockSection
+        ? (visibleRows.where(matchesRecord).toList()..sort(compareStockRows))
+        : const <InventoryRow>[];
     final productRows = <List<Object>>[
-      for (final row in products.docs.take(100))
+      for (final row in inventoryProductsByName(products.docs.take(100)))
         if (!productInBin(row.id) &&
             _matchesSearch([
               productName(row.id),
@@ -508,7 +523,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             'Balance stock',
             'Actions'
           ], [
-            for (final row in visibleRows.where(matchesRecord))
+            for (final row in physicalRows)
               if (!productInBin(row.data()['productId']))
                 [
                   productName(row.data()['productId'] as String?),
@@ -1049,11 +1064,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     final values = row?.data() ?? {};
     String catalogName(InventoryRow item) =>
         (item.data()['name'] as String? ?? '').trim();
-    final names = available
-        .where((item) => catalogName(item).isNotEmpty)
-        .toList()
-      ..sort((a, b) => _suggestionKey(catalogName(a))
-          .compareTo(_suggestionKey(catalogName(b))));
+    final names = inventoryProductsByName(
+        available.where((item) => catalogName(item).isNotEmpty));
     final byCategory = <String, String>{};
     for (final item in available) {
       final label = (item.data()['category'] as String? ?? '').trim();
@@ -1277,6 +1289,11 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       String? selectedLocation,
       int? selectedQuantity}) async {
     final values = draft?.data() ?? {};
+    final productOptions = {
+      for (final item in inventoryProductsByName(products))
+        if (item.data()['active'] == true && item.data()['deletedAt'] == null)
+          item.id: inventoryProductName(item.data()['name']),
+    };
     var location =
         selectedLocation ?? (values['location'] as String?) ?? _location;
     String? destination;
@@ -1345,17 +1362,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                 'Product: ${selectedProduct.data()['name'] ?? ''}\nEnter the new total for the selected location. A stock movement will record the difference.'),
           )
         else
-          _select(
-              'Product',
-              product,
-              {
-                for (final p in products)
-                  if (p.data()['active'] == true &&
-                      p.data()['deletedAt'] == null)
-                    p.id: '${p.data()['name']}'.trim().isEmpty
-                        ? 'Unnamed product'
-                        : '${p.data()['name']}'
-              },
+          _select('Product', product, productOptions,
               (v) => update(() => product = v)),
         _input(
             quantity,
