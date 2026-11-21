@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../lib/inventory_widget.dart';
+import '../lib/services/inventory_report.dart';
 import '../lib/services/inventory_store.dart';
 
 class _Row implements InventoryRow {
@@ -25,8 +26,8 @@ class _Rows implements InventoryRows {
 }
 
 class _Store implements InventoryStore {
-  _Store({this.withStock = false});
-  final bool withStock;
+  _Store({this.withStock = false, this.withDamage = false});
+  final bool withStock, withDamage;
   int? stock;
   bool recycled = false;
   InventoryMovement? posted;
@@ -64,6 +65,20 @@ class _Store implements InventoryStore {
           }),
       ]);
   @override
+  Future<InventoryReportSource> reportSource({String? location}) async => (
+        products: (await products()).docs,
+        balances: (await balances())
+            .docs
+            .where(
+                (row) => location == null || row.data()['location'] == location)
+            .toList(),
+        movements: (await movements())
+            .docs
+            .where(
+                (row) => location == null || row.data()['location'] == location)
+            .toList(),
+      );
+  @override
   Future<InventoryRows> counts({String? location}) =>
       movements(location: location);
   @override
@@ -77,6 +92,14 @@ class _Store implements InventoryStore {
           'delta': -1,
           'note': 'Shelf check',
         }),
+        if (withDamage)
+          _Row('damage', {
+            'productId': 'p1',
+            'location': 'tnhb',
+            'type': 'damage',
+            'quantity': 3,
+            'delta': -3,
+          }),
       ]);
   @override
   Future<InventoryRows> drafts({String? location}) async => _Rows([
@@ -127,6 +150,81 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  test('all movement types use per-location totals without a history cap', () {
+    _Row movement(
+            String id, String type, String location, int units, int delta) =>
+        _Row(id, {
+          'productId': 'p',
+          'location': location,
+          'type': type,
+          'quantity': units,
+          'delta': delta
+        });
+    final source = (
+      products: <InventoryRow>[
+        _Row('p', {'name': 'Mixer', 'unitCost': 2599})
+      ],
+      balances: <InventoryRow>[
+        _Row('b', {
+          'productId': 'p',
+          'location': 'warehouse',
+          'quantity': 5,
+        })
+      ],
+      movements: <InventoryRow>[
+        for (var i = 0; i < 501; i++)
+          movement('sale$i', 'sale', 'warehouse', 2, -2),
+        for (final type
+            in inventoryMovementLabels.keys.where((type) => type != 'sale'))
+          movement(type, type, 'tnhb', 3, type == 'count' ? -3 : 3),
+        movement('adjustment2', 'adjustment', 'tnhb', -3, -3),
+      ],
+    );
+    final report = buildInventoryReport(source,
+        locations: inventoryLocations, matches: (_) => true);
+    final headings = report.headings;
+    expect(headings.length, 6 + inventoryMovementLabels.length);
+    final warehouse = report.rows.first;
+    final tnhb = report.rows.last;
+    expect(warehouse[headings.indexOf('Stock out')], 1002);
+    expect(warehouse[headings.indexOf('Damaged')], 0);
+    expect(tnhb[headings.indexOf('Damaged')], 3);
+    expect(tnhb[headings.indexOf('Physical count')], -3);
+    expect(tnhb[headings.indexOf('Adjustment')], 0);
+    expect(tnhb[headings.indexOf('In hand')], '');
+    final filtered = buildInventoryReport(source,
+        locations: inventoryLocations,
+        matches: (fields) => fields.contains('SSH Warehouse'));
+    expect(filtered.headings.skip(6), ['Stock out']);
+  });
+
+  testWidgets(
+      'Reports show a single damage entry and hide empty movement types',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: InventoryWidgetScreen(
+            store: _Store(withStock: true, withDamage: true))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reports'));
+    await tester.pumpAndSettle();
+    expect(find.text('Damaged'), findsOneWidget);
+    expect(find.text('Stock out'), findsNothing);
+    final table = tester.widget<DataTable>(find.byType(DataTable));
+    expect(table.rows.length, 2);
+    final damage = table.columns.indexWhere((column) =>
+        column.label is Text && (column.label as Text).data == 'Damaged');
+    expect((table.rows.first.cells[damage].child as Text).data, '0');
+    expect((table.rows.last.cells[damage].child as Text).data, '3');
+    await tester.tap(find.text('All locations'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SSH Warehouse').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Damaged'), findsNothing);
+    expect(find.text('Physical count'), findsOneWidget);
+  });
+
   testWidgets(
       'product tables fill the desktop width and center headers over values',
       (tester) async {

@@ -3,6 +3,20 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 
+Uint8List buildInventoryCsv(List<String> headings, List<List<Object>> rows) {
+  final riskyText = RegExp(r'^\s*[=+@-]|^[\t\r\n]');
+  String cell(Object value) {
+    final text = value.toString();
+    final safe = value is num || !riskyText.hasMatch(text) ? text : "'$text";
+    return '"${safe.replaceAll('"', '""')}"';
+  }
+
+  return Uint8List.fromList(utf8.encode('\uFEFF${[
+    headings,
+    ...rows
+  ].map((row) => row.map(cell).join(',')).join('\r\n')}'));
+}
+
 String stockReportFileName(DateTime exportedAt) {
   final ist = exportedAt.toUtc().add(const Duration(hours: 5, minutes: 30));
   String two(int value) => value.toString().padLeft(2, '0');

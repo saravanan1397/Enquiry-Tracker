@@ -8,12 +8,6 @@ const _orderStatus = {
 };
 const _transferStatus = {'in_transit': 'In transit', 'received': 'Received'};
 
-Object _stockValue(int? cost, int quantity) {
-  if (cost == null || (cost > 0 && quantity > 9007199254740991 ~/ cost))
-    return '';
-  return cost * quantity / 100;
-}
-
 class _PurchaseInputs {
   _PurchaseInputs(this.id);
   final String id;

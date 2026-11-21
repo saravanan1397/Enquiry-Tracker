@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
@@ -12,10 +10,16 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'inventory_workspace.dart';
 import 'services/export_file_downloader.dart';
+import 'services/inventory_report.dart';
 import 'services/inventory_report_export.dart';
 import 'services/inventory_store.dart';
 
 part 'inventory_supply_views.dart';
+
+typedef _InventoryViewData = ({
+  List<InventoryRows> tables,
+  InventoryReportSource? report,
+});
 
 String inventorySaveError(Object error) {
   if (error is FormatException) return error.message;
@@ -48,7 +52,7 @@ class InventoryWidgetScreen extends StatefulWidget {
 
 class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
   late final InventoryStore _store = widget.store ?? InventoryStore();
-  late Future<List<InventoryRows>> _data;
+  late Future<_InventoryViewData> _data;
   late Future<List<InventoryLocation>> _locationData;
   List<InventoryLocation> _locations = mergeInventoryLocations(const []);
   Map<String, String> get _activeLocations => {
@@ -107,21 +111,27 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     }
   }
 
-  void _load() {
+  void _load() => _data = _loadView();
+
+  Future<_InventoryViewData> _loadView() async {
+    if (_section == 'Reports') {
+      return (
+        tables: const <InventoryRows>[],
+        report: await _store.reportSource(location: _location)
+      );
+    }
     if (_productBin) {
-      _data = Future.wait([_store.deletedProducts()]);
-      return;
+      return (tables: [await _store.deletedProducts()], report: null);
     }
     if (_section == 'Locations' || _section == 'Suppliers') {
-      _data = _section == 'Suppliers'
-          ? Future.wait([_store.suppliers()])
-          : Future.value(const []);
-      return;
+      return (
+        tables: [if (_section == 'Suppliers') await _store.suppliers()],
+        report: null
+      );
     }
-    _data = Future.wait([
+    final tables = await Future.wait([
       _store.products(),
-      if (['Overview', 'Products', 'Reports', physicalStockSection]
-          .contains(_section))
+      if (['Overview', 'Products', physicalStockSection].contains(_section))
         _store.balances(location: _location),
       if (_section == inventoryHistorySection) ...[
         _store.movements(location: _location),
@@ -134,6 +144,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       ],
       if (_section == 'Transfers') _store.branchTransfers(),
     ]);
+    return (tables: tables, report: null);
   }
 
   void _refresh() {
@@ -205,7 +216,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 26),
               children: [
-                FutureBuilder<List<InventoryRows>>(
+                FutureBuilder<_InventoryViewData>(
                   future: _data,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done ||
@@ -227,7 +238,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                         ],
                       );
                     }
-                    final data = snapshot.requireData;
+                    final (tables: data, :report) = snapshot.requireData;
+                    if (report != null) return _reportContent(report);
                     if (_productBin)
                       return _productBinContent(context, data.first);
                     return switch (_section) {
@@ -400,30 +412,6 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     }
 
     final title = _section == 'Overview' ? 'Inventory Overview' : _section;
-    final reportHeadings = [
-      'Product',
-      'Location',
-      'In hand',
-      'Reorder at',
-      'Unit cost INR',
-      'Stock value INR'
-    ];
-    final reportRows = <List<Object>>[
-      for (final row in rows.docs.take(100))
-        if (_section == 'Reports' &&
-            !productInBin(row.data()['productId']) &&
-            matchesRecord(row))
-          [
-            productName(row.data()['productId'] as String?),
-            locationName(row.data()['location']),
-            row.data()['quantity'] as int,
-            (byProduct[row.data()['productId']]?['reorder'] as int?) ?? '',
-            _stockValue(
-                byProduct[row.data()['productId']]?['unitCost'] as int?, 1),
-            _stockValue(byProduct[row.data()['productId']]?['unitCost'] as int?,
-                row.data()['quantity'] as int),
-          ],
-    ];
     final action = _section == 'Products'
         ? Wrap(spacing: 8, runSpacing: 8, children: [
             OutlinedButton.icon(
@@ -433,44 +421,29 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             ),
             FilledButton(onPressed: _product, child: const Text('Add Product')),
           ])
-        : _section == 'Reports'
-            ? Wrap(spacing: 8, runSpacing: 8, children: [
+        : Wrap(spacing: 8, runSpacing: 8, children: [
+            if (_section == physicalStockSection) ...[
+              OutlinedButton(
+                onPressed: () => _movement(products.docs, stockType: 'sale'),
+                child: const Text('Subtract Outgoing Stock'),
+              ),
+              FilledButton(
+                onPressed: () => _movement(products.docs),
+                child: const Text('Record Movement'),
+              ),
+            ] else ...[
+              if (widget.adminDark != null && _section == 'Overview') ...[
                 OutlinedButton(
-                    onPressed: reportRows.isEmpty
-                        ? null
-                        : () => _exportReport(reportHeadings, reportRows),
-                    child: const Text('Export CSV')),
-                FilledButton(
-                    onPressed: reportRows.isEmpty
-                        ? null
-                        : () => _exportReport(reportHeadings, reportRows,
-                            excel: true),
-                    child: const Text('Export Excel')),
-              ])
-            : Wrap(spacing: 8, runSpacing: 8, children: [
-                if (_section == physicalStockSection) ...[
-                  OutlinedButton(
-                    onPressed: () =>
-                        _movement(products.docs, stockType: 'sale'),
-                    child: const Text('Subtract Outgoing Stock'),
-                  ),
-                  FilledButton(
-                    onPressed: () => _movement(products.docs),
-                    child: const Text('Record Movement'),
-                  ),
-                ] else ...[
-                  if (widget.adminDark != null && _section == 'Overview') ...[
-                    OutlinedButton(
-                      onPressed: _showBackupDeviceOptions,
-                      child: const Text('Back up now'),
-                    ),
-                    OutlinedButton(
-                      onPressed: () => _launchTrustedAction('restore'),
-                      child: const Text('Restore from backup'),
-                    ),
-                  ],
-                ],
-              ]);
+                  onPressed: _showBackupDeviceOptions,
+                  child: const Text('Back up now'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _launchTrustedAction('restore'),
+                  child: const Text('Restore from backup'),
+                ),
+              ],
+            ],
+          ]);
     final visibleRows = rows.docs.take(100).toList();
     final stock = <String, int>{};
     if (['Overview', 'Products'].contains(_section)) {
@@ -528,12 +501,6 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
         _pageHeading(title, action),
         const SizedBox(height: 14),
         if (_section != inventoryHistorySection) _viewSearch(),
-        if (_section == 'Reports') ...[
-          const Text(
-              'Stock value uses each product’s saved unit cost. A blank value means the cost is missing or the amount exceeds the supported range. Exports contain the rows shown.'),
-          const SizedBox(height: 12),
-          _table(reportHeadings, reportRows),
-        ],
         if (_section == physicalStockSection) ...[
           _table([
             'Product',
@@ -724,6 +691,41 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     );
   }
 
+  Widget _reportContent(InventoryReportSource source) {
+    final (:headings, :rows) = buildInventoryReport(
+      source,
+      locations: {
+        for (final location in _locations) location.id: location.name
+      },
+      matches: _matchesSearch,
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _pageHeading(
+          'Reports',
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            OutlinedButton(
+                onPressed:
+                    rows.isEmpty ? null : () => _exportReport(headings, rows),
+                child: const Text('Export CSV')),
+            FilledButton(
+                onPressed: rows.isEmpty
+                    ? null
+                    : () => _exportReport(headings, rows, excel: true),
+                child: const Text('Export Excel')),
+          ])),
+      const SizedBox(height: 14),
+      _viewSearch(),
+      const Text('Movement totals cover all recorded history for these rows. '
+          'Stock out, returns, damage and transfers show units moved; physical counts '
+          'and adjustments show net stock change. Exports match the report.'),
+      const SizedBox(height: 6),
+      const Text('Stock value uses the saved unit cost. A blank balance means '
+          'no balance was recorded; a blank value means it could not be calculated.'),
+      const SizedBox(height: 12),
+      _table(headings, rows, numericHeadings: headings.skip(6).toSet()),
+    ]);
+  }
+
   Future<void> _showBackupDeviceOptions() => showDialog<void>(
         context: context,
         builder: (dialog) => Theme(
@@ -778,23 +780,13 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
 
   Future<void> _exportReport(List<String> headers, List<List<Object>> rows,
       {bool excel = false}) async {
-    String cell(String value) {
-      final safe =
-          RegExp(r'^\s*[=+@-]|^[\t\r\n]').hasMatch(value) ? "'$value" : value;
-      return '"${safe.replaceAll('"', '""')}"';
-    }
-
     try {
       final fileName = excel
           ? stockReportFileName(DateTime.now())
           : 'ssh-inventory-stock.csv';
       final bytes = excel
           ? buildInventoryWorkbook(headers, rows)
-          : Uint8List.fromList(utf8.encode('\uFEFF' +
-              [headers, ...rows]
-                  .map((row) =>
-                      row.map((value) => cell(value.toString())).join(','))
-                  .join('\r\n')));
+          : buildInventoryCsv(headers, rows);
       if (excel && kIsWeb) {
         await downloadExcelExport(bytes, fileName);
         return;
@@ -881,7 +873,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       );
 
   Widget _table(List<String> headings, List<List<Object>> rows,
-      {List<double>? centeredWidths}) {
+      {List<double>? centeredWidths, Set<String> numericHeadings = const {}}) {
     return LayoutBuilder(builder: (context, constraints) {
       final scheme = Theme.of(context).colorScheme;
       final centered = centeredWidths != null;
@@ -938,17 +930,18 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                           : FixedColumnWidth(
                               centeredWidths[index] + extraPerColumn),
                       numeric: !centered &&
-                          [
-                            'Quantity',
-                            'Change',
-                            'Balance',
-                            'Balance stock',
-                            'In hand',
-                            'Reorder at',
-                            'Unit cost INR',
-                            'Stock value INR',
-                            'Tracked stock'
-                          ].contains(text));
+                          (numericHeadings.contains(text) ||
+                              [
+                                'Quantity',
+                                'Change',
+                                'Balance',
+                                'Balance stock',
+                                'In hand',
+                                'Reorder at',
+                                'Unit cost INR',
+                                'Stock value INR',
+                                'Tracked stock'
+                              ].contains(text)));
                 }).toList(),
                 rows: rows
                     .map((row) => DataRow(cells: [

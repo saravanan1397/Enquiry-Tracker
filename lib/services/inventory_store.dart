@@ -5,6 +5,11 @@ part 'inventory_supply_store.dart';
 
 typedef InventoryRow = QueryDocumentSnapshot<Map<String, dynamic>>;
 typedef InventoryRows = QuerySnapshot<Map<String, dynamic>>;
+typedef InventoryReportSource = ({
+  List<InventoryRow> products,
+  List<InventoryRow> balances,
+  List<InventoryRow> movements,
+});
 
 const inventoryLocations = {
   'avadi': 'SSH Market',
@@ -227,6 +232,33 @@ class InventoryStore {
           : _balances.where('location', isEqualTo: location))
       .limit(101)
       .get(_server);
+
+  Future<InventoryReportSource> reportSource({String? location}) async {
+    final results = await Future.wait([
+      _reportRows(_products),
+      _reportRows(location == null
+          ? _balances
+          : _balances.where('location', isEqualTo: location)),
+      _reportRows(location == null
+          ? _movements
+          : _movements.where('location', isEqualTo: location)),
+    ]);
+    return (products: results[0], balances: results[1], movements: results[2]);
+  }
+
+  Future<List<InventoryRow>> _reportRows(
+      Query<Map<String, dynamic>> source) async {
+    const pageSize = 500;
+    final ordered = source.orderBy(FieldPath.documentId).limit(pageSize);
+    final all = <InventoryRow>[];
+    var query = ordered;
+    while (true) {
+      final page = await query.get(_server);
+      all.addAll(page.docs);
+      if (page.docs.length < pageSize) return all;
+      query = ordered.startAfterDocument(page.docs.last);
+    }
+  }
 
   Future<InventoryRows> movements({String? location}) => (location == null
           ? _movements.orderBy('at', descending: true)

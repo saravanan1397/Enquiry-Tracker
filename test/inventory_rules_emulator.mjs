@@ -127,3 +127,25 @@ assert.equal(restored.deletedAt,undefined);
 assert.equal(await quantity(source),6);
 assert.equal(await quantity(destination),10);
 console.log('Verified reversible product recycling, access guards and preserved stock.');
+
+// Mirror report reads: branch equality plus a stable document ID cursor.
+const runReportQuery=(collection, cursor, credential=token)=>request(db+':runQuery',{
+  method:'POST', credential,
+  body:{structuredQuery:{
+    from:[{collectionId:collection}],
+    where:{fieldFilter:{field:{fieldPath:'location'},op:'EQUAL',value:{stringValue:source}}},
+    orderBy:[{field:{fieldPath:'__name__'},direction:'ASCENDING'}],
+    limit:1,
+    ...(cursor?{startAt:{values:[{referenceValue:cursor}],before:false}}:{}),
+  }},
+},credential===token?200:403);
+await commit(movement(id('S'),'damage',source,6,1,-1));
+const firstPage=await runReportQuery('is_movements');
+const firstDoc=firstPage[0].document;
+assert.equal(firstDoc.fields.location.stringValue,source);
+const nextPage=await runReportQuery('is_movements',firstDoc.name);
+assert.notEqual(nextPage[0].document.name,firstDoc.name);
+assert.equal(nextPage[0].document.fields.location.stringValue,source);
+assert.equal((await runReportQuery('is_balances'))[0].document.fields.quantity.integerValue,'5');
+await runReportQuery('is_movements',undefined,other.idToken);
+console.log('Verified admin report reads, branch filtering, and pagination.');

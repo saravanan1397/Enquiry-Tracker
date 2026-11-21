@@ -33,4 +33,21 @@ void main() {
     expect(sheet, contains('<v>0</v>'));
     expect(sheet, contains('<v>12</v></c><c><v>5</v>'));
   });
+
+  test('both export formats keep dynamic headings and signed totals', () {
+    const headings = ['Product', 'Damaged', 'Physical count'];
+    const rows = <List<Object>>[
+      ['=sample', 1, -3]
+    ];
+    final csv = utf8.decode(buildInventoryCsv(headings, rows));
+    expect(csv, contains('"Product","Damaged","Physical count"'));
+    expect(csv, contains('"\'=sample","1","-3"'));
+    final zip =
+        ZipDecoder().decodeBytes(buildInventoryWorkbook(headings, rows));
+    final sheet =
+        utf8.decode(zip.findFile('xl/worksheets/sheet1.xml')!.content);
+    expect(sheet, contains('Damaged'));
+    expect(sheet, contains('<v>1</v>'));
+    expect(sheet, contains('<v>-3</v>'));
+  });
 }
