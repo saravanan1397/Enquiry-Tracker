@@ -5,11 +5,11 @@ const inventorySections = [
   'Products',
   physicalStockSection,
   'Transfers',
-  inventoryHistorySection,
   'Reports',
   'Locations',
   'Suppliers',
   inventoryPurchaseSection,
+  inventoryHistorySection,
 ];
 const inventoryHistorySection = 'History';
 const physicalStockSection = 'Physical Stocks';

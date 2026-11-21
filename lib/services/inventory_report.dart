@@ -40,13 +40,19 @@ InventoryReport buildInventoryReport(
   final present = <String>{};
   for (final doc in source.movements) {
     final data = doc.data();
-    final key = keyOf(data);
     final type = data['type'];
+    if (type is! String ||
+        type.isEmpty ||
+        type == 'opening' ||
+        type == 'count') {
+      continue;
+    }
+    final key = keyOf(data);
     final delta = data['delta'];
     final units = data['quantity'];
-    if (key == null || type is! String || type.isEmpty) continue;
+    if (key == null) continue;
     final amount = switch (type) {
-      'count' || 'adjustment' => delta is int ? delta : null,
+      'adjustment' => delta is int ? delta : null,
       _ => units is int ? units.abs() : (delta is int ? delta.abs() : null),
     };
     if (amount == null) continue;
@@ -66,7 +72,7 @@ InventoryReport buildInventoryReport(
     headings: [
       'Product',
       'Location',
-      'In hand',
+      'Total Stock',
       'Reorder at',
       'Unit cost INR',
       'Stock value INR',

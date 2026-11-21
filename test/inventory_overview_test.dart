@@ -228,6 +228,33 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  test('Total Stock reports the final balance once per product and branch', () {
+    Map<String, dynamic> entry(String location, int quantity) =>
+        {'productId': 'p1', 'location': location, 'quantity': quantity};
+    final report = buildInventoryReport((
+      products: [
+        _Row('p1', {'name': 'Product A'})
+      ],
+      balances: [_Row('a', entry('a', 7)), _Row('b', entry('b', 9))],
+      movements: [
+        _Row('opening', {...entry('a', 10), 'type': 'opening', 'delta': 10}),
+        _Row('count', {...entry('b', 9), 'type': 'count', 'delta': 9}),
+        _Row('damage', {...entry('a', 1), 'type': 'damage', 'delta': -1}),
+        _Row('transfer',
+            {...entry('a', 2), 'type': 'transfer_out', 'delta': -2}),
+      ],
+    ), locations: {
+      'a': 'Place A',
+      'b': 'Place B'
+    }, matches: (_) => true);
+    expect(report.rows.map((row) => row.take(3).toList()), [
+      ['Product A', 'Place A', 7],
+      ['Product A', 'Place B', 9],
+    ]);
+    expect(report.headings[2], 'Total Stock');
+    expect(report.headings.skip(6), ['Damaged', 'Transfer out']);
+  });
+
   testWidgets('saved name and category suggestions do not create duplicates',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -364,15 +391,16 @@ void main() {
     final report = buildInventoryReport(source,
         locations: inventoryLocations, matches: (_) => true);
     final headings = report.headings;
-    expect(headings.length, 6 + inventoryMovementLabels.length);
+    expect(headings.length, 6 + inventoryMovementLabels.length - 2);
+    expect(headings, isNot(contains('Opening stock')));
+    expect(headings, isNot(contains('Physical count')));
     final warehouse = report.rows.first;
     final tnhb = report.rows.last;
     expect(warehouse[headings.indexOf('Stock out')], 1002);
     expect(warehouse[headings.indexOf('Damaged')], 0);
     expect(tnhb[headings.indexOf('Damaged')], 3);
-    expect(tnhb[headings.indexOf('Physical count')], -3);
     expect(tnhb[headings.indexOf('Adjustment')], 0);
-    expect(tnhb[headings.indexOf('In hand')], '');
+    expect(tnhb[headings.indexOf('Total Stock')], '');
     final filtered = buildInventoryReport(source,
         locations: inventoryLocations,
         matches: (fields) => fields.contains('SSH Warehouse'));
@@ -391,6 +419,8 @@ void main() {
     await tester.tap(find.text('Reports'));
     await tester.pumpAndSettle();
     expect(find.text('Damaged'), findsOneWidget);
+    expect(find.text('Total Stock'), findsOneWidget);
+    expect(find.text('In hand'), findsNothing);
     expect(find.text('Stock out'), findsNothing);
     final table = tester.widget<DataTable>(find.byType(DataTable));
     expect(table.rows.length, 2);
@@ -405,7 +435,7 @@ void main() {
     await tester.tap(find.text('SSH Warehouse').last);
     await tester.pumpAndSettle();
     expect(find.text('Damaged'), findsNothing);
-    expect(find.text('Physical count'), findsOneWidget);
+    expect(find.text('Physical count'), findsNothing);
   });
 
   testWidgets('tables align headers and cells in every inventory section',

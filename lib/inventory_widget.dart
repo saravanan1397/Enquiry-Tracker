@@ -738,9 +738,9 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ])),
       const SizedBox(height: 14),
       _viewSearch(),
-      const Text('Movement totals cover all recorded history for these rows. '
-          'Stock out, returns, damage and transfers show units moved; physical counts '
-          'and adjustments show net stock change. Exports match the report.'),
+      const Text('Total Stock is the current balance for each product at each '
+          'location. It already includes all posted stock changes. The movement '
+          'columns are for reference; do not subtract them again.'),
       const SizedBox(height: 6),
       const Text('Stock value uses the saved unit cost. A blank balance means '
           'no balance was recorded; a blank value means it could not be calculated.'),

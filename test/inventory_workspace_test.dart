@@ -66,11 +66,11 @@ void main() {
       'Products',
       'Physical Stocks',
       'Transfers',
-      'History',
       'Reports',
       'Locations',
       'Suppliers',
       'Purchase',
+      'History',
     ]);
   });
 
