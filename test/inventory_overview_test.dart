@@ -286,8 +286,9 @@ void main() {
     await tester.tap(find.text('Physical Stocks'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Edit details for Cookware Fixture'), findsNothing);
-    final pencil = find.byTooltip('Edit stock for Cookware Fixture');
-    expect(pencil, findsOneWidget);
+    final editStock = find.widgetWithText(OutlinedButton, 'Edit stock');
+    expect(editStock, findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Add New Stock'), findsOneWidget);
     final physicalSearch = find.byKey(const ValueKey('inventory-view-search'));
     final contentWidth = tester.getSize(physicalSearch).width;
     expect(
@@ -296,7 +297,7 @@ void main() {
         closeTo(tester.getCenter(find.text('1')).dx, 1));
     expect(find.text('1'), findsOneWidget);
     expect(find.text('1.00'), findsNothing);
-    await tester.tap(pencil);
+    await tester.tap(editStock);
     await tester.pumpAndSettle();
     expect(find.text('Location: SSH Warehouse'), findsOneWidget);
     final quantity = find.widgetWithText(TextField, 'New quantity in hand');
@@ -503,8 +504,7 @@ void main() {
     expect(find.text('Actions'), findsNothing);
     await tester.tap(find.text('Physical Stocks'));
     await tester.pumpAndSettle();
-    await tester.tap(
-        find.byTooltip('Set stock at a chosen branch for Cookware Fixture'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Add New Stock'));
     await tester.pumpAndSettle();
     expect(find.text('Edit Stock'), findsOneWidget);
     await tester.tap(find.text('Not selected'));

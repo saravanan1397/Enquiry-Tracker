@@ -517,28 +517,49 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                   if (productDocuments[row.data()['productId']]
                       case final InventoryRow product)
                     Row(mainAxisSize: MainAxisSize.min, children: [
-                      IconButton(
-                        tooltip: 'Edit stock for ${productName(product.id)}',
-                        icon: const Icon(Icons.edit_outlined, size: 19),
-                        onPressed: product.data()['active'] == true &&
-                                _activeLocations
-                                    .containsKey(row.data()['location'])
-                            ? () => _movement(products.docs,
-                                stockType: 'count',
-                                selectedProduct: product,
-                                selectedLocation:
-                                    row.data()['location'] as String,
-                                selectedQuantity: row.data()['quantity'] as int)
-                            : null,
+                      Flexible(
+                        child: Tooltip(
+                          message: 'Edit stock for ${productName(product.id)}',
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                            ),
+                            onPressed: product.data()['active'] == true &&
+                                    _activeLocations
+                                        .containsKey(row.data()['location'])
+                                ? () => _movement(products.docs,
+                                    stockType: 'count',
+                                    selectedProduct: product,
+                                    selectedLocation:
+                                        row.data()['location'] as String,
+                                    selectedQuantity:
+                                        row.data()['quantity'] as int)
+                                : null,
+                            child: const Text('Edit stock',
+                                textAlign: TextAlign.center),
+                          ),
+                        ),
                       ),
-                      IconButton(
-                        tooltip:
-                            'Set stock at a chosen branch for ${productName(product.id)}',
-                        icon: const Icon(Icons.tune, size: 20),
-                        onPressed: product.data()['active'] == true
-                            ? () => _movement(products.docs,
-                                stockType: 'count', selectedProduct: product)
-                            : null,
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Tooltip(
+                          message:
+                              'Set stock at a chosen branch for ${productName(product.id)}',
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                            ),
+                            onPressed: product.data()['active'] == true
+                                ? () => _movement(products.docs,
+                                    stockType: 'count',
+                                    selectedProduct: product)
+                                : null,
+                            child: const Text('Add New Stock',
+                                textAlign: TextAlign.center),
+                          ),
+                        ),
                       ),
                     ])
                   else
@@ -548,7 +569,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             190,
             180,
             114,
-            126
+            340
           ]),
         ],
         if (_section == 'Overview') ...[
