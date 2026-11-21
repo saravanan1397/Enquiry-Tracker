@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:leadloop/owner_home.dart';
@@ -13,6 +14,7 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
         var openedFollowups = false;
         var openedSales = false;
+        var openedInventory = false;
         await tester.pumpWidget(MaterialApp(
           theme: ThemeData(brightness: brightness),
           home: Scaffold(
@@ -20,6 +22,7 @@ void main() {
               leads: const [],
               onFollowup: () => openedFollowups = true,
               onSales: () => openedSales = true,
+              onInventory: () => openedInventory = true,
             ),
           ),
         ));
@@ -28,6 +31,9 @@ void main() {
         expect(find.text('Sales tracker'), findsOneWidget);
         expect(find.text('Open follow-ups'), findsOneWidget);
         expect(find.text('Open sales tracker'), findsOneWidget);
+        expect(find.text('SCHEDULE'), findsOneWidget);
+        expect(find.text('WORKSPACE'), findsNothing);
+        expect(find.text('IS'), findsNothing);
         final followupPosition =
             tester.getTopLeft(find.text('Followup widget'));
         final salesPosition = tester.getTopLeft(find.text('Sales tracker'));
@@ -43,6 +49,13 @@ void main() {
         expect(openedFollowups, isTrue);
         await tester.tap(find.text('Open sales tracker'));
         expect(openedSales, isTrue);
+        if (kIsWeb) {
+          expect(find.text('Centralized Inventory'), findsOneWidget);
+          final inventory = find.text('Open inventory');
+          await tester.ensureVisible(inventory);
+          await tester.tap(inventory);
+          expect(openedInventory, isTrue);
+        }
       });
     }
   }

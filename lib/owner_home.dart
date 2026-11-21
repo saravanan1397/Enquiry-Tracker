@@ -110,7 +110,6 @@ class OwnerHome extends StatelessWidget {
                         Color(0xFF0D1B1D),
                         Color(0xFF173538),
                       ],
-                      metrics: const [('WORKSPACE', 'IS')],
                       onTap: onInventory,
                     );
                     if (constraints.maxWidth < 920) {
@@ -163,7 +162,7 @@ class _ModuleCard extends StatelessWidget {
     required this.darkAccent,
     required this.lightGradient,
     required this.darkGradient,
-    required this.metrics,
+    this.metrics = const [],
     this.onTap,
   });
 
@@ -245,57 +244,59 @@ class _ModuleCard extends StatelessWidget {
                     Text(description,
                         style: TextStyle(color: muted, fontSize: 13)),
                     const SizedBox(height: 18),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: (dark ? Colors.black : Colors.white)
-                            .withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: border),
-                      ),
-                      child: LayoutBuilder(builder: (context, constraints) {
-                        final columns = metrics.length == 1
-                            ? 1
-                            : constraints.maxWidth < 520
-                                ? 2
-                                : metrics.length;
-                        return Wrap(children: [
-                          for (var index = 0; index < metrics.length; index++)
-                            SizedBox(
-                              width: constraints.maxWidth / columns,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 12),
-                                decoration: BoxDecoration(
-                                    border: Border(
-                                  left: index % columns == 0
-                                      ? BorderSide.none
-                                      : BorderSide(color: border),
-                                  top: index < columns
-                                      ? BorderSide.none
-                                      : BorderSide(color: border),
-                                )),
-                                child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(metrics[index].$1,
-                                          style: TextStyle(
-                                              color: muted,
-                                              fontSize: 10,
-                                              letterSpacing: 0.4)),
-                                      const SizedBox(height: 6),
-                                      Text(metrics[index].$2,
-                                          style: TextStyle(
-                                              color: accent,
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 18)),
-                                    ]),
+                    if (metrics.isNotEmpty) ...[
+                      Container(
+                        decoration: BoxDecoration(
+                          color: (dark ? Colors.black : Colors.white)
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: border),
+                        ),
+                        child: LayoutBuilder(builder: (context, constraints) {
+                          final columns = metrics.length == 1
+                              ? 1
+                              : constraints.maxWidth < 520
+                                  ? 2
+                                  : metrics.length;
+                          return Wrap(children: [
+                            for (var index = 0; index < metrics.length; index++)
+                              SizedBox(
+                                width: constraints.maxWidth / columns,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 12),
+                                  decoration: BoxDecoration(
+                                      border: Border(
+                                    left: index % columns == 0
+                                        ? BorderSide.none
+                                        : BorderSide(color: border),
+                                    top: index < columns
+                                        ? BorderSide.none
+                                        : BorderSide(color: border),
+                                  )),
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(metrics[index].$1,
+                                            style: TextStyle(
+                                                color: muted,
+                                                fontSize: 10,
+                                                letterSpacing: 0.4)),
+                                        const SizedBox(height: 6),
+                                        Text(metrics[index].$2,
+                                            style: TextStyle(
+                                                color: accent,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 18)),
+                                      ]),
+                                ),
                               ),
-                            ),
-                        ]);
-                      }),
-                    ),
-                    const SizedBox(height: 18),
+                          ]);
+                        }),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
                     LayoutBuilder(builder: (context, constraints) {
                       final action = FilledButton.icon(
                         onPressed: onTap,
