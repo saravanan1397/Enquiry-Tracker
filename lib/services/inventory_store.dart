@@ -284,11 +284,12 @@ class InventoryStore {
     }
   }
 
-  Future<InventoryRows> movements({String? location}) => (location == null
-          ? _movements.orderBy('at', descending: true)
-          : _movements.where('location', isEqualTo: location))
-      .limit(101)
-      .get(_server);
+  Future<InventoryRows> movements({String? location}) {
+    final query = location == null
+        ? _movements
+        : _movements.where('location', isEqualTo: location);
+    return query.orderBy('at', descending: true).limit(101).get(_server);
+  }
 
   Future<InventoryRows> counts({String? location}) => (location == null
           ? _movements.where('type', isEqualTo: 'count')

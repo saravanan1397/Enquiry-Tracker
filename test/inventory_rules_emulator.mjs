@@ -188,3 +188,21 @@ assert.equal(await productQuantity(destination),'4');
 await commit(addAtLocation(newProduct,id('I'),destination),token,403);
 assert.equal(await productQuantity(destination),'4');
 console.log('Verified product form opening stock, branch edits and preservation of other stock.');
+
+// History limits after applying newest-first order for the selected branch.
+const historyWrite=id('Y');
+await commit(movement(historyWrite,'sale',source,5,1,-1));
+const latest=await request(db+':runQuery',{method:'POST',credential:token,body:{
+  structuredQuery:{
+    from:[{collectionId:'is_movements'}],
+    where:{fieldFilter:{field:{fieldPath:'location'},op:'EQUAL',value:{stringValue:source}}},
+    orderBy:[{field:{fieldPath:'at'},direction:'DESCENDING'}],
+    limit:1,
+  },
+}});
+assert.equal(latest[0].document.name,prefix+'is_movements/'+historyWrite);
+await request(db+':runQuery',{method:'POST',credential:other.idToken,body:{
+  structuredQuery:{from:[{collectionId:'is_movements'}],
+    orderBy:[{field:{fieldPath:'at'},direction:'DESCENDING'}],limit:1},
+}},403);
+console.log('Verified newest-first branch history and admin access.');

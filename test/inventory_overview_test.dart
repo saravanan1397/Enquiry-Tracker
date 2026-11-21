@@ -31,6 +31,7 @@ class _Store implements InventoryStore {
   int? stock;
   bool recycled = false;
   String? addedName, addedLocation;
+  bool withOlderMovement = false;
   String? addedCategory;
   int? addedQuantity;
   (String?, int?, int?)? editedStock;
@@ -147,6 +148,15 @@ class _Store implements InventoryStore {
             'type': 'damage',
             'quantity': 3,
             'delta': -3,
+          }),
+        if (withOlderMovement)
+          _Row('older', {
+            'productId': 'p2',
+            'location': 'warehouse',
+            'type': 'opening',
+            'quantity': 10,
+            'quantityAfter': 10,
+            'delta': 10,
           }),
       ]);
   @override
@@ -446,7 +456,8 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final store = _Store(withStock: true)
       ..addedName = 'apple kettle'
-      ..addedLocation = 'warehouse';
+      ..addedLocation = 'warehouse'
+      ..withOlderMovement = true;
     await tester
         .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
     await tester.pumpAndSettle();
@@ -470,6 +481,19 @@ void main() {
       await tester.pumpAndSettle();
       checkOrder();
     }
+    await tester.tap(find.text('History'));
+    await tester.pumpAndSettle();
+    void checkLatestFirst() {
+      expect(tester.getCenter(find.text('Cookware Fixture').first).dy,
+          lessThan(tester.getCenter(find.text('apple kettle').first).dy));
+    }
+
+    checkLatestFirst();
+    await tester.tap(find.text('All locations'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SSH Warehouse').last);
+    await tester.pumpAndSettle();
+    checkLatestFirst();
   });
 
   testWidgets('tables align headers and cells in every inventory section',

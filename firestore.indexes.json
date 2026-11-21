@@ -25,6 +25,14 @@
       ]
     },
     {
+      "collectionGroup": "is_movements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "location", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "leadEditHistory",
       "queryScope": "COLLECTION",
       "fields": [
