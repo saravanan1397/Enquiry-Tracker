@@ -248,9 +248,24 @@ class InventoryWorkspace extends StatelessWidget {
                         initialValue:
                             locations.containsKey(location) ? location : '',
                         isExpanded: true,
+                        borderRadius: BorderRadius.circular(16),
                         decoration: InputDecoration(
                           hintText: 'All locations',
                           labelText: compact ? 'Branch' : null,
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide(
+                              color:
+                                  Theme.of(context).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
                         ),
                         items: [
                           const DropdownMenuItem(

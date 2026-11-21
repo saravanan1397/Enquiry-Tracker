@@ -96,6 +96,18 @@ void main() {
     await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
     expect(find.text('Showing History'), findsOneWidget);
+    final branchPicker = find.byType(DropdownButtonFormField<String>);
+    final decorator = tester.widget<InputDecorator>(find.descendant(
+        of: branchPicker, matching: find.byType(InputDecorator)));
+    expect(
+      (decorator.decoration.enabledBorder as OutlineInputBorder).borderRadius,
+      BorderRadius.circular(24),
+    );
+    await tester.tap(branchPicker);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Selvan Hotel Mart').last);
+    await tester.pumpAndSettle();
+    expect(location, 'hotelmart');
     expect(inside, Brightness.light);
     await tester.tap(find.byTooltip('Switch to dark theme'));
     await tester.pumpAndSettle();
