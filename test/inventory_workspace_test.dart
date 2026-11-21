@@ -4,6 +4,17 @@ import '../lib/inventory_workspace.dart';
 import '../lib/services/inventory_store.dart';
 
 void main() {
+  test('inventory body text, controls and titles are larger in both themes',
+      () {
+    for (final dark in [false, true]) {
+      final theme = inventoryTheme(dark);
+      expect(theme.textTheme.bodyMedium?.fontSize, greaterThan(14));
+      expect(theme.textTheme.headlineSmall?.fontSize, 24);
+      final button = theme.filledButtonTheme.style!.textStyle!.resolve({});
+      expect(button?.fontSize, greaterThan(14));
+    }
+  });
+
   test('inventory theme uses separate page and card surfaces in both modes',
       () {
     final light = inventoryTheme(false);

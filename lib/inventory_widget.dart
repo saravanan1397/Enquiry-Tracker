@@ -864,16 +864,21 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
 
   Widget _pageHeading(String title, Widget action) =>
       LayoutBuilder(builder: (context, limits) {
-        return Flex(
-          direction: limits.maxWidth < 640 ? Axis.vertical : Axis.horizontal,
-          crossAxisAlignment: limits.maxWidth < 640
-              ? CrossAxisAlignment.start
-              : CrossAxisAlignment.center,
+        final heading =
+            Text(title, style: Theme.of(context).textTheme.headlineSmall);
+        if (limits.maxWidth < 640) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 10,
+            children: [heading, action],
+          );
+        }
+        return Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           spacing: 10,
           children: [
-            Text(title, style: Theme.of(context).textTheme.headlineSmall),
-            action,
+            Flexible(flex: 2, child: heading),
+            Flexible(flex: 3, child: action),
           ],
         );
       });
@@ -916,16 +921,17 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
               constraints: BoxConstraints(
                   minWidth: fixedWidths ? 0 : constraints.maxWidth),
               child: DataTable(
-                headingRowHeight: 38,
-                dataRowMinHeight: 44,
-                dataRowMaxHeight: 52,
+                headingRowHeight: 42,
+                dataRowMinHeight: 46,
+                dataRowMaxHeight: 56,
                 headingRowColor:
                     WidgetStatePropertyAll(scheme.surfaceContainerHigh),
                 headingTextStyle: TextStyle(
                     color: scheme.onSurface,
-                    fontSize: 12,
+                    fontSize: inventoryTableHeadingSize,
                     fontWeight: FontWeight.w600),
-                dataTextStyle: TextStyle(color: scheme.onSurface, fontSize: 13),
+                dataTextStyle: TextStyle(
+                    color: scheme.onSurface, fontSize: inventoryTableTextSize),
                 dataRowColor: WidgetStateProperty.resolveWith((states) =>
                     states.contains(WidgetState.hovered)
                         ? scheme.surfaceContainerLow

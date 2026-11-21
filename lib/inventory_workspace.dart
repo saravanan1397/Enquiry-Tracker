@@ -15,6 +15,8 @@ const inventoryHistorySection = 'History';
 const physicalStockSection = 'Physical Stocks';
 const inventoryPurchaseSection = 'Purchase';
 const inventoryTitle = 'Centralized Inventory';
+const inventoryTableHeadingSize = 13.0;
+const inventoryTableTextSize = 14.0;
 const _inventoryNavigation = Color(0xFF171B25);
 const _inventoryNavigationSelected = Color(0xFF303B54);
 const _inventoryNavigationText = Color(0xFFD7E0F2);
@@ -55,10 +57,28 @@ ThemeData inventoryTheme(bool dark) {
   final actionColor = scheme.primary;
   final actionText = scheme.onPrimary;
   final subtleAction = dark ? const Color(0xFF293A5D) : const Color(0xFFF2F6FF);
-  final theme = ThemeData(
+  final base = ThemeData(
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
+  );
+  final original = base.textTheme;
+  final text = original.copyWith(
+    headlineSmall: original.headlineSmall
+        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 24),
+    titleLarge: original.titleLarge?.copyWith(fontSize: 23),
+    titleMedium: original.titleMedium
+        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 17),
+    titleSmall: original.titleSmall?.copyWith(fontSize: 15),
+    bodyLarge: original.bodyLarge?.copyWith(fontSize: 17),
+    bodyMedium: original.bodyMedium?.copyWith(fontSize: 15),
+    bodySmall: original.bodySmall?.copyWith(fontSize: 13),
+    labelLarge: original.labelLarge?.copyWith(fontSize: 15),
+    labelMedium: original.labelMedium?.copyWith(fontSize: 13),
+    labelSmall: original.labelSmall?.copyWith(fontSize: 12),
+  );
+  return base.copyWith(
+    textTheme: text,
     scaffoldBackgroundColor:
         dark ? const Color(0xFF151D2D) : const Color(0xFFEBEFF5),
     dividerColor: scheme.outlineVariant,
@@ -83,7 +103,7 @@ ThemeData inventoryTheme(bool dark) {
         foregroundColor: actionText,
         minimumSize: const Size(0, 36),
         shape: controlShape,
-        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        textStyle: text.labelLarge?.copyWith(fontWeight: FontWeight.w600),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -92,6 +112,7 @@ ThemeData inventoryTheme(bool dark) {
         foregroundColor: actionColor,
         minimumSize: const Size(0, 36),
         shape: controlShape,
+        textStyle: text.labelLarge,
       ).copyWith(
         side: WidgetStateProperty.resolveWith((states) => BorderSide(
               color: states.contains(WidgetState.disabled)
@@ -101,19 +122,13 @@ ThemeData inventoryTheme(bool dark) {
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: actionColor),
+      style: TextButton.styleFrom(
+          foregroundColor: actionColor, textStyle: text.labelLarge),
     ),
     dialogTheme: DialogThemeData(
         backgroundColor: scheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
   );
-  return theme.copyWith(
-      textTheme: theme.textTheme.copyWith(
-    headlineSmall: theme.textTheme.headlineSmall
-        ?.copyWith(fontWeight: FontWeight.w700, fontSize: 22),
-    titleMedium:
-        theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-  ));
 }
 
 class InventoryWorkspace extends StatelessWidget {
@@ -173,7 +188,7 @@ class InventoryWorkspace extends StatelessWidget {
                         maxLines: compact ? 1 : 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 14,
                             fontWeight: item == section
                                 ? FontWeight.w700
                                 : FontWeight.w500)),
@@ -203,7 +218,7 @@ class InventoryWorkspace extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(10, 18, 2, 14),
             child: Text(inventoryTitle,
                 style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 15,
                     color: Colors.white,
                     fontWeight: FontWeight.w700)),
           ),

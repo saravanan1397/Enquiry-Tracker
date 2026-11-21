@@ -271,6 +271,8 @@ void main() {
           tester.widgetList<DataTable>(find.byType(DataTable)).toList();
       expect(tables, isNotEmpty);
       for (final table in tables) {
+        expect(table.headingTextStyle?.fontSize, 13);
+        expect(table.dataTextStyle?.fontSize, 14);
         expect(table.rows, isNotEmpty);
         for (final (index, column) in table.columns.indexed) {
           final label = column.label is Flexible
