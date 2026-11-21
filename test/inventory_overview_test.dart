@@ -31,6 +31,7 @@ class _Store implements InventoryStore {
   int? stock;
   bool recycled = false;
   String? addedName, addedLocation;
+  String? addedCategory;
   int? addedQuantity;
   (String?, int?, int?)? editedStock;
   InventoryMovement? posted;
@@ -50,6 +51,9 @@ class _Store implements InventoryStore {
         }),
         if (addedName != null) _Row('p2', {'name': addedName, 'active': true}),
       ]);
+  @override
+  Future<List<InventoryRow>> productSuggestions() async =>
+      (await products()).docs;
   @override
   Future<void> saveProduct({
     String? id,
@@ -73,6 +77,7 @@ class _Store implements InventoryStore {
       return;
     }
     addedName = name;
+    addedCategory = category;
     addedLocation = storageLocation;
     addedQuantity = stockQuantity;
   }
@@ -223,6 +228,38 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  testWidgets('saved name and category suggestions do not create duplicates',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store(withStock: true);
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Products'));
+    await tester.pumpAndSettle();
+    final button = find.widgetWithText(FilledButton, 'Add Product');
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    final name = find.widgetWithText(TextField, 'Product name');
+    await tester.enterText(name, 'cook');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cookware Fixture · SKU TEST-1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit Product'), findsOneWidget);
+    expect(store.addedName, isNull);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.enterText(name, '  cookware fixture ');
+    await tester.tap(find.text('Save Product'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit Product'), findsOneWidget);
+    expect(store.addedName, isNull);
+  });
+
   testWidgets('Edit Product shows branch stock and saves a new total',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -277,9 +314,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('SSH TNHB').last);
     await tester.pumpAndSettle();
+    final categories = find.byTooltip('Category suggestions');
+    await tester.ensureVisible(categories);
+    await tester.tap(categories);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cookware').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Save Product'));
     await tester.pumpAndSettle();
     expect(store.addedLocation, 'tnhb');
+    expect(store.addedCategory, 'Cookware');
     await tester.tap(find.text('Physical Stocks'));
     await tester.pumpAndSettle();
     expect(find.text('New Mixer'), findsOneWidget);

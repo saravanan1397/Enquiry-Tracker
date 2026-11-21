@@ -143,6 +143,8 @@ class InventoryStore {
 
   Future<InventoryRows> products() => _products.limit(101).get(_server);
 
+  Future<List<InventoryRow>> productSuggestions() => _reportRows(_products);
+
   Future<InventoryRows> deletedProducts() =>
       _products.orderBy('deletedAt', descending: true).limit(101).get(_server);
 

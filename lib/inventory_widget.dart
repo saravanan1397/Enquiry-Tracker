@@ -1012,15 +1012,20 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     return Center(child: content);
   }
 
-  Future<void> _product([InventoryRow? row]) async {
+  Future<void> _product([
+    InventoryRow? row,
+    ({String? location, String quantity})? carried,
+  ]) async {
     final InventoryRows suppliers;
     final Map<String, int> stockByLocation;
+    final List<InventoryRow> catalog;
     try {
-      (suppliers, stockByLocation) = await (
+      (suppliers, stockByLocation, catalog) = await (
         _store.suppliers(),
         row == null
             ? Future.value(const <String, int>{})
             : _store.productStockByLocation(row.id),
+        _store.productSuggestions(),
       ).wait;
     } catch (error) {
       if (mounted)
@@ -1030,9 +1035,44 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       return;
     }
     if (!mounted) return;
+    final available =
+        catalog.where((item) => item.data()['deletedAt'] == null).toList();
+    if (row != null) {
+      final editId = row.id;
+      row = available.where((item) => item.id == editId).firstOrNull;
+      if (row == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('This product is no longer available to edit.')));
+        return;
+      }
+    }
     final values = row?.data() ?? {};
+    String catalogName(InventoryRow item) =>
+        (item.data()['name'] as String? ?? '').trim();
+    final names = available
+        .where((item) => catalogName(item).isNotEmpty)
+        .toList()
+      ..sort((a, b) => _suggestionKey(catalogName(a))
+          .compareTo(_suggestionKey(catalogName(b))));
+    final byCategory = <String, String>{};
+    for (final item in available) {
+      final label = (item.data()['category'] as String? ?? '').trim();
+      if (label.isNotEmpty) {
+        byCategory.putIfAbsent(_suggestionKey(label), () => label);
+      }
+    }
+    final categories = byCategory.values.toList()
+      ..sort((a, b) => _suggestionKey(a).compareTo(_suggestionKey(b)));
+    String productOption(InventoryRow item) {
+      final sku = (item.data()['sku'] as String? ?? '').trim();
+      final barcode = (item.data()['barcode'] as String? ?? '').trim();
+      return '${catalogName(item)}${sku.isNotEmpty ? ' · SKU $sku' : barcode.isNotEmpty ? ' · Barcode $barcode' : ''}';
+    }
+
     final name = TextEditingController(text: values['name'] as String?);
-    final quantity = TextEditingController();
+    final quantity = TextEditingController(
+        text: carried?.location == null ? null : carried?.quantity);
+    final nameFocus = FocusNode(), categoryFocus = FocusNode();
     final sku = TextEditingController(text: values['sku'] as String?);
     final category = TextEditingController(text: values['category'] as String?);
     final reorder = TextEditingController(text: values['reorder']?.toString());
@@ -1047,17 +1087,33 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     var active = values['active'] != false;
     final assigned =
         stockByLocation.keys.where(_activeLocations.containsKey).toList();
-    String? storageLocation = row == null
-        ? (_activeLocations.containsKey(_location) ? _location : null)
-        : (assigned.contains(_location)
-            ? _location
-            : assigned.length == 1
-                ? assigned.single
-                : null);
+    String? storageLocation = _activeLocations.containsKey(carried?.location)
+        ? carried!.location
+        : row == null
+            ? (_activeLocations.containsKey(_location) ? _location : null)
+            : (assigned.contains(_location)
+                ? _location
+                : assigned.length == 1
+                    ? assigned.single
+                    : null);
+    InventoryRow? selectedExisting;
     final result = await _editor(
       title: row == null ? 'Add Product' : 'Edit Product',
       fields: (update) => [
-        _input(name, 'Product name'),
+        if (row == null)
+          _suggestedInput(
+            name,
+            nameFocus,
+            'Product name',
+            names,
+            productOption,
+            (existing) {
+              selectedExisting = existing;
+              Navigator.of(context, rootNavigator: true).pop(true);
+            },
+          )
+        else
+          _input(name, 'Product name'),
         _select(
             row == null
                 ? 'Where is the product stored? (required)'
@@ -1085,7 +1141,8 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
           ),
         _input(sku, 'SKU'),
         _input(barcode, 'Barcode (optional)'),
-        _input(category, 'Category'),
+        _suggestedInput(category, categoryFocus, 'Category', categories,
+            (label) => label, (_) {}),
         _input(reorder, 'Reorder level', number: true),
         _select('Preferred supplier (optional)', supplier, supplierOptions,
             (v) => update(() => supplier = v)),
@@ -1096,20 +1153,36 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             onChanged: (v) => update(() => active = v)),
       ],
       action: 'Save Product',
-      save: () {
+      save: () async {
+        if (row == null && name.text.trim().isNotEmpty) {
+          final exact = names
+              .where((item) =>
+                  _suggestionKey(catalogName(item)) ==
+                  _suggestionKey(name.text))
+              .toList();
+          if (exact.length > 1) {
+            throw const FormatException(
+                'More than one product has this name. Choose the correct entry from the suggestions.');
+          }
+          if (exact.isNotEmpty) {
+            selectedExisting = exact.single;
+            return;
+          }
+        }
         final stockQuantity = _optionalInt(quantity.text);
         if ((row == null || stockQuantity != null || storageLocation != null) &&
             !_activeLocations.containsKey(storageLocation)) {
           throw const FormatException('Choose where the product is stored.');
         }
-        return _store.saveProduct(
+        await _store.saveProduct(
             id: row?.id,
             storageLocation: storageLocation,
             stockQuantity: stockQuantity,
             expectedStockQuantity: stockByLocation[storageLocation],
             name: name.text,
             sku: sku.text,
-            category: category.text,
+            category:
+                byCategory[_suggestionKey(category.text)] ?? category.text,
             barcode: barcode.text,
             supplierId: supplier,
             unitCost: inventoryCostPaise(cost.text),
@@ -1117,6 +1190,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             active: active);
       },
     );
+    final stockEntry = (location: storageLocation, quantity: quantity.text);
     for (final controller in [
       name,
       quantity,
@@ -1128,8 +1202,73 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
     ]) {
       controller.dispose();
     }
-    if (result) _refresh();
+    nameFocus.dispose();
+    categoryFocus.dispose();
+    if (result && selectedExisting != null && mounted) {
+      await _product(selectedExisting, stockEntry);
+    } else if (result) {
+      _refresh();
+    }
   }
+
+  String _suggestionKey(String text) => text.trim().toLowerCase();
+
+  Widget _suggestedInput<T extends Object>(
+    TextEditingController controller,
+    FocusNode focus,
+    String label,
+    List<T> options,
+    String Function(T) optionLabel,
+    ValueChanged<T> selected,
+  ) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Autocomplete<T>(
+          textEditingController: controller,
+          focusNode: focus,
+          optionsMaxHeight: 192,
+          optionsViewOpenDirection: label == 'Category'
+              ? OptionsViewOpenDirection.up
+              : OptionsViewOpenDirection.down,
+          displayStringForOption: optionLabel,
+          optionsBuilder: (value) {
+            final input = _suggestionKey(value.text);
+            return options
+                .where(
+                    (item) => _suggestionKey(optionLabel(item)).contains(input))
+                .take(20);
+          },
+          onSelected: selected,
+          fieldViewBuilder: (context, text, node, submit) => TextField(
+            controller: text,
+            focusNode: node,
+            maxLength: 160,
+            onSubmitted: (_) => submit(),
+            decoration: InputDecoration(
+              labelText: label,
+              counterText: '',
+              suffixIcon: options.isEmpty
+                  ? null
+                  : PopupMenuButton<T>(
+                      tooltip: '$label suggestions',
+                      icon: const Icon(Icons.arrow_drop_down),
+                      constraints:
+                          const BoxConstraints(maxWidth: 380, maxHeight: 240),
+                      onOpened: node.unfocus,
+                      onSelected: (value) {
+                        text.text = optionLabel(value);
+                        selected(value);
+                      },
+                      itemBuilder: (_) => [
+                        for (final option in options)
+                          PopupMenuItem(
+                              value: option, child: Text(optionLabel(option))),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      );
 
   Future<void> _movement(List<InventoryRow> products,
       {InventoryRow? draft,
