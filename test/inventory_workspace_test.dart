@@ -8,14 +8,18 @@ void main() {
       () {
     final light = inventoryTheme(false);
     final dark = inventoryTheme(true);
-    expect(light.scaffoldBackgroundColor, const Color(0xFFF1F1F1));
+    expect(light.scaffoldBackgroundColor, const Color(0xFFEBEFF5));
     expect(light.colorScheme.surface, Colors.white);
-    expect(dark.scaffoldBackgroundColor, const Color(0xFF1D1D1D));
-    expect(dark.colorScheme.surface, const Color(0xFF252525));
+    expect(dark.scaffoldBackgroundColor, const Color(0xFF151D2D));
+    expect(dark.colorScheme.surface, const Color(0xFF202A3D));
     for (final theme in [light, dark]) {
       final scheme = theme.colorScheme;
       final text = scheme.onSurface.computeLuminance();
-      for (final surface in [scheme.surface, scheme.surfaceContainer]) {
+      for (final surface in [
+        scheme.surface,
+        scheme.surfaceContainer,
+        scheme.surfaceContainerHigh
+      ]) {
         final background = surface.computeLuminance();
         final contrast = text > background
             ? (text + .05) / (background + .05)
@@ -41,7 +45,7 @@ void main() {
       }
       final accent =
           theme.filledButtonTheme.style!.backgroundColor!.resolve({});
-      expect(accent, dark ? const Color(0xFF78DED1) : const Color(0xFF00695E));
+      expect(accent, dark ? const Color(0xFFAFC6FF) : const Color(0xFF234FC8));
     }
   });
 

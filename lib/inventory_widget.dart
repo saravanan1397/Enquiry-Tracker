@@ -324,39 +324,49 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             (value) => (value?.toString() ?? '').toLowerCase().contains(term));
   }
 
-  Widget _viewSearch({double bottom = 12}) => Padding(
-        padding: EdgeInsets.only(bottom: bottom),
-        child: TextField(
-          key: const ValueKey('inventory-view-search'),
-          controller: _search,
-          textInputAction: TextInputAction.search,
-          onChanged: (_) => setState(() {}),
-          decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.search),
-            labelText: _productBin
-                ? 'Search deleted products'
-                : switch (_section) {
-                    'Overview' ||
-                    'Products' =>
-                      'Search products by name, SKU, barcode or category',
-                    physicalStockSection => 'Search physical stock',
-                    inventoryHistorySection => 'Search movements and drafts',
-                    'Reports' => 'Search stock report',
-                    'Suppliers' => 'Search suppliers',
-                    inventoryPurchaseSection => 'Search purchase orders',
-                    'Transfers' => 'Search transfers',
-                    _ => 'Search locations',
-                  },
-            suffixIcon: _search.text.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: 'Clear view search',
-                    onPressed: () => setState(_search.clear),
-                    icon: const Icon(Icons.clear),
-                  ),
+  Widget _viewSearch({double bottom = 12}) => Builder(builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        const pill = BorderRadius.all(Radius.circular(24));
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottom),
+          child: TextField(
+            key: const ValueKey('inventory-view-search'),
+            controller: _search,
+            textInputAction: TextInputAction.search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: pill,
+                  borderSide: BorderSide(color: scheme.outlineVariant)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: pill,
+                  borderSide: BorderSide(color: scheme.primary, width: 2)),
+              prefixIcon: const Icon(Icons.search),
+              labelText: _productBin
+                  ? 'Search deleted products'
+                  : switch (_section) {
+                      'Overview' ||
+                      'Products' =>
+                        'Search products by name, SKU, barcode or category',
+                      physicalStockSection => 'Search physical stock',
+                      inventoryHistorySection => 'Search movements and drafts',
+                      'Reports' => 'Search stock report',
+                      'Suppliers' => 'Search suppliers',
+                      inventoryPurchaseSection => 'Search purchase orders',
+                      'Transfers' => 'Search transfers',
+                      _ => 'Search locations',
+                    },
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear view search',
+                      onPressed: () => setState(_search.clear),
+                      icon: const Icon(Icons.clear),
+                    ),
+            ),
           ),
-        ),
-      );
+        );
+      });
 
   Widget _content(BuildContext context, List<InventoryRows> data) {
     final products = data.first;
@@ -882,7 +892,7 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       return Material(
         color: scheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           side: BorderSide(color: scheme.outlineVariant),
         ),
         clipBehavior: Clip.antiAlias,
@@ -894,12 +904,12 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
                   BoxConstraints(minWidth: centered ? 0 : constraints.maxWidth),
               child: DataTable(
                 headingRowHeight: 38,
-                dataRowMinHeight: 38,
-                dataRowMaxHeight: 44,
+                dataRowMinHeight: 44,
+                dataRowMaxHeight: 52,
                 headingRowColor:
-                    WidgetStatePropertyAll(scheme.surfaceContainerLow),
+                    WidgetStatePropertyAll(scheme.surfaceContainerHigh),
                 headingTextStyle: TextStyle(
-                    color: scheme.onSurfaceVariant,
+                    color: scheme.onSurface,
                     fontSize: 12,
                     fontWeight: FontWeight.w600),
                 dataTextStyle: TextStyle(color: scheme.onSurface, fontSize: 13),

@@ -15,6 +15,9 @@ const inventoryHistorySection = 'History';
 const physicalStockSection = 'Physical Stocks';
 const inventoryPurchaseSection = 'Purchase';
 const inventoryTitle = 'Centralized Inventory';
+const _inventoryNavigation = Color(0xFF171B25);
+const _inventoryNavigationSelected = Color(0xFF303B54);
+const _inventoryNavigationText = Color(0xFFD7E0F2);
 
 const _sectionIcons = {
   'Overview': Icons.dashboard_outlined,
@@ -31,34 +34,33 @@ const _sectionIcons = {
 ThemeData inventoryTheme(bool dark) {
   final brightness = dark ? Brightness.dark : Brightness.light;
   final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF555555),
+    seedColor: const Color(0xFF2D5BE3),
     brightness: brightness,
   ).copyWith(
-    primary: dark ? const Color(0xFFF2F2F2) : const Color(0xFF303030),
-    onPrimary: dark ? const Color(0xFF202020) : Colors.white,
-    surface: dark ? const Color(0xFF252525) : Colors.white,
+    primary: dark ? const Color(0xFFAFC6FF) : const Color(0xFF234FC8),
+    onPrimary: dark ? const Color(0xFF10254F) : Colors.white,
+    surface: dark ? const Color(0xFF202A3D) : Colors.white,
     surfaceContainerLow:
-        dark ? const Color(0xFF2B2B2B) : const Color(0xFFF7F7F7),
-    surfaceContainer: dark ? const Color(0xFF292929) : const Color(0xFFEBEBEB),
+        dark ? const Color(0xFF25334B) : const Color(0xFFF4F7FD),
+    surfaceContainer: dark ? const Color(0xFF27344D) : const Color(0xFFF6F8FC),
     surfaceContainerHigh:
-        dark ? const Color(0xFF343434) : const Color(0xFFE6E6E6),
-    onSurface: dark ? const Color(0xFFF1F1F1) : const Color(0xFF262626),
-    onSurfaceVariant: dark ? const Color(0xFFC8C8C8) : const Color(0xFF525252),
-    outline: dark ? const Color(0xFF929292) : const Color(0xFF737373),
-    outlineVariant: dark ? const Color(0xFF444444) : const Color(0xFFDCDCDC),
+        dark ? const Color(0xFF34476A) : const Color(0xFFDDE8FF),
+    onSurface: dark ? const Color(0xFFF0F4FF) : const Color(0xFF151C35),
+    onSurfaceVariant: dark ? const Color(0xFFBCCBEB) : const Color(0xFF4B5874),
+    outline: dark ? const Color(0xFF8C9DC4) : const Color(0xFF6C7A98),
+    outlineVariant: dark ? const Color(0xFF3E4D69) : const Color(0xFFDCE3EF),
     surfaceTint: Colors.transparent,
   );
-  final controlShape =
-      RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
-  final actionColor = dark ? const Color(0xFF78DED1) : const Color(0xFF00695E);
-  final actionText = dark ? const Color(0xFF082721) : Colors.white;
-  final subtleAction = dark ? const Color(0xFF193631) : const Color(0xFFE7F5F2);
+  const controlShape = StadiumBorder();
+  final actionColor = scheme.primary;
+  final actionText = scheme.onPrimary;
+  final subtleAction = dark ? const Color(0xFF293A5D) : const Color(0xFFF2F6FF);
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
     scaffoldBackgroundColor:
-        dark ? const Color(0xFF1D1D1D) : const Color(0xFFF1F1F1),
+        dark ? const Color(0xFF151D2D) : const Color(0xFFEBEFF5),
     dividerColor: scheme.outlineVariant,
     inputDecorationTheme: InputDecorationTheme(
       isDense: true,
@@ -139,8 +141,7 @@ class InventoryWorkspace extends StatelessWidget {
   final VoidCallback onTheme, onRefresh;
   final Widget child;
 
-  Widget _navigation(BuildContext context, {required bool compact}) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget _navigation({required bool compact}) {
     final items = [
       for (final item in inventorySections)
         Padding(
@@ -150,11 +151,11 @@ class InventoryWorkspace extends StatelessWidget {
               selected: item == section,
               child: TextButton(
                 style: TextButton.styleFrom(
-                  backgroundColor:
-                      item == section ? scheme.surface : Colors.transparent,
-                  foregroundColor: item == section
-                      ? scheme.onSurface
-                      : scheme.onSurfaceVariant,
+                  backgroundColor: item == section
+                      ? _inventoryNavigationSelected
+                      : Colors.transparent,
+                  foregroundColor:
+                      item == section ? Colors.white : _inventoryNavigationText,
                   alignment: Alignment.centerLeft,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   minimumSize: Size(compact ? 0 : double.infinity, 40),
@@ -163,7 +164,9 @@ class InventoryWorkspace extends StatelessWidget {
                 ),
                 onPressed: () => onSection(item),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(_sectionIcons[item], size: 17),
+                  Icon(_sectionIcons[item],
+                      size: 17,
+                      color: item == section ? const Color(0xFFAFC6FF) : null),
                   const SizedBox(width: 9),
                   Flexible(
                     child: Text(item,
@@ -181,7 +184,7 @@ class InventoryWorkspace extends StatelessWidget {
     ];
     if (compact) {
       return Material(
-        color: scheme.surfaceContainer,
+        color: _inventoryNavigation,
         child: SizedBox(
           width: double.infinity,
           child: SingleChildScrollView(
@@ -192,18 +195,19 @@ class InventoryWorkspace extends StatelessWidget {
       );
     }
     return Material(
-      color: scheme.surfaceContainer,
+      color: _inventoryNavigation,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 18, 2, 15),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(10, 18, 2, 14),
             child: Text(inventoryTitle,
                 style: TextStyle(
                     fontSize: 14,
-                    color: scheme.onSurface,
+                    color: Colors.white,
                     fontWeight: FontWeight.w700)),
           ),
+          const Divider(height: 12, color: Color(0xFF30394D)),
           ...items,
         ],
       ),
@@ -211,7 +215,7 @@ class InventoryWorkspace extends StatelessWidget {
   }
 
   Widget _header(BuildContext context, bool compact) => Material(
-        color: Theme.of(context).scaffoldBackgroundColor,
+        color: Theme.of(context).colorScheme.surface,
         child: DecoratedBox(
           decoration: BoxDecoration(
               border: Border(
@@ -291,12 +295,12 @@ class InventoryWorkspace extends StatelessWidget {
             final compact = constraints.maxWidth < 750;
             final workspace = Column(children: [
               _header(context, compact),
-              if (compact) _navigation(context, compact: true),
+              if (compact) _navigation(compact: true),
               Expanded(child: child),
             ]);
             if (compact) return workspace;
             return Row(children: [
-              SizedBox(width: 207, child: _navigation(context, compact: false)),
+              SizedBox(width: 207, child: _navigation(compact: false)),
               Expanded(child: workspace),
             ]);
           });
