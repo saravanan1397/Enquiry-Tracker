@@ -280,6 +280,7 @@ service cloud.firestore {
     }
     function inventoryMovement(movementId, data) {
       let path = /databases/$(database)/documents/is_balances/$(data.balanceId);
+      let product = /databases/$(database)/documents/is_products/$(data.productId);
       let after = getAfter(path).data;
       return data.keys().hasOnly(['type','location','productId','quantity','note','balanceId',
           'before','delta','quantityAfter','actor','at','workflowId'])
@@ -287,11 +288,20 @@ service cloud.firestore {
         && inventoryLocation(data.location) && inventoryMovementLink(movementId, data)
         && data.balanceId == data.location + '_' + data.productId
         && inventoryText(data.note) && data.actor == request.auth.uid && data.at == request.time
-        && inventoryDelta(data) && data.before == inventoryPrior(path)
+        && data.before == inventoryPrior(path)
         && after.lastMovementId == movementId && after.productId == data.productId
         && after.location == data.location && after.quantity == data.quantityAfter
         && after.at == request.time
-        && get(/databases/$(database)/documents/is_products/$(data.productId)).data.active == true;
+        && (exists(product)
+          ? inventoryDelta(data) && get(product).data.active == true
+          : !exists(path) && inventoryInitialLocation(product, data));
+    }
+    function inventoryInitialLocation(product, data) {
+      let created = getAfter(product).data;
+      return data.type == 'opening' && data.quantity is int && data.quantity == 0
+        && data.before is int && data.before == 0 && data.delta is int && data.delta == 0
+        && data.quantityAfter == 0 && created.actor == request.auth.uid
+        && created.at == request.time;
     }
     function inventoryBalance(balanceId, data) {
       let path = /databases/$(database)/documents/is_movements/$(data.lastMovementId);

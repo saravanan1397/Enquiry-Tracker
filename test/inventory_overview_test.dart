@@ -30,6 +30,7 @@ class _Store implements InventoryStore {
   final bool withStock, withDamage;
   int? stock;
   bool recycled = false;
+  String? addedName, addedLocation;
   InventoryMovement? posted;
   final transfers = <(String, String, String, int)>[];
   int _movementNumber = 0;
@@ -45,7 +46,26 @@ class _Store implements InventoryStore {
           if (recycled) 'deletedAt': 'fixture timestamp',
           'reorder': 2
         }),
+        if (addedName != null) _Row('p2', {'name': addedName, 'active': true}),
       ]);
+  @override
+  Future<void> saveProduct({
+    String? id,
+    String? storageLocation,
+    required String name,
+    required String sku,
+    required String category,
+    String barcode = '',
+    String? supplierId,
+    int? unitCost,
+    required int? reorder,
+    required bool active,
+  }) async {
+    expect(id, isNull);
+    addedName = name;
+    addedLocation = storageLocation;
+  }
+
   @override
   Future<InventoryRows> deletedProducts() async =>
       recycled ? products() : _Rows([]);
@@ -62,6 +82,13 @@ class _Store implements InventoryStore {
             'productId': 'p1',
             'location': 'warehouse',
             'quantity': stock ?? 1
+          }),
+        if (addedLocation != null &&
+            (location == null || location == addedLocation))
+          _Row('newBalance', {
+            'productId': 'p2',
+            'location': addedLocation,
+            'quantity': 0,
           }),
       ]);
   @override
@@ -180,6 +207,39 @@ class _Store implements InventoryStore {
 }
 
 void main() {
+  testWidgets('Add Product requires a location and shows zero stock there',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _Store();
+    await tester
+        .pumpWidget(MaterialApp(home: InventoryWidgetScreen(store: store)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Products'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Product'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Product name'), 'New Mixer');
+    await tester.tap(find.text('Save Product'));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose where the product is stored.'), findsOneWidget);
+    expect(store.addedLocation, isNull);
+    await tester.tap(
+        find.byKey(const ValueKey('Where is the product stored? (required)')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SSH TNHB').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Product'));
+    await tester.pumpAndSettle();
+    expect(store.addedLocation, 'tnhb');
+    await tester.tap(find.text('Physical Stocks'));
+    await tester.pumpAndSettle();
+    expect(find.text('New Mixer'), findsOneWidget);
+    expect(find.text('SSH TNHB'), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
+  });
+
   test('all movement types use per-location totals without a history cap', () {
     _Row movement(
             String id, String type, String location, int units, int delta) =>

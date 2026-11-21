@@ -288,6 +288,7 @@ class InventoryStore {
 
   Future<void> saveProduct(
       {String? id,
+      String? storageLocation,
       required String name,
       required String sku,
       required String category,
@@ -300,7 +301,13 @@ class InventoryStore {
       throw const FormatException(
           'Use a non-negative reorder level up to 1,000,000.');
     }
-    return _products.doc(id).set({
+    if (id == null && (storageLocation == null || storageLocation.isEmpty)) {
+      throw const FormatException('Choose where the product is stored.');
+    }
+    final product = _products.doc(id);
+    final actor = _uid;
+    final stamp = FieldValue.serverTimestamp();
+    final details = {
       'name': name.trim(),
       'sku': sku.trim(),
       'category': category.trim(),
@@ -309,9 +316,36 @@ class InventoryStore {
       'unitCost': unitCost,
       'reorder': reorder,
       'active': active,
-      'actor': _uid,
-      'at': FieldValue.serverTimestamp(),
+      'actor': actor,
+      'at': stamp,
+    };
+    if (id != null) return product.set(details);
+
+    final movement = _movements.doc();
+    final balance = _balances.doc('${storageLocation}_${product.id}');
+    final batch = _db.batch();
+    batch.set(product, details);
+    batch.set(balance, {
+      'productId': product.id,
+      'location': storageLocation,
+      'quantity': 0,
+      'lastMovementId': movement.id,
+      'at': stamp,
     });
+    batch.set(movement, {
+      'type': 'opening',
+      'location': storageLocation,
+      'productId': product.id,
+      'quantity': 0,
+      'note': 'Storage location assigned during product creation.',
+      'balanceId': balance.id,
+      'before': 0,
+      'delta': 0,
+      'quantityAfter': 0,
+      'actor': actor,
+      'at': stamp,
+    });
+    return batch.commit();
   }
 
   Future<void> saveDraft(InventoryMovement entry, {required String id}) {

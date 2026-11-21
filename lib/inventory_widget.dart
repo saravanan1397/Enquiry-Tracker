@@ -1036,10 +1036,15 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
       supplierOptions[supplier] = 'Previously assigned supplier';
     }
     var active = values['active'] != false;
+    String? storageLocation =
+        _activeLocations.containsKey(_location) ? _location : null;
     final result = await _editor(
       title: row == null ? 'Add Product' : 'Edit Product',
       fields: (update) => [
         _input(name, 'Product name'),
+        if (row == null)
+          _select('Where is the product stored? (required)', storageLocation,
+              _activeLocations, (v) => update(() => storageLocation = v)),
         _input(sku, 'SKU'),
         _input(barcode, 'Barcode (optional)'),
         _input(category, 'Category'),
@@ -1053,16 +1058,22 @@ class _InventoryWidgetScreenState extends State<InventoryWidgetScreen> {
             onChanged: (v) => update(() => active = v)),
       ],
       action: 'Save Product',
-      save: () => _store.saveProduct(
-          id: row?.id,
-          name: name.text,
-          sku: sku.text,
-          category: category.text,
-          barcode: barcode.text,
-          supplierId: supplier,
-          unitCost: inventoryCostPaise(cost.text),
-          reorder: _optionalInt(reorder.text),
-          active: active),
+      save: () {
+        if (row == null && !_activeLocations.containsKey(storageLocation)) {
+          throw const FormatException('Choose where the product is stored.');
+        }
+        return _store.saveProduct(
+            id: row?.id,
+            storageLocation: row == null ? storageLocation : null,
+            name: name.text,
+            sku: sku.text,
+            category: category.text,
+            barcode: barcode.text,
+            supplierId: supplier,
+            unitCost: inventoryCostPaise(cost.text),
+            reorder: _optionalInt(reorder.text),
+            active: active);
+      },
     );
     for (final controller in [name, sku, category, reorder, barcode, cost]) {
       controller.dispose();

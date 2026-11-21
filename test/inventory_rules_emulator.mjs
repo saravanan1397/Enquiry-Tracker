@@ -149,3 +149,26 @@ assert.equal(nextPage[0].document.fields.location.stringValue,source);
 assert.equal((await runReportQuery('is_balances'))[0].document.fields.quantity.integerValue,'5');
 await runReportQuery('is_movements',undefined,other.idToken);
 console.log('Verified admin report reads, branch filtering, and pagination.');
+
+function addAtLocation(item, move, location, units=0, active=true) {
+  const balanceId=location+'_'+item;
+  return [
+    write('is_products/'+item,{name:'New item',sku:'',category:'',reorder:null,active,actor:uid,at:stamp}),
+    write('is_balances/'+balanceId,{productId:item,location,quantity:units,lastMovementId:move,at:stamp}),
+    write('is_movements/'+move,{productId:item,location,type:'opening',quantity:units,note:'',
+      balanceId,before:0,delta:units,quantityAfter:units,actor:uid,at:stamp}),
+  ];
+}
+const newProduct=id('N');
+const initial=addAtLocation(newProduct,id('G'),destination);
+await commit(initial,other.idToken,403);
+await commit(initial.slice(1),token,403);
+await commit(addAtLocation(newProduct,id('G'),destination,1),token,403);
+await commit(addAtLocation(newProduct,id('G'),'invalid'),token,403);
+await request(db+'/is_products/'+newProduct,{credential:'owner'},404);
+await commit(initial);
+assert.equal((await request(db+'/is_balances/'+destination+'_'+newProduct,{credential:'owner'}))
+  .fields.quantity.integerValue,'0');
+await commit(addAtLocation(newProduct,id('F'),source).slice(1),token,403);
+await commit(addAtLocation(id('H'),id('U'),source,0,false));
+console.log('Verified atomic storage assignment with unchanged movement permissions for existing products.');
