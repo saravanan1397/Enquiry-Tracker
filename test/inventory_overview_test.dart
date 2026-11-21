@@ -243,7 +243,7 @@ void main() {
         {'productId': 'p1', 'location': location, 'quantity': quantity};
     final report = buildInventoryReport((
       products: [
-        _Row('p1', {'name': 'Product A'})
+        _Row('p1', {'name': 'Product A', 'reorder': 2, 'unitCost': 1500})
       ],
       balances: [_Row('a', entry('a', 7)), _Row('b', entry('b', 9))],
       movements: [
@@ -261,8 +261,18 @@ void main() {
       ['Product A', 'Place A', 7],
       ['Product A', 'Place B', 9],
     ]);
-    expect(report.headings[2], 'Total Stock');
-    expect(report.headings.skip(6), ['Damaged', 'Transfer out']);
+    expect(report.headings, [
+      'Product',
+      'Location',
+      'Total Stock',
+      'Damaged',
+      'Transfer out',
+      'Reorder at',
+      'Unit cost INR',
+      'Stock value INR',
+    ]);
+    expect(
+        report.rows.first, ['Product A', 'Place A', 7, 1, 2, 2, 15.0, 105.0]);
   });
 
   testWidgets('saved name and category suggestions do not create duplicates',
@@ -415,7 +425,12 @@ void main() {
     final filtered = buildInventoryReport(source,
         locations: inventoryLocations,
         matches: (fields) => fields.contains('SSH Warehouse'));
-    expect(filtered.headings.skip(6), ['Stock out']);
+    expect(filtered.headings.skip(3), [
+      'Stock out',
+      'Reorder at',
+      'Unit cost INR',
+      'Stock value INR',
+    ]);
   });
 
   testWidgets(

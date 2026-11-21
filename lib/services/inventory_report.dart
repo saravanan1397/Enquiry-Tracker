@@ -84,11 +84,11 @@ InventoryReport buildInventoryReport(
       'Product',
       'Location',
       'Total Stock',
+      for (final type in types)
+        type == 'damage' ? 'Damaged' : inventoryMovementLabels[type] ?? type,
       'Reorder at',
       'Unit cost INR',
       'Stock value INR',
-      for (final type in types)
-        type == 'damage' ? 'Damaged' : inventoryMovementLabels[type] ?? type,
     ],
     rows: [
       for (final key in sortedKeys)
@@ -96,6 +96,7 @@ InventoryReport buildInventoryReport(
           inventoryProductName(products[key.product]?['name']),
           locations[key.location] ?? key.location,
           balances[key] ?? '',
+          for (final type in types) movements[key]?[type] ?? 0,
           products[key.product]?['reorder'] ?? '',
           inventoryStockValue(products[key.product]?['unitCost'] as int?, 1),
           if (balances[key] case final int count)
@@ -103,7 +104,6 @@ InventoryReport buildInventoryReport(
                 products[key.product]?['unitCost'] as int?, count)
           else
             '',
-          for (final type in types) movements[key]?[type] ?? 0,
         ],
     ],
   );
