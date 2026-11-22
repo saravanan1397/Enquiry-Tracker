@@ -84,6 +84,8 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.auth.uid == promoterId
         && !exists(/databases/$(database)/documents/promoterDeletions/$(promoterId))
+        && request.resource.data.name is string
+        && request.resource.data.name.trim().size() > 0
         && request.resource.data.role == 'promoter'
         && request.resource.data.active == false
         && request.resource.data.status == 'pending';

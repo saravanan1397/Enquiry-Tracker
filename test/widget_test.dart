@@ -95,6 +95,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Enter your full name.'), findsOneWidget);
 
+    await tester.enterText(find.byType(TextField).at(0), '   ');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your full name.'), findsOneWidget);
+
     await tester.enterText(find.byType(TextField).at(0), 'Test Promoter');
     await tester.ensureVisible(submit);
     await tester.tap(submit);
