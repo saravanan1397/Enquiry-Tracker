@@ -6,7 +6,7 @@
         android:fullBackupContent="false"
         android:label="Enquiry Tracker"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher_glass">
         <activity
             android:name=".MainActivity"
             android:exported="true"
